@@ -1,0 +1,43 @@
+body {
+  margin: 0;
+  font-family: "Avenir Next", sans-serif;
+  background: #f4efe7;
+  color: #20201c;
+}
+
+.popup {
+  width: 360px;
+  padding: 16px;
+}
+
+form {
+  display: grid;
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+input,
+textarea,
+button {
+  font: inherit;
+  border-radius: 12px;
+  border: 1px solid #d1c2ae;
+  padding: 10px 12px;
+}
+
+textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+button {
+  border: none;
+  background: #c26c35;
+  color: white;
+  cursor: pointer;
+}

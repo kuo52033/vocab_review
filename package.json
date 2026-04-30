@@ -1,0 +1,13 @@
+{
+  "name": "vocab-review",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "apps/chrome-extension"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace apps/web run dev",
+    "build:web": "npm --workspace apps/web run build",
+    "build:extension": "npm --workspace apps/chrome-extension run build"
+  }
+}

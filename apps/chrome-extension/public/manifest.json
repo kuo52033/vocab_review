@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Vocab Review Capture",
+  "version": "0.1.0",
+  "description": "Save English words and phrases into your review library.",
+  "permissions": ["activeTab", "storage", "contextMenus"],
+  "host_permissions": ["http://localhost:8080/*"],
+  "background": {
+    "service_worker": "assets/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Capture vocabulary"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["assets/content.js"]
+    }
+  ]
+}
