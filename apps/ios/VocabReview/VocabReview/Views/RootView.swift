@@ -2,37 +2,133 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var sessionStore: SessionStore
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var email = ""
     @State private var magicToken = ""
 
     var body: some View {
         NavigationStack {
-            if sessionStore.sessionToken.isEmpty {
-                VStack(alignment: .leading, spacing: 20) {
-                    Text("Review before you forget")
-                        .font(.largeTitle.bold())
-                    TextField("Paste magic token", text: $magicToken)
-                        .textFieldStyle(.roundedBorder)
-                    Button("Sign in") {
-                        Task { await sessionStore.signIn(with: magicToken) }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    if !sessionStore.errorMessage.isEmpty {
-                        Text(sessionStore.errorMessage)
-                            .foregroundStyle(.red)
-                    }
-                }
-                .padding()
-            } else {
+            if sessionStore.isAuthenticated {
                 ReviewListView()
                     .task { await sessionStore.loadDueCards() }
                     .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
+                        ToolbarItemGroup(placement: .topBarTrailing) {
                             Button("Notify") {
                                 Task { await sessionStore.registerNotifications() }
                             }
+                            Button("Sign out") {
+                                sessionStore.signOut()
+                            }
                         }
                     }
+            } else {
+                signInView
             }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active, sessionStore.isAuthenticated else { return }
+            Task { await sessionStore.loadDueCards() }
+        }
+    }
+
+    private var signInView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Review before you forget")
+                        .font(.largeTitle.bold())
+                    Text("Request a development magic link, then verify it in-app.")
+                        .foregroundStyle(.secondary)
+                }
+
+                statusMessages
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Request magic link")
+                        .font(.headline)
+                    TextField("you@example.com", text: $email)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.emailAddress)
+                        .textFieldStyle(.roundedBorder)
+                    Button {
+                        Task { await sessionStore.requestMagicLink(for: email) }
+                    } label: {
+                        if sessionStore.isRequestingMagicLink {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Text("Request link")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(sessionStore.isRequestingMagicLink || sessionStore.isSigningIn)
+                }
+
+                if let link = sessionStore.requestedMagicLink {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Development link")
+                            .font(.headline)
+                        Text(link.verification_url)
+                            .textSelection(.enabled)
+                            .font(.footnote.monospaced())
+                        Text("Token: \(link.token)")
+                            .textSelection(.enabled)
+                            .font(.footnote.monospaced())
+
+                        HStack {
+                            Button("Use this link") {
+                                Task { await sessionStore.useRequestedMagicLink() }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(sessionStore.isSigningIn || sessionStore.isRequestingMagicLink)
+
+                            Button("Fill token") {
+                                magicToken = link.token
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .padding()
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Paste token fallback")
+                        .font(.headline)
+                    TextField("Paste magic token", text: $magicToken)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .textFieldStyle(.roundedBorder)
+                    Button {
+                        Task { await sessionStore.signIn(with: magicToken) }
+                    } label: {
+                        if sessionStore.isSigningIn {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Text("Verify token")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(sessionStore.isSigningIn || sessionStore.isRequestingMagicLink)
+                }
+            }
+            .padding()
+        }
+    }
+
+    @ViewBuilder
+    private var statusMessages: some View {
+        if !sessionStore.errorMessage.isEmpty {
+            Text(sessionStore.errorMessage)
+                .foregroundStyle(.red)
+        }
+        if !sessionStore.infoMessage.isEmpty {
+            Text(sessionStore.infoMessage)
+                .foregroundStyle(.secondary)
         }
     }
 }

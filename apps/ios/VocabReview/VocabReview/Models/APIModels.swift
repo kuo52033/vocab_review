@@ -1,5 +1,11 @@
 import Foundation
 
+struct MagicLinkResponse: Codable {
+    let token: String
+    let verification_url: String
+    let expires_at: String
+}
+
 struct AuthResponse: Codable {
     let session: SessionPayload
 }
@@ -37,4 +43,21 @@ struct ReviewState: Codable {
     let interval_days: Int
     let repetition_count: Int
     let next_due_at: String
+}
+
+struct GradeRequest: Codable {
+    let grade: String
+}
+
+struct MagicLinkRequest: Codable {
+    let email: String
+    let base_url: String
+}
+
+struct VerifyRequest: Codable {
+    let token: String
+}
+
+struct APIErrorResponse: Codable {
+    let error: String
 }
