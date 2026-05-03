@@ -27,5 +27,9 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	if err := s.app.HealthCheck(); err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

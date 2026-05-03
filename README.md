@@ -4,21 +4,31 @@ A monorepo for a personal English vocabulary library with spaced-repetition revi
 
 ## Layout
 
-- `backend/`: Go API server with review scheduling and local JSON persistence
+- `backend/`: Go API server with review scheduling and PostgreSQL persistence
 - `apps/web/`: React + TypeScript web app for library management
 - `apps/chrome-extension/`: Chrome extension for fast capture
 - `apps/ios/`: SwiftUI iPhone app shell for sign-in, review, and notification registration
 
 ## Local development
 
+### Postgres
+
+```bash
+docker compose up -d postgres
+make migrate
+```
+
+The local workflow uses:
+
+- `.env.example` for the development connection string template
+- `.env.test` for integration-test configuration
+- `backend/migrations/` for versioned SQL schema changes
+
 ### Backend
 
 ```bash
-cd backend
-go run ./cmd/api
+make backend-run
 ```
-
-The backend stores development data in `backend/data/dev-store.json`.
 
 ### Web
 
@@ -44,5 +54,5 @@ Open `apps/ios/VocabReview` in Xcode and run on an iPhone simulator or device.
 
 ## Notes
 
-- The current backend uses a JSON-backed repository to keep the project runnable without external services.
-- The API and service boundaries are structured so PostgreSQL, APNs, and email delivery can be added without rewriting the clients.
+- The backend now requires PostgreSQL and fails fast if `DATABASE_URL` is missing or the schema has not been migrated.
+- Run `make test` for the backend unit suite and `make test-integration` for the Postgres repository integration test path.

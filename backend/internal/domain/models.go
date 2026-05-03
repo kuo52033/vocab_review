@@ -101,11 +101,11 @@ type DeviceToken struct {
 }
 
 type NotificationJob struct {
-	ID          string    `json:"id"`
-	UserID      string    `json:"user_id"`
-	VocabItemID string    `json:"vocab_item_id"`
-	ScheduledAt time.Time `json:"scheduled_at"`
-	SentAt      time.Time `json:"sent_at"`
-	Status      string    `json:"status"`
-	Message     string    `json:"message"`
+	ID          string     `json:"id"`
+	UserID      string     `json:"user_id"`
+	VocabItemID string     `json:"vocab_item_id"`
+	ScheduledAt time.Time  `json:"scheduled_at"`
+	SentAt      *time.Time `json:"sent_at,omitempty"`
+	Status      string     `json:"status"`
+	Message     string     `json:"message"`
 }

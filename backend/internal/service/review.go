@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"math"
 	"strings"
@@ -12,11 +13,11 @@ import (
 )
 
 type App struct {
-	store *repository.Store
+	store repository.AppRepository
 	clock clock.Clock
 }
 
-func NewApp(store *repository.Store, appClock clock.Clock) *App {
+func NewApp(store repository.AppRepository, appClock clock.Clock) *App {
 	return &App{store: store, clock: appClock}
 }
 
@@ -37,7 +38,7 @@ func (a *App) RequestMagicLink(email, baseURL string) (map[string]string, error)
 		Email:     email,
 		ExpiresAt: a.clock.Now().Add(15 * time.Minute),
 	}
-	if err := a.store.PutMagicLink(token); err != nil {
+	if err := a.store.PutMagicLink(context.Background(), token); err != nil {
 		return nil, err
 	}
 
@@ -49,36 +50,24 @@ func (a *App) RequestMagicLink(email, baseURL string) (map[string]string, error)
 }
 
 func (a *App) VerifyMagicLink(token string) (AuthResult, error) {
-	record, ok := a.store.GetMagicLink(token)
-	if !ok {
+	now := a.clock.Now()
+	newUser := domain.User{
+		ID:        newID("usr"),
+		CreatedAt: now,
+	}
+	newSession := domain.Session{
+		Token:     newID("sess"),
+		CreatedAt: now,
+		ExpiresAt: now.Add(30 * 24 * time.Hour),
+	}
+	user, session, err := a.store.ConsumeMagicLink(context.Background(), token, now, newUser, newSession)
+	if errors.Is(err, repository.ErrNotFound) {
 		return AuthResult{}, errors.New("invalid token")
 	}
-	if a.clock.Now().After(record.ExpiresAt) {
+	if errors.Is(err, repository.ErrExpired) {
 		return AuthResult{}, errors.New("token expired")
 	}
-
-	user, ok := a.store.FindUserByEmail(record.Email)
-	if !ok {
-		user = domain.User{
-			ID:        newID("usr"),
-			Email:     record.Email,
-			CreatedAt: a.clock.Now(),
-		}
-		if err := a.store.UpsertUser(user); err != nil {
-			return AuthResult{}, err
-		}
-	}
-
-	session := domain.Session{
-		Token:     newID("sess"),
-		UserID:    user.ID,
-		CreatedAt: a.clock.Now(),
-		ExpiresAt: a.clock.Now().Add(30 * 24 * time.Hour),
-	}
-	if err := a.store.PutSession(session); err != nil {
-		return AuthResult{}, err
-	}
-	if err := a.store.DeleteMagicLink(token); err != nil {
+	if err != nil {
 		return AuthResult{}, err
 	}
 
@@ -90,16 +79,15 @@ func (a *App) VerifyMagicLink(token string) (AuthResult, error) {
 }
 
 func (a *App) Session(token string) (domain.Session, domain.User, error) {
-	session, ok := a.store.GetSession(token)
+	session, user, ok, err := a.store.GetSessionUser(context.Background(), token)
+	if err != nil {
+		return domain.Session{}, domain.User{}, err
+	}
 	if !ok {
 		return domain.Session{}, domain.User{}, errors.New("unauthorized")
 	}
 	if session.ExpiresAt.Before(a.clock.Now()) {
 		return domain.Session{}, domain.User{}, errors.New("session expired")
-	}
-	user, ok := a.store.Users[session.UserID]
-	if !ok {
-		return domain.Session{}, domain.User{}, errors.New("user not found")
 	}
 	return session, user, nil
 }
@@ -144,17 +132,28 @@ func (a *App) CreateVocab(userID string, input CreateVocabInput) (domain.VocabIt
 		RepetitionCount: 0,
 		NextDueAt:       now,
 	}
-	if err := a.store.PutVocab(item, state); err != nil {
-		return domain.VocabItem{}, domain.ReviewState{}, err
+	var job *domain.NotificationJob
+	if !state.NextDueAt.After(now) {
+		job = &domain.NotificationJob{
+			ID:          newID("job"),
+			UserID:      userID,
+			VocabItemID: item.ID,
+			ScheduledAt: now,
+			Status:      "pending",
+			Message:     "Time to review your vocabulary.",
+		}
 	}
-	if _, err := a.ScheduleNotifications(userID); err != nil {
+	if err := a.store.CreateVocab(context.Background(), item, state, job); err != nil {
 		return domain.VocabItem{}, domain.ReviewState{}, err
 	}
 	return item, state, nil
 }
 
 func (a *App) UpdateVocab(userID, id string, input CreateVocabInput) (domain.VocabItem, error) {
-	item, ok := a.store.GetVocab(id)
+	item, ok, err := a.store.GetVocab(context.Background(), id)
+	if err != nil {
+		return domain.VocabItem{}, err
+	}
 	if !ok || item.UserID != userID {
 		return domain.VocabItem{}, errors.New("vocab not found")
 	}
@@ -168,7 +167,7 @@ func (a *App) UpdateVocab(userID, id string, input CreateVocabInput) (domain.Voc
 	item.SourceURL = strings.TrimSpace(defaultString(input.SourceURL, item.SourceURL))
 	item.Notes = strings.TrimSpace(defaultString(input.Notes, item.Notes))
 	item.UpdatedAt = a.clock.Now()
-	if err := a.store.UpdateVocab(item); err != nil {
+	if err := a.store.UpdateVocab(context.Background(), item); err != nil {
 		return domain.VocabItem{}, err
 	}
 	return item, nil
@@ -187,11 +186,13 @@ type VocabWithState struct {
 }
 
 func (a *App) ListVocab(userID string) ([]VocabWithState, error) {
-	items := a.store.ListVocabByUser(userID)
+	items, err := a.store.ListVocabByUser(context.Background(), userID)
+	if err != nil {
+		return nil, err
+	}
 	result := make([]VocabWithState, 0, len(items))
 	for _, item := range items {
-		state, _ := a.store.GetReviewState(item.ID)
-		result = append(result, VocabWithState{Item: item, State: state})
+		result = append(result, VocabWithState{Item: item.Item, State: item.State})
 	}
 	return result, nil
 }
@@ -202,20 +203,22 @@ type DueCard struct {
 }
 
 func (a *App) DueCards(userID string) ([]DueCard, error) {
-	states := a.store.ListDueStates(userID, a.clock.Now())
+	states, err := a.store.ListDueVocab(context.Background(), userID, a.clock.Now())
+	if err != nil {
+		return nil, err
+	}
 	result := make([]DueCard, 0, len(states))
 	for _, state := range states {
-		item, ok := a.store.GetVocab(state.VocabItemID)
-		if !ok || item.ArchivedAt != nil {
-			continue
-		}
-		result = append(result, DueCard{Item: item, State: state})
+		result = append(result, DueCard{Item: state.Item, State: state.State})
 	}
 	return result, nil
 }
 
 func (a *App) GradeReview(userID, vocabID string, grade domain.ReviewGrade) (domain.ReviewState, error) {
-	state, ok := a.store.GetReviewState(vocabID)
+	state, ok, err := a.store.GetReviewState(context.Background(), vocabID)
+	if err != nil {
+		return domain.ReviewState{}, err
+	}
 	if !ok || state.UserID != userID {
 		return domain.ReviewState{}, errors.New("review not found")
 	}
@@ -277,10 +280,18 @@ func (a *App) GradeReview(userID, vocabID string, grade domain.ReviewGrade) (dom
 		Grade:       grade,
 		ReviewedAt:  now,
 	}
-	if err := a.store.PutReviewResult(next, log); err != nil {
-		return domain.ReviewState{}, err
+	var job *domain.NotificationJob
+	if !next.NextDueAt.After(now) {
+		job = &domain.NotificationJob{
+			ID:          newID("job"),
+			UserID:      userID,
+			VocabItemID: vocabID,
+			ScheduledAt: now,
+			Status:      "pending",
+			Message:     "Time to review your vocabulary.",
+		}
 	}
-	if _, err := a.ScheduleNotifications(userID); err != nil {
+	if err := a.store.RecordReview(context.Background(), next, log, job); err != nil {
 		return domain.ReviewState{}, err
 	}
 	return next, nil
@@ -297,19 +308,32 @@ type CaptureInput struct {
 }
 
 func (a *App) CreateCapture(userID string, input CaptureInput) (DueCard, error) {
-	item, state, err := a.CreateVocab(userID, CreateVocabInput{
-		Term:            input.Term,
-		Kind:            domain.CardKindPhrase,
-		Meaning:         input.Meaning,
-		ExampleSentence: input.ExampleSentence,
-		SourceText:      input.Selection,
-		SourceURL:       input.PageURL,
-		Notes:           input.Notes,
-	})
-	if err != nil {
-		return DueCard{}, err
+	if strings.TrimSpace(input.Term) == "" {
+		return DueCard{}, errors.New("term is required")
 	}
-
+	now := a.clock.Now()
+	item := domain.VocabItem{
+		ID:              newID("voc"),
+		UserID:          userID,
+		Term:            strings.TrimSpace(input.Term),
+		Kind:            domain.CardKindPhrase,
+		Meaning:         strings.TrimSpace(input.Meaning),
+		ExampleSentence: strings.TrimSpace(input.ExampleSentence),
+		SourceText:      strings.TrimSpace(input.Selection),
+		SourceURL:       strings.TrimSpace(input.PageURL),
+		Notes:           strings.TrimSpace(input.Notes),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	state := domain.ReviewState{
+		VocabItemID:     item.ID,
+		UserID:          userID,
+		Status:          domain.ReviewStatusNew,
+		EaseFactor:      2.5,
+		IntervalDays:    0,
+		RepetitionCount: 0,
+		NextDueAt:       now,
+	}
 	capture := domain.CaptureSource{
 		ID:          newID("cap"),
 		UserID:      userID,
@@ -318,9 +342,17 @@ func (a *App) CreateCapture(userID string, input CaptureInput) (DueCard, error) 
 		Selection:   input.Selection,
 		PageTitle:   input.PageTitle,
 		PageURL:     input.PageURL,
-		CreatedAt:   a.clock.Now(),
+		CreatedAt:   now,
 	}
-	if err := a.store.PutCapture(capture); err != nil {
+	job := &domain.NotificationJob{
+		ID:          newID("job"),
+		UserID:      userID,
+		VocabItemID: item.ID,
+		ScheduledAt: now,
+		Status:      "pending",
+		Message:     "Time to review your vocabulary.",
+	}
+	if err := a.store.CreateCapturedVocab(context.Background(), item, state, capture, job); err != nil {
 		return DueCard{}, err
 	}
 
@@ -340,35 +372,19 @@ func (a *App) RegisterDevice(userID, platform, token string) (domain.DeviceToken
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	if err := a.store.UpsertDeviceToken(device); err != nil {
-		return domain.DeviceToken{}, err
-	}
-	return device, nil
-}
-
-func (a *App) ScheduleNotifications(userID string) ([]domain.NotificationJob, error) {
-	states := a.store.ListDueStates(userID, a.clock.Now())
-	jobs := make([]domain.NotificationJob, 0)
-	for _, state := range states {
-		if _, exists := a.store.FindPendingJob(userID, state.VocabItemID); exists {
-			continue
-		}
-		job := domain.NotificationJob{
-			ID:          newID("job"),
-			UserID:      userID,
-			VocabItemID: state.VocabItemID,
-			ScheduledAt: a.clock.Now(),
-			Status:      "pending",
-			Message:     "Time to review your vocabulary.",
-		}
-		if err := a.store.PutNotificationJob(job); err != nil {
-			return nil, err
-		}
-		jobs = append(jobs, job)
-	}
-	return jobs, nil
+	return a.store.UpsertDeviceToken(context.Background(), device)
 }
 
 func (a *App) ListNotificationJobs(userID string) []domain.NotificationJob {
-	return a.store.ListNotificationJobs(userID)
+	jobs, err := a.store.ListNotificationJobs(context.Background(), userID)
+	if err != nil {
+		return nil
+	}
+	return jobs
+}
+
+func (a *App) HealthCheck() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return a.store.HealthCheck(ctx)
 }

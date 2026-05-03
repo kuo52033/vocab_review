@@ -5,4 +5,5 @@ coverage
 .cache
 .vite
 backend/data
+.env
 *.swp
