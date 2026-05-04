@@ -3,10 +3,19 @@ import SwiftUI
 struct AddVocabView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @Environment(\.dismiss) private var dismiss
+    private let existingItem: VocabItem?
     @State private var term = ""
     @State private var meaning = ""
     @State private var exampleSentence = ""
     @State private var notes = ""
+
+    init(item: VocabItem? = nil) {
+        self.existingItem = item
+        _term = State(initialValue: item?.term ?? "")
+        _meaning = State(initialValue: item?.meaning ?? "")
+        _exampleSentence = State(initialValue: item?.example_sentence ?? "")
+        _notes = State(initialValue: item?.notes ?? "")
+    }
 
     var body: some View {
         NavigationStack {
@@ -30,7 +39,7 @@ struct AddVocabView: View {
                     }
                 }
             }
-            .navigationTitle("Add Card")
+            .navigationTitle(existingItem == nil ? "Add Card" : "Edit Card")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -42,13 +51,24 @@ struct AddVocabView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
                         Task {
-                            let created = await sessionStore.createVocab(
-                                term: term,
-                                meaning: meaning,
-                                exampleSentence: exampleSentence,
-                                notes: notes
-                            )
-                            if created {
+                            let saved: Bool
+                            if let existingItem {
+                                saved = await sessionStore.updateVocab(
+                                    cardID: existingItem.id,
+                                    term: term,
+                                    meaning: meaning,
+                                    exampleSentence: exampleSentence,
+                                    notes: notes
+                                )
+                            } else {
+                                saved = await sessionStore.createVocab(
+                                    term: term,
+                                    meaning: meaning,
+                                    exampleSentence: exampleSentence,
+                                    notes: notes
+                                )
+                            }
+                            if saved {
                                 dismiss()
                             }
                         }

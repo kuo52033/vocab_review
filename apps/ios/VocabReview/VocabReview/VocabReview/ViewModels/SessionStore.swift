@@ -14,6 +14,7 @@ final class SessionStore: ObservableObject {
     @Published var isLoadingDueCards: Bool = false
     @Published var isGrading: Bool = false
     @Published var isCreatingVocab: Bool = false
+    @Published var isDeletingVocab: Bool = false
 
     private let baseURL = URL(string: "http://localhost:8080")!
     private let sessionTokenKey = "session_token"
@@ -159,6 +160,74 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    func updateVocab(
+        cardID: String,
+        term: String,
+        meaning: String,
+        exampleSentence: String,
+        notes: String
+    ) async -> Bool {
+        guard isAuthenticated else { return false }
+
+        let trimmedTerm = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTerm.isEmpty else {
+            errorMessage = "Term is required."
+            return false
+        }
+
+        isCreatingVocab = true
+        errorMessage = ""
+        infoMessage = ""
+
+        do {
+            let _: UpdateVocabResponse = try await sendRequest(
+                path: "/vocab/\(cardID)",
+                method: "PATCH",
+                body: CreateVocabRequest(
+                    term: trimmedTerm,
+                    kind: "word",
+                    meaning: meaning.trimmingCharacters(in: .whitespacesAndNewlines),
+                    example_sentence: exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
+                    source_text: trimmedTerm,
+                    source_url: "",
+                    notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            )
+            infoMessage = "Card updated."
+            await loadDueCards()
+            isCreatingVocab = false
+            return true
+        } catch {
+            handleRequestError(error)
+            isCreatingVocab = false
+            return false
+        }
+    }
+
+    func deleteVocab(cardID: String) async -> Bool {
+        guard isAuthenticated else { return false }
+
+        isDeletingVocab = true
+        errorMessage = ""
+        infoMessage = ""
+
+        do {
+            let _: UpdateVocabResponse = try await sendRequest(
+                path: "/vocab/\(cardID)",
+                method: "DELETE",
+                body: EmptyRequest()
+            )
+            infoMessage = "Card deleted."
+            await loadDueCards()
+            isDeletingVocab = false
+            return true
+        } catch {
+            handleRequestError(error)
+            isDeletingVocab = false
+            return false
+        }
+    }
+
     func registerNotifications() async {
         let center = UNUserNotificationCenter.current()
         do {
@@ -178,6 +247,7 @@ final class SessionStore: ObservableObject {
         errorMessage = ""
         infoMessage = ""
         isCreatingVocab = false
+        isDeletingVocab = false
         UserDefaults.standard.removeObject(forKey: sessionTokenKey)
     }
 

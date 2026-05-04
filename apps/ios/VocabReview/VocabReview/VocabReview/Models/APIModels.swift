@@ -23,6 +23,10 @@ struct CreateVocabResponse: Codable {
     let state: ReviewState
 }
 
+struct UpdateVocabResponse: Codable {
+    let item: VocabItem
+}
+
 struct DueCard: Codable, Identifiable {
     let item: VocabItem
     let state: ReviewState
@@ -72,6 +76,8 @@ struct CreateVocabRequest: Codable {
     let source_url: String
     let notes: String
 }
+
+struct EmptyRequest: Encodable {}
 
 struct APIErrorResponse: Codable {
     let error: String

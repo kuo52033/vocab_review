@@ -44,3 +44,13 @@ func (s *Server) handleUpdateVocab(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"item": item})
 }
+
+func (s *Server) handleDeleteVocab(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/vocab/")
+	item, err := s.app.ArchiveVocab(userIDFromContext(r.Context()), id)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"item": item})
+}

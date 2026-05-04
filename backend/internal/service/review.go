@@ -173,6 +173,23 @@ func (a *App) UpdateVocab(userID, id string, input CreateVocabInput) (domain.Voc
 	return item, nil
 }
 
+func (a *App) ArchiveVocab(userID, id string) (domain.VocabItem, error) {
+	item, ok, err := a.store.GetVocab(context.Background(), id)
+	if err != nil {
+		return domain.VocabItem{}, err
+	}
+	if !ok || item.UserID != userID {
+		return domain.VocabItem{}, errors.New("vocab not found")
+	}
+	now := a.clock.Now()
+	item.ArchivedAt = &now
+	item.UpdatedAt = now
+	if err := a.store.UpdateVocab(context.Background(), item); err != nil {
+		return domain.VocabItem{}, err
+	}
+	return item, nil
+}
+
 func defaultString(next, current string) string {
 	if strings.TrimSpace(next) == "" {
 		return current

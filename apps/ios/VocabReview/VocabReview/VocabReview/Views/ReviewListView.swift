@@ -3,6 +3,8 @@ import SwiftUI
 struct ReviewListView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @State private var isAnswerRevealed = false
+    @State private var editingCard: DueCard?
+    @State private var deletingCard: DueCard?
 
     var body: some View {
         Group {
@@ -49,9 +51,37 @@ struct ReviewListView: View {
             }
         }
         .navigationTitle("Due Review")
+        .sheet(item: $editingCard) { card in
+            AddVocabView(item: card.item)
+                .environmentObject(sessionStore)
+        }
+        .alert("Delete card?", isPresented: deleteConfirmationPresented, presenting: deletingCard) { card in
+            Button("Delete", role: .destructive) {
+                Task {
+                    _ = await sessionStore.deleteVocab(cardID: card.item.id)
+                    deletingCard = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                deletingCard = nil
+            }
+        } message: { card in
+            Text("This removes \"\(card.item.term)\" from your review queue.")
+        }
         .onChange(of: sessionStore.currentCard?.id) { _, _ in
             isAnswerRevealed = false
         }
+    }
+
+    private var deleteConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { deletingCard != nil },
+            set: { isPresented in
+                if !isPresented {
+                    deletingCard = nil
+                }
+            }
+        )
     }
 
     @ViewBuilder
@@ -101,6 +131,24 @@ struct ReviewListView: View {
 
             if isAnswerRevealed {
                 VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Button("Edit") {
+                            editingCard = card
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(sessionStore.isGrading || sessionStore.isDeletingVocab)
+
+                        Button("Delete", role: .destructive) {
+                            deletingCard = card
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(sessionStore.isGrading || sessionStore.isDeletingVocab)
+                    }
+
+                    if sessionStore.isDeletingVocab {
+                        ProgressView("Deleting card...")
+                    }
+
                     if sessionStore.isGrading {
                         ProgressView("Submitting grade...")
                     }

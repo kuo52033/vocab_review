@@ -219,3 +219,47 @@ func TestReviewScheduling(t *testing.T) {
 		t.Fatalf("expected easy interval >= 3, got %d", state.IntervalDays)
 	}
 }
+
+func TestArchiveVocabRemovesCardFromDueReview(t *testing.T) {
+	repo := newFakeRepository()
+	app := NewApp(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
+	link, err := app.RequestMagicLink("test@example.com", "http://localhost:8080")
+	if err != nil {
+		t.Fatalf("request link: %v", err)
+	}
+	auth, err := app.VerifyMagicLink(link["token"])
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	item, _, err := app.CreateVocab(auth.User.ID, CreateVocabInput{
+		Term:    "ephemeral",
+		Meaning: "lasting briefly",
+	})
+	if err != nil {
+		t.Fatalf("create vocab: %v", err)
+	}
+
+	due, err := app.DueCards(auth.User.ID)
+	if err != nil {
+		t.Fatalf("due cards: %v", err)
+	}
+	if len(due) != 1 {
+		t.Fatalf("expected one due card before archive, got %d", len(due))
+	}
+
+	archived, err := app.ArchiveVocab(auth.User.ID, item.ID)
+	if err != nil {
+		t.Fatalf("archive vocab: %v", err)
+	}
+	if archived.ArchivedAt == nil {
+		t.Fatal("expected archived timestamp")
+	}
+
+	due, err = app.DueCards(auth.User.ID)
+	if err != nil {
+		t.Fatalf("due cards after archive: %v", err)
+	}
+	if len(due) != 0 {
+		t.Fatalf("expected archived card removed from due review, got %d", len(due))
+	}
+}
