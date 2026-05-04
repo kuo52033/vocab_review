@@ -4,6 +4,8 @@ struct LibraryView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @State private var editingCard: DueCard?
     @State private var deletingCard: DueCard?
+    @State private var searchText = ""
+    @State private var selectedStatus = LibraryStatusFilter.all
 
     var body: some View {
         Group {
@@ -24,10 +26,26 @@ struct LibraryView: View {
                 .refreshable {
                     await sessionStore.loadLibraryCards()
                 }
+            } else if filteredCards.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        filterPicker
+                        statusMessages
+                        Text("No matching cards")
+                            .font(.largeTitle.bold())
+                        Text("Try a different search or status filter.")
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                }
+                .refreshable {
+                    await sessionStore.loadLibraryCards()
+                }
             } else {
                 List {
+                    filterPicker
                     statusMessages
-                    ForEach(sessionStore.libraryCards) { card in
+                    ForEach(filteredCards) { card in
                         libraryRow(card)
                     }
                 }
@@ -37,6 +55,7 @@ struct LibraryView: View {
             }
         }
         .navigationTitle("Library")
+        .searchable(text: $searchText, prompt: "Search term or meaning")
         .sheet(item: $editingCard) { card in
             AddVocabView(item: card.item)
                 .environmentObject(sessionStore)
@@ -56,6 +75,16 @@ struct LibraryView: View {
         }
     }
 
+    private var filteredCards: [DueCard] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return sessionStore.libraryCards.filter { card in
+            selectedStatus.matches(card.state.status)
+                && (query.isEmpty
+                    || card.item.term.lowercased().contains(query)
+                    || card.item.meaning.lowercased().contains(query))
+        }
+    }
+
     private var deleteConfirmationPresented: Binding<Bool> {
         Binding(
             get: { deletingCard != nil },
@@ -65,6 +94,15 @@ struct LibraryView: View {
                 }
             }
         )
+    }
+
+    private var filterPicker: some View {
+        Picker("Status", selection: $selectedStatus) {
+            ForEach(LibraryStatusFilter.allCases) { filter in
+                Text(filter.title).tag(filter)
+            }
+        }
+        .pickerStyle(.segmented)
     }
 
     @ViewBuilder
@@ -127,5 +165,31 @@ struct LibraryView: View {
             return value
         }
         return date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+private enum LibraryStatusFilter: String, CaseIterable, Identifiable {
+    case all
+    case new
+    case learning
+    case review
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all:
+            return "All"
+        case .new:
+            return "New"
+        case .learning:
+            return "Learning"
+        case .review:
+            return "Review"
+        }
+    }
+
+    func matches(_ status: String) -> Bool {
+        self == .all || rawValue == status
     }
 }
