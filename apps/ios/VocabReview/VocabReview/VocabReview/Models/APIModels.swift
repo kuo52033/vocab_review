@@ -18,6 +18,11 @@ struct DueResponse: Codable {
     let items: [DueCard]
 }
 
+struct CreateVocabResponse: Codable {
+    let item: VocabItem
+    let state: ReviewState
+}
+
 struct DueCard: Codable, Identifiable {
     let item: VocabItem
     let state: ReviewState
@@ -56,6 +61,16 @@ struct MagicLinkRequest: Codable {
 
 struct VerifyRequest: Codable {
     let token: String
+}
+
+struct CreateVocabRequest: Codable {
+    let term: String
+    let kind: String
+    let meaning: String
+    let example_sentence: String
+    let source_text: String
+    let source_url: String
+    let notes: String
 }
 
 struct APIErrorResponse: Codable {

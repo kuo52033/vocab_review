@@ -13,6 +13,7 @@ final class SessionStore: ObservableObject {
     @Published var isSigningIn: Bool = false
     @Published var isLoadingDueCards: Bool = false
     @Published var isGrading: Bool = false
+    @Published var isCreatingVocab: Bool = false
 
     private let baseURL = URL(string: "http://localhost:8080")!
     private let sessionTokenKey = "session_token"
@@ -115,6 +116,49 @@ final class SessionStore: ObservableObject {
         isGrading = false
     }
 
+    func createVocab(
+        term: String,
+        meaning: String,
+        exampleSentence: String,
+        notes: String
+    ) async -> Bool {
+        guard isAuthenticated else { return false }
+
+        let trimmedTerm = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTerm.isEmpty else {
+            errorMessage = "Term is required."
+            return false
+        }
+
+        isCreatingVocab = true
+        errorMessage = ""
+        infoMessage = ""
+
+        do {
+            let _: CreateVocabResponse = try await sendRequest(
+                path: "/vocab",
+                method: "POST",
+                body: CreateVocabRequest(
+                    term: trimmedTerm,
+                    kind: "word",
+                    meaning: meaning.trimmingCharacters(in: .whitespacesAndNewlines),
+                    example_sentence: exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
+                    source_text: trimmedTerm,
+                    source_url: "",
+                    notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            )
+            infoMessage = "Card added."
+            await loadDueCards()
+            isCreatingVocab = false
+            return true
+        } catch {
+            handleRequestError(error)
+            isCreatingVocab = false
+            return false
+        }
+    }
+
     func registerNotifications() async {
         let center = UNUserNotificationCenter.current()
         do {
@@ -133,6 +177,7 @@ final class SessionStore: ObservableObject {
         requestedMagicLink = nil
         errorMessage = ""
         infoMessage = ""
+        isCreatingVocab = false
         UserDefaults.standard.removeObject(forKey: sessionTokenKey)
     }
 

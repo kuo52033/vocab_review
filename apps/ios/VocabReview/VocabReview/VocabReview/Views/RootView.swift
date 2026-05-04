@@ -5,6 +5,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var email = ""
     @State private var magicToken = ""
+    @State private var isAddingVocab = false
 
     var body: some View {
         NavigationStack {
@@ -13,6 +14,9 @@ struct RootView: View {
                     .task { await sessionStore.loadDueCards() }
                     .toolbar {
                         ToolbarItemGroup(placement: .topBarTrailing) {
+                            Button("Add") {
+                                isAddingVocab = true
+                            }
                             Button("Notify") {
                                 Task { await sessionStore.registerNotifications() }
                             }
@@ -24,6 +28,10 @@ struct RootView: View {
             } else {
                 signInView
             }
+        }
+        .sheet(isPresented: $isAddingVocab) {
+            AddVocabView()
+                .environmentObject(sessionStore)
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active, sessionStore.isAuthenticated else { return }
