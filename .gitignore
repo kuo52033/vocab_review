@@ -7,3 +7,6 @@ coverage
 backend/data
 .env
 *.swp
+.xcode-derived-data/
+*.xcuserstate
+xcuserdata/
