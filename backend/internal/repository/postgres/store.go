@@ -225,6 +225,7 @@ func (s *Store) ListVocabByUser(ctx context.Context, userID string) ([]repositor
 		FROM vocab_items v
 		JOIN review_states r ON r.vocab_item_id = v.id
 		WHERE v.user_id = $1
+		  AND v.archived_at IS NULL
 		ORDER BY v.created_at ASC
 	`, userID)
 	if err != nil {

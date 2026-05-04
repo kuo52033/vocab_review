@@ -6,7 +6,7 @@ This repository is a small monorepo for the Vocab Review product.
 - `backend/`: Go API server. Entry point lives in `backend/cmd/api`, core logic in `backend/internal/{httpapi,service,repository,domain,clock}`, the Postgres implementation lives in `backend/internal/repository/postgres`, and SQL migrations live in `backend/migrations`.
 - `apps/web/`: React + TypeScript app built with Vite. Source files live in `apps/web/src`.
 - `apps/chrome-extension/`: React + TypeScript Chrome extension. Source files live in `apps/chrome-extension/src`, static manifest assets in `public/`, and build output in `dist/`.
-- `apps/ios/`: SwiftUI iOS shell under `apps/ios/VocabReview`.
+- `apps/ios/`: SwiftUI iOS app under `apps/ios/VocabReview`. The active Xcode project is `apps/ios/VocabReview/VocabReview/VocabReview.xcodeproj`, with source files in `apps/ios/VocabReview/VocabReview/VocabReview/{Models,ViewModels,Views}`.
 
 Prefer changes inside the existing layer for each feature rather than mixing HTTP, business, and persistence concerns.
 
@@ -20,9 +20,12 @@ Prefer changes inside the existing layer for each feature rather than mixing HTT
 - `npm run build:web` from the repo root: create the production web bundle.
 - `npm run build:extension` from the repo root: build the Chrome extension into `apps/chrome-extension/dist`.
 - `gofmt -w cmd internal` from `backend/`: format Go sources before committing.
+- `xcodebuild -project apps/ios/VocabReview/VocabReview/VocabReview.xcodeproj -scheme VocabReview -destination 'generic/platform=iOS Simulator' -derivedDataPath .xcode-derived-data build`: verify the iOS app builds.
 
 ## Coding Style & Naming Conventions
 Go code should follow `gofmt` defaults and keep packages focused. React and TypeScript files use 2-space indentation, `PascalCase` for components, and `camelCase` for hooks, helpers, and local state. Keep filenames descriptive and lowercase for Go, and match component names for React files when new components are introduced.
+
+SwiftUI screens live in `Views/`, app state and API calls live in `ViewModels/SessionStore.swift`, and API DTOs live in `Models/APIModels.swift`. Keep the iOS `Review` tab focused on due cards and the `Library` tab focused on all active cards.
 
 Do not edit generated output in `dist/` or dependencies in `node_modules/`.
 

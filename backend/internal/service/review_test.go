@@ -118,7 +118,7 @@ func (f *fakeRepository) UpdateVocab(_ context.Context, item domain.VocabItem) e
 func (f *fakeRepository) ListVocabByUser(_ context.Context, userID string) ([]repository.VocabWithState, error) {
 	items := make([]repository.VocabWithState, 0)
 	for _, item := range f.vocab {
-		if item.UserID != userID {
+		if item.UserID != userID || item.ArchivedAt != nil {
 			continue
 		}
 		items = append(items, repository.VocabWithState{Item: item, State: f.reviewStates[item.ID]})
@@ -253,6 +253,14 @@ func TestArchiveVocabRemovesCardFromDueReview(t *testing.T) {
 	}
 	if archived.ArchivedAt == nil {
 		t.Fatal("expected archived timestamp")
+	}
+
+	listed, err := app.ListVocab(auth.User.ID)
+	if err != nil {
+		t.Fatalf("list vocab after archive: %v", err)
+	}
+	if len(listed) != 0 {
+		t.Fatalf("expected archived card removed from library, got %d", len(listed))
 	}
 
 	due, err = app.DueCards(auth.User.ID)

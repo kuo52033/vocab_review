@@ -18,6 +18,10 @@ struct DueResponse: Codable {
     let items: [DueCard]
 }
 
+struct LibraryResponse: Codable {
+    let items: [DueCard]
+}
+
 struct CreateVocabResponse: Codable {
     let item: VocabItem
     let state: ReviewState
@@ -36,6 +40,7 @@ struct DueCard: Codable, Identifiable {
 
 struct VocabItem: Codable {
     let id: String
+    let user_id: String
     let term: String
     let kind: String
     let meaning: String
@@ -43,6 +48,8 @@ struct VocabItem: Codable {
     let source_text: String
     let source_url: String
     let notes: String
+    let created_at: String
+    let updated_at: String
 }
 
 struct ReviewState: Codable {

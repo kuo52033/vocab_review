@@ -6,12 +6,14 @@ import UserNotifications
 final class SessionStore: ObservableObject {
     @Published var sessionToken: String = UserDefaults.standard.string(forKey: "session_token") ?? ""
     @Published var dueCards: [DueCard] = []
+    @Published var libraryCards: [DueCard] = []
     @Published var errorMessage: String = ""
     @Published var infoMessage: String = ""
     @Published var requestedMagicLink: MagicLinkResponse?
     @Published var isRequestingMagicLink: Bool = false
     @Published var isSigningIn: Bool = false
     @Published var isLoadingDueCards: Bool = false
+    @Published var isLoadingLibraryCards: Bool = false
     @Published var isGrading: Bool = false
     @Published var isCreatingVocab: Bool = false
     @Published var isDeletingVocab: Bool = false
@@ -73,7 +75,7 @@ final class SessionStore: ObservableObject {
             sessionToken = response.session.token
             UserDefaults.standard.set(response.session.token, forKey: sessionTokenKey)
             requestedMagicLink = nil
-            await loadDueCards()
+            await refreshAuthenticatedData()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -97,6 +99,29 @@ final class SessionStore: ObservableObject {
         isLoadingDueCards = false
     }
 
+    func loadLibraryCards() async {
+        guard isAuthenticated else { return }
+
+        isLoadingLibraryCards = true
+        errorMessage = ""
+
+        do {
+            let response: LibraryResponse = try await sendRequest(path: "/vocab")
+            libraryCards = response.items.sorted { lhs, rhs in
+                lhs.item.createdAtDate > rhs.item.createdAtDate
+            }
+        } catch {
+            handleRequestError(error)
+        }
+
+        isLoadingLibraryCards = false
+    }
+
+    func refreshAuthenticatedData() async {
+        await loadDueCards()
+        await loadLibraryCards()
+    }
+
     func grade(cardID: String, grade: String) async {
         guard isAuthenticated else { return }
 
@@ -109,7 +134,7 @@ final class SessionStore: ObservableObject {
                 method: "POST",
                 body: GradeRequest(grade: grade)
             )
-            await loadDueCards()
+            await refreshAuthenticatedData()
         } catch {
             handleRequestError(error)
         }
@@ -150,7 +175,7 @@ final class SessionStore: ObservableObject {
                 )
             )
             infoMessage = "Card added."
-            await loadDueCards()
+            await refreshAuthenticatedData()
             isCreatingVocab = false
             return true
         } catch {
@@ -194,7 +219,7 @@ final class SessionStore: ObservableObject {
                 )
             )
             infoMessage = "Card updated."
-            await loadDueCards()
+            await refreshAuthenticatedData()
             isCreatingVocab = false
             return true
         } catch {
@@ -218,7 +243,7 @@ final class SessionStore: ObservableObject {
                 body: EmptyRequest()
             )
             infoMessage = "Card deleted."
-            await loadDueCards()
+            await refreshAuthenticatedData()
             isDeletingVocab = false
             return true
         } catch {
@@ -243,6 +268,7 @@ final class SessionStore: ObservableObject {
     func signOut() {
         sessionToken = ""
         dueCards = []
+        libraryCards = []
         requestedMagicLink = nil
         errorMessage = ""
         infoMessage = ""
@@ -329,6 +355,20 @@ final class SessionStore: ObservableObject {
         }
         errorMessage = error.localizedDescription
     }
+}
+
+extension VocabItem {
+    var createdAtDate: Date {
+        ISO8601DateFormatter.vocabReview.date(from: created_at) ?? .distantPast
+    }
+}
+
+extension ISO8601DateFormatter {
+    static let vocabReview: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 }
 
 struct ReviewStateResponse: Codable {

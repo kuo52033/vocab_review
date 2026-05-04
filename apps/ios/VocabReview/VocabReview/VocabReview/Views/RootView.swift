@@ -10,21 +10,31 @@ struct RootView: View {
     var body: some View {
         NavigationStack {
             if sessionStore.isAuthenticated {
-                ReviewListView()
-                    .task { await sessionStore.loadDueCards() }
-                    .toolbar {
-                        ToolbarItemGroup(placement: .topBarTrailing) {
-                            Button("Add") {
-                                isAddingVocab = true
-                            }
-                            Button("Notify") {
-                                Task { await sessionStore.registerNotifications() }
-                            }
-                            Button("Sign out") {
-                                sessionStore.signOut()
-                            }
+                TabView {
+                    ReviewListView()
+                        .tabItem {
+                            Label("Review", systemImage: "rectangle.stack")
+                        }
+
+                    LibraryView()
+                        .tabItem {
+                            Label("Library", systemImage: "books.vertical")
+                        }
+                }
+                .task { await sessionStore.refreshAuthenticatedData() }
+                .toolbar {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button("Add") {
+                            isAddingVocab = true
+                        }
+                        Button("Notify") {
+                            Task { await sessionStore.registerNotifications() }
+                        }
+                        Button("Sign out") {
+                            sessionStore.signOut()
                         }
                     }
+                }
             } else {
                 signInView
             }
@@ -35,7 +45,7 @@ struct RootView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active, sessionStore.isAuthenticated else { return }
-            Task { await sessionStore.loadDueCards() }
+            Task { await sessionStore.refreshAuthenticatedData() }
         }
     }
 
