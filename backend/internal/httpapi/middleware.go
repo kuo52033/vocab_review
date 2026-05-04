@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type contextKey string
@@ -20,6 +22,54 @@ func withCORS(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *statusRecorder) Write(data []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	written, err := r.ResponseWriter.Write(data)
+	r.bytes += written
+	return written, err
+}
+
+func withRequestLogging(logger *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		startedAt := time.Now()
+		recorder := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(recorder, r)
+
+		status := recorder.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+
+		logger.Info(
+			"request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", status,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+			"bytes", recorder.bytes,
+			"remote_addr", r.RemoteAddr,
+		)
 	})
 }
 

@@ -1,27 +1,30 @@
 package httpapi
 
 import (
+	"log/slog"
 	"net/http"
 
 	"vocabreview/backend/internal/service"
 )
 
 type Server struct {
-	app *service.App
-	mux *http.ServeMux
+	app    *service.App
+	logger *slog.Logger
+	mux    *http.ServeMux
 }
 
-func NewServer(app *service.App) *Server {
+func NewServer(app *service.App, logger *slog.Logger) *Server {
 	server := &Server{
-		app: app,
-		mux: http.NewServeMux(),
+		app:    app,
+		logger: logger,
+		mux:    http.NewServeMux(),
 	}
 	server.routes()
 	return server
 }
 
 func (s *Server) Handler() http.Handler {
-	return withCORS(s.mux)
+	return withRequestLogging(s.logger, withCORS(s.mux))
 }
 
 func (s *Server) routes() {
