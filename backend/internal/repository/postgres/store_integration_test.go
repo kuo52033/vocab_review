@@ -136,6 +136,17 @@ func TestStoreLifecycle(t *testing.T) {
 		t.Fatalf("unexpected review state: ok=%v state=%+v", ok, loadedState)
 	}
 
+	history, err := store.ListReviewHistory(ctx, user.ID, 10)
+	if err != nil {
+		t.Fatalf("list review history: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected one review history entry, got %d", len(history))
+	}
+	if history[0].Log.ID != log.ID || history[0].Item.ID != item.ID || history[0].State.IntervalDays != 1 {
+		t.Fatalf("unexpected review history: %+v", history)
+	}
+
 	device, err := store.UpsertDeviceToken(ctx, domain.DeviceToken{
 		ID:        "dev_test",
 		UserID:    user.ID,

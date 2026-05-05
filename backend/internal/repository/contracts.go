@@ -18,6 +18,12 @@ type VocabWithState struct {
 	State domain.ReviewState
 }
 
+type ReviewHistoryEntry struct {
+	Log   domain.ReviewLog
+	Item  domain.VocabItem
+	State domain.ReviewState
+}
+
 type HealthChecker interface {
 	HealthCheck(ctx context.Context) error
 }
@@ -37,6 +43,7 @@ type VocabRepository interface {
 	ListDueVocab(ctx context.Context, userID string, now time.Time) ([]VocabWithState, error)
 	GetReviewState(ctx context.Context, vocabID string) (domain.ReviewState, bool, error)
 	RecordReview(ctx context.Context, state domain.ReviewState, log domain.ReviewLog, job *domain.NotificationJob) error
+	ListReviewHistory(ctx context.Context, userID string, limit int) ([]ReviewHistoryEntry, error)
 }
 
 type DeviceRepository interface {

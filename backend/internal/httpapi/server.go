@@ -39,6 +39,7 @@ func (s *Server) routes() {
 	s.mux.Handle("DELETE /vocab/", s.requireAuth(http.HandlerFunc(s.handleDeleteVocab)))
 
 	s.mux.Handle("GET /reviews/due", s.requireAuth(http.HandlerFunc(s.handleDueCards)))
+	s.mux.Handle("GET /reviews/history", s.requireAuth(http.HandlerFunc(s.handleReviewHistory)))
 	s.mux.Handle("POST /reviews/", s.requireAuth(http.HandlerFunc(s.handleGradeReview)))
 
 	s.mux.Handle("POST /captures", s.requireAuth(http.HandlerFunc(s.handleCapture)))

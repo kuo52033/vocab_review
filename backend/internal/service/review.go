@@ -219,6 +219,12 @@ type DueCard struct {
 	State domain.ReviewState `json:"state"`
 }
 
+type ReviewHistoryEntry struct {
+	Log   domain.ReviewLog   `json:"log"`
+	Item  domain.VocabItem   `json:"item"`
+	State domain.ReviewState `json:"state"`
+}
+
 func (a *App) DueCards(userID string) ([]DueCard, error) {
 	states, err := a.store.ListDueVocab(context.Background(), userID, a.clock.Now())
 	if err != nil {
@@ -312,6 +318,18 @@ func (a *App) GradeReview(userID, vocabID string, grade domain.ReviewGrade) (dom
 		return domain.ReviewState{}, err
 	}
 	return next, nil
+}
+
+func (a *App) ReviewHistory(userID string) ([]ReviewHistoryEntry, error) {
+	entries, err := a.store.ListReviewHistory(context.Background(), userID, 20)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]ReviewHistoryEntry, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, ReviewHistoryEntry{Log: entry.Log, Item: entry.Item, State: entry.State})
+	}
+	return result, nil
 }
 
 type CaptureInput struct {

@@ -28,6 +28,20 @@ export interface VocabWithState {
   state: ReviewState;
 }
 
+export interface ReviewLog {
+  id: string;
+  user_id: string;
+  vocab_item_id: string;
+  grade: ReviewGrade;
+  reviewed_at: string;
+}
+
+export interface ReviewHistoryEntry {
+  log: ReviewLog;
+  item: VocabItem;
+  state: ReviewState;
+}
+
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8080";
 
 function getToken() {
@@ -94,6 +108,10 @@ export async function deleteVocab(vocabID: string) {
 
 export async function listDue() {
   return request<{ items: VocabWithState[] }>("/reviews/due");
+}
+
+export async function listReviewHistory() {
+  return request<{ items: ReviewHistoryEntry[] }>("/reviews/history");
 }
 
 export async function gradeReview(vocabID: string, grade: ReviewGrade) {

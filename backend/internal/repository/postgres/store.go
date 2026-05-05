@@ -296,6 +296,62 @@ func (s *Store) RecordReview(ctx context.Context, state domain.ReviewState, log 
 	})
 }
 
+func (s *Store) ListReviewHistory(ctx context.Context, userID string, limit int) ([]repository.ReviewHistoryEntry, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			l.id, l.user_id, l.vocab_item_id, l.grade, l.reviewed_at,
+			v.id, v.user_id, v.term, v.kind, v.meaning, v.example_sentence, v.source_text, v.source_url, v.notes, v.created_at, v.updated_at, v.archived_at,
+			r.vocab_item_id, r.user_id, r.status, r.ease_factor, r.interval_days, r.repetition_count, r.last_reviewed_at, r.next_due_at, r.consecutive_again
+		FROM review_logs l
+		JOIN vocab_items v ON v.id = l.vocab_item_id
+		JOIN review_states r ON r.vocab_item_id = l.vocab_item_id
+		WHERE l.user_id = $1
+		ORDER BY l.reviewed_at DESC
+		LIMIT $2
+	`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]repository.ReviewHistoryEntry, 0)
+	for rows.Next() {
+		var entry repository.ReviewHistoryEntry
+		if err := rows.Scan(
+			&entry.Log.ID,
+			&entry.Log.UserID,
+			&entry.Log.VocabItemID,
+			&entry.Log.Grade,
+			&entry.Log.ReviewedAt,
+			&entry.Item.ID,
+			&entry.Item.UserID,
+			&entry.Item.Term,
+			&entry.Item.Kind,
+			&entry.Item.Meaning,
+			&entry.Item.ExampleSentence,
+			&entry.Item.SourceText,
+			&entry.Item.SourceURL,
+			&entry.Item.Notes,
+			&entry.Item.CreatedAt,
+			&entry.Item.UpdatedAt,
+			&entry.Item.ArchivedAt,
+			&entry.State.VocabItemID,
+			&entry.State.UserID,
+			&entry.State.Status,
+			&entry.State.EaseFactor,
+			&entry.State.IntervalDays,
+			&entry.State.RepetitionCount,
+			&entry.State.LastReviewedAt,
+			&entry.State.NextDueAt,
+			&entry.State.ConsecutiveAgain,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, entry)
+	}
+	return result, rows.Err()
+}
+
 func (s *Store) UpsertDeviceToken(ctx context.Context, token domain.DeviceToken) (domain.DeviceToken, error) {
 	var stored domain.DeviceToken
 	err := s.pool.QueryRow(ctx, `

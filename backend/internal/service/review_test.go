@@ -160,6 +160,31 @@ func (f *fakeRepository) RecordReview(_ context.Context, state domain.ReviewStat
 	return nil
 }
 
+func (f *fakeRepository) ListReviewHistory(_ context.Context, userID string, limit int) ([]repository.ReviewHistoryEntry, error) {
+	entries := make([]repository.ReviewHistoryEntry, 0)
+	for _, log := range f.reviewLogs {
+		if log.UserID != userID {
+			continue
+		}
+		entries = append(entries, repository.ReviewHistoryEntry{
+			Log:   log,
+			Item:  f.vocab[log.VocabItemID],
+			State: f.reviewStates[log.VocabItemID],
+		})
+	}
+	for i := 0; i < len(entries)-1; i++ {
+		for j := i + 1; j < len(entries); j++ {
+			if entries[j].Log.ReviewedAt.After(entries[i].Log.ReviewedAt) {
+				entries[i], entries[j] = entries[j], entries[i]
+			}
+		}
+	}
+	if len(entries) > limit {
+		entries = entries[:limit]
+	}
+	return entries, nil
+}
+
 func (f *fakeRepository) UpsertDeviceToken(_ context.Context, token domain.DeviceToken) (domain.DeviceToken, error) {
 	for id, existing := range f.deviceTokens {
 		if existing.UserID == token.UserID && existing.Token == token.Token {
@@ -217,6 +242,40 @@ func TestReviewScheduling(t *testing.T) {
 	}
 	if state.IntervalDays < 3 {
 		t.Fatalf("expected easy interval >= 3, got %d", state.IntervalDays)
+	}
+}
+
+func TestReviewHistoryReturnsRecentReviewedCards(t *testing.T) {
+	repo := newFakeRepository()
+	app := NewApp(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
+	link, err := app.RequestMagicLink("test@example.com", "http://localhost:8080")
+	if err != nil {
+		t.Fatalf("request link: %v", err)
+	}
+	auth, err := app.VerifyMagicLink(link["token"])
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	item, _, err := app.CreateVocab(auth.User.ID, CreateVocabInput{
+		Term:    "serendipity",
+		Meaning: "a happy accident",
+	})
+	if err != nil {
+		t.Fatalf("create vocab: %v", err)
+	}
+	if _, err := app.GradeReview(auth.User.ID, item.ID, domain.ReviewGradeGood); err != nil {
+		t.Fatalf("grade review: %v", err)
+	}
+
+	history, err := app.ReviewHistory(auth.User.ID)
+	if err != nil {
+		t.Fatalf("review history: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected one history entry, got %d", len(history))
+	}
+	if history[0].Item.ID != item.ID || history[0].Log.Grade != domain.ReviewGradeGood {
+		t.Fatalf("unexpected history entry: %+v", history[0])
 	}
 }
 
