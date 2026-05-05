@@ -19,24 +19,42 @@ struct AddVocabView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Card") {
-                    TextField("Term", text: $term)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    TextField("Meaning", text: $meaning, axis: .vertical)
-                        .lineLimit(2...4)
-                    TextField("Example sentence", text: $exampleSentence, axis: .vertical)
-                        .lineLimit(2...4)
-                    TextField("Notes", text: $notes, axis: .vertical)
-                        .lineLimit(2...4)
-                }
+            ZStack {
+                ReadingDeskBackground()
 
-                if !sessionStore.errorMessage.isEmpty {
-                    Section {
-                        Text(sessionStore.errorMessage)
-                            .foregroundStyle(.red)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(existingItem == nil ? "Add a card" : "Edit card")
+                                .readingTitle()
+                            Text("Keep the wording plain and useful for review later.")
+                                .readingMuted()
+                        }
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            TextField("Term", text: $term)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .textFieldStyle(.roundedBorder)
+                            TextField("Meaning", text: $meaning, axis: .vertical)
+                                .lineLimit(2...4)
+                                .textFieldStyle(.roundedBorder)
+                            TextField("Example sentence", text: $exampleSentence, axis: .vertical)
+                                .lineLimit(2...4)
+                                .textFieldStyle(.roundedBorder)
+                            TextField("Notes", text: $notes, axis: .vertical)
+                                .lineLimit(2...4)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        .readingCard()
+
+                        if !sessionStore.errorMessage.isEmpty {
+                            Text(sessionStore.errorMessage)
+                                .foregroundStyle(AppTheme.danger)
+                                .readingCard()
+                        }
                     }
+                    .padding()
                 }
             }
             .navigationTitle(existingItem == nil ? "Add Card" : "Edit Card")

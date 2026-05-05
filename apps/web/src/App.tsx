@@ -1,13 +1,16 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
   createVocab,
+  deleteVocab,
   gradeReview,
   listDue,
   listNotificationJobs,
   listVocab,
   requestMagicLink,
   setToken,
+  updateVocab,
   verifyMagicLink,
+  VocabItem,
   VocabWithState
 } from "./api";
 
@@ -25,6 +28,8 @@ type AuthState = {
   token: string;
 };
 
+type StatusFilter = "all" | "new" | "learning" | "review";
+
 const emptyForm: CardDraft = {
   term: "",
   kind: "word",
@@ -33,12 +38,37 @@ const emptyForm: CardDraft = {
   notes: ""
 };
 
+function draftFromItem(item: VocabItem): CardDraft {
+  return {
+    term: item.term,
+    kind: item.kind,
+    meaning: item.meaning,
+    example_sentence: item.example_sentence,
+    notes: item.notes
+  };
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
 export function App() {
   const [auth, setAuth] = useState<AuthState>({ email: "", token: localStorage.getItem("session_token") ?? "" });
   const [vocab, setVocab] = useState<VocabWithState[]>([]);
   const [due, setDue] = useState<VocabWithState[]>([]);
   const [jobs, setJobs] = useState<Array<{ id: string; vocab_item_id: string; status: string; scheduled_at: string }>>([]);
   const [form, setForm] = useState(emptyForm);
+  const [editingID, setEditingID] = useState("");
+  const [editDraft, setEditDraft] = useState<CardDraft>(emptyForm);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -59,15 +89,33 @@ export function App() {
     refresh();
   }, [auth.token]);
 
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleVocab = vocab
+    .filter(({ item }) => !item.archived_at)
+    .filter(({ state }) => statusFilter === "all" || state.status === statusFilter)
+    .filter(({ item }) => {
+      if (!normalizedQuery) return true;
+      return [item.term, item.meaning, item.example_sentence, item.notes].join(" ").toLowerCase().includes(normalizedQuery);
+    })
+    .sort((left, right) => new Date(right.item.created_at).getTime() - new Date(left.item.created_at).getTime());
+
   async function refresh() {
-    const [vocabResponse, dueResponse, jobsResponse] = await Promise.all([
-      listVocab(),
-      listDue(),
-      listNotificationJobs()
-    ]);
-    setVocab(vocabResponse.items);
-    setDue(dueResponse.items);
-    setJobs(jobsResponse.items);
+    setIsRefreshing(true);
+    try {
+      const [vocabResponse, dueResponse, jobsResponse] = await Promise.all([
+        listVocab(),
+        listDue(),
+        listNotificationJobs()
+      ]);
+      setVocab(vocabResponse.items);
+      setDue(dueResponse.items);
+      setJobs(jobsResponse.items);
+      setError("");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setIsRefreshing(false);
+    }
   }
 
   async function handleRequestLink(event: FormEvent) {
@@ -83,12 +131,47 @@ export function App() {
 
   async function handleCreateVocab(event: FormEvent) {
     event.preventDefault();
+    setIsSaving(true);
     try {
       await createVocab(form);
       setForm(emptyForm);
       await refresh();
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleSaveEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editingID) return;
+    setIsSaving(true);
+    try {
+      await updateVocab(editingID, editDraft);
+      setEditingID("");
+      setEditDraft(emptyForm);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleArchive(id: string) {
+    setIsSaving(true);
+    try {
+      await deleteVocab(id);
+      if (editingID === id) {
+        setEditingID("");
+        setEditDraft(emptyForm);
+      }
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -101,9 +184,14 @@ export function App() {
     }
   }
 
+  function startEditing(item: VocabItem) {
+    setEditingID(item.id);
+    setEditDraft(draftFromItem(item));
+  }
+
   if (!auth.token) {
     return (
-      <main className="shell">
+      <main className="shell auth-shell">
         <section className="panel auth">
           <p className="eyebrow">Vocabulary review system</p>
           <h1>Sign in with a magic link</h1>
@@ -133,7 +221,7 @@ export function App() {
       <header className="hero">
         <div>
           <p className="eyebrow">Personal English memory system</p>
-          <h1>Review what is due before it fades.</h1>
+          <h1>A quiet desk for keeping words alive.</h1>
         </div>
         <div className="stats">
           <article>
@@ -152,8 +240,11 @@ export function App() {
       </header>
 
       <section className="grid">
-        <section className="panel">
-          <h2>Quick add</h2>
+        <section className="panel quick-add">
+          <div className="section-heading">
+            <p className="eyebrow">Capture</p>
+            <h2>Quick add</h2>
+          </div>
           <form className="stack" onSubmit={handleCreateVocab}>
             <input value={form.term} placeholder="Word or phrase" onChange={(event) => setForm({ ...form, term: event.target.value })} />
             <select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as "word" | "phrase" })}>
@@ -167,19 +258,22 @@ export function App() {
               onChange={(event) => setForm({ ...form, example_sentence: event.target.value })}
             />
             <textarea value={form.notes} placeholder="Notes" onChange={(event) => setForm({ ...form, notes: event.target.value })} />
-            <button type="submit">Save card</button>
+            <button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save card"}</button>
           </form>
         </section>
 
-        <section className="panel">
-          <h2>Due now</h2>
+        <section className="panel due-panel">
+          <div className="section-heading">
+            <p className="eyebrow">Today</p>
+            <h2>Due now</h2>
+          </div>
           <div className="review-list">
             {due.map(({ item, state }) => (
               <article className="review-card" key={item.id}>
                 <div>
                   <p className="term">{item.term}</p>
                   <p>{item.meaning || "Meaning not added yet."}</p>
-                  <small>Next due: {new Date(state.next_due_at).toLocaleString()}</small>
+                  <small>Next due: {formatDate(state.next_due_at)}</small>
                 </div>
                 <div className="grade-row">
                   {(["again", "hard", "good", "easy"] as const).map((grade) => (
@@ -190,32 +284,111 @@ export function App() {
                 </div>
               </article>
             ))}
-            {due.length === 0 ? <p className="muted">No cards are due right now.</p> : null}
+            {due.length === 0 ? (
+              <div className="empty-state">
+                <strong>All caught up.</strong>
+                <span>No cards are due right now.</span>
+              </div>
+            ) : null}
           </div>
         </section>
       </section>
 
-      <section className="panel">
-        <h2>Library</h2>
+      <section className="panel library-panel">
+        <div className="library-toolbar">
+          <div>
+            <p className="eyebrow">Library</p>
+            <h2>Manage active cards</h2>
+          </div>
+          <button type="button" className="ghost-button" onClick={refresh} disabled={isRefreshing}>
+            {isRefreshing ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+
+        <div className="filters">
+          <input
+            className="search-input"
+            value={query}
+            placeholder="Search term, meaning, example, notes..."
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <div className="filter-chips" aria-label="Filter cards by status">
+            {(["all", "new", "learning", "review"] as const).map((status) => (
+              <button
+                key={status}
+                type="button"
+                className={statusFilter === status ? "chip active" : "chip"}
+                onClick={() => setStatusFilter(status)}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="library">
-          {vocab.map(({ item, state }) => (
-            <article className="library-card" key={item.id}>
-              <div>
-                <p className="term">{item.term}</p>
-                <p>{item.meaning}</p>
-                <small>{item.example_sentence}</small>
-              </div>
-              <div className="meta">
-                <span>{item.kind}</span>
-                <span>{state.status}</span>
-                <span>{state.interval_days}d</span>
-              </div>
+          {visibleVocab.map(({ item, state }) => (
+            <article className={editingID === item.id ? "library-card editing" : "library-card"} key={item.id}>
+              {editingID === item.id ? (
+                <form className="edit-form" onSubmit={handleSaveEdit}>
+                  <div className="edit-grid">
+                    <input value={editDraft.term} onChange={(event) => setEditDraft({ ...editDraft, term: event.target.value })} />
+                    <select
+                      value={editDraft.kind}
+                      onChange={(event) => setEditDraft({ ...editDraft, kind: event.target.value as "word" | "phrase" })}
+                    >
+                      <option value="word">Word</option>
+                      <option value="phrase">Phrase</option>
+                    </select>
+                  </div>
+                  <textarea value={editDraft.meaning} onChange={(event) => setEditDraft({ ...editDraft, meaning: event.target.value })} />
+                  <textarea
+                    value={editDraft.example_sentence}
+                    onChange={(event) => setEditDraft({ ...editDraft, example_sentence: event.target.value })}
+                  />
+                  <textarea value={editDraft.notes} onChange={(event) => setEditDraft({ ...editDraft, notes: event.target.value })} />
+                  <div className="action-row">
+                    <button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save changes"}</button>
+                    <button type="button" className="ghost-button" onClick={() => setEditingID("")}>Cancel</button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <div className="card-copy">
+                    <div>
+                      <p className="term">{item.term}</p>
+                      <p>{item.meaning || "Meaning not added yet."}</p>
+                      {item.example_sentence ? <small>{item.example_sentence}</small> : null}
+                      {item.notes ? <small className="notes">Notes: {item.notes}</small> : null}
+                    </div>
+                    <div className="meta">
+                      <span>{item.kind}</span>
+                      <span>{state.status}</span>
+                      <span>{state.interval_days}d interval</span>
+                      <span>Created {formatDate(item.created_at)}</span>
+                    </div>
+                  </div>
+                  <div className="action-row">
+                    <button type="button" className="ghost-button" onClick={() => startEditing(item)}>Edit</button>
+                    <button type="button" className="danger-button" onClick={() => handleArchive(item.id)} disabled={isSaving}>
+                      Archive
+                    </button>
+                  </div>
+                </>
+              )}
             </article>
           ))}
         </div>
+
+        {visibleVocab.length === 0 ? (
+          <div className="empty-state spacious">
+            <strong>{vocab.length === 0 ? "No cards yet." : "No matching cards."}</strong>
+            <span>{vocab.length === 0 ? "Add your first word above." : "Try another search or status filter."}</span>
+          </div>
+        ) : null}
       </section>
 
-      {error ? <p className="error">{error}</p> : null}
+      {error ? <p className="error floating-error">{error}</p> : null}
     </main>
   );
 }

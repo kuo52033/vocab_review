@@ -9,44 +9,57 @@ struct ReviewListView: View {
     var body: some View {
         Group {
             if sessionStore.isLoadingDueCards && sessionStore.dueCards.isEmpty {
-                ProgressView("Loading due cards...")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let card = sessionStore.currentCard {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        statusMessages
-                        progressHeader(totalDue: sessionStore.dueCards.count)
-                        reviewCard(card)
-                    }
-                    .padding()
+                ZStack {
+                    ReadingDeskBackground()
+                    ProgressView("Loading due cards...")
+                        .padding()
+                        .readingCard()
                 }
-                .refreshable {
-                    await sessionStore.loadDueCards()
+            } else if let card = sessionStore.currentCard {
+                ZStack {
+                    ReadingDeskBackground()
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
+                            statusMessages
+                            progressHeader(totalDue: sessionStore.dueCards.count)
+                            reviewCard(card)
+                        }
+                        .padding()
+                    }
+                    .refreshable {
+                        await sessionStore.loadDueCards()
+                    }
                 }
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        statusMessages
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("All caught up")
-                                .font(.largeTitle.bold())
-                            Text("You do not have any cards due right now.")
-                                .foregroundStyle(.secondary)
-                        }
-
-                        if sessionStore.isLoadingDueCards {
-                            ProgressView("Refreshing...")
-                        } else {
-                            Button("Refresh") {
-                                Task { await sessionStore.loadDueCards() }
+                ZStack {
+                    ReadingDeskBackground()
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
+                            statusMessages
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("All caught up")
+                                    .readingTitle()
+                                Text("You do not have any cards due right now.")
+                                    .readingMuted()
                             }
-                            .buttonStyle(.borderedProminent)
+                            .readingCard()
+
+                            if sessionStore.isLoadingDueCards {
+                                ProgressView("Refreshing...")
+                                    .padding()
+                                    .readingCard()
+                            } else {
+                                Button("Refresh") {
+                                    Task { await sessionStore.loadDueCards() }
+                                }
+                                .buttonStyle(.borderedProminent)
+                            }
                         }
+                        .padding()
                     }
-                    .padding()
-                }
-                .refreshable {
-                    await sessionStore.loadDueCards()
+                    .refreshable {
+                        await sessionStore.loadDueCards()
+                    }
                 }
             }
         }
@@ -102,16 +115,19 @@ struct ReviewListView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Card 1 of \(totalDue)")
                 .font(.headline)
+                .foregroundStyle(AppTheme.sageDark)
             Text(totalDue == 1 ? "1 card due now" : "\(totalDue) cards due now")
-                .foregroundStyle(.secondary)
+                .readingMuted()
         }
+        .readingCard()
     }
 
     private func reviewCard(_ card: DueCard) -> some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(card.item.term)
-                    .font(.largeTitle.bold())
+                    .font(.system(.largeTitle, design: .serif, weight: .semibold))
+                    .foregroundStyle(AppTheme.ink)
                 if isAnswerRevealed {
                     Text(card.item.meaning.isEmpty ? "Meaning not added yet." : card.item.meaning)
                         .font(.title3)
@@ -125,7 +141,7 @@ struct ReviewListView: View {
                     }
                 } else {
                     Text("Recall the meaning before revealing the answer.")
-                        .foregroundStyle(.secondary)
+                        .readingMuted()
                 }
             }
 
@@ -173,6 +189,11 @@ struct ReviewListView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(AppTheme.paper.opacity(0.9), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
+        }
+        .shadow(color: AppTheme.ink.opacity(0.1), radius: 26, x: 0, y: 16)
     }
 }

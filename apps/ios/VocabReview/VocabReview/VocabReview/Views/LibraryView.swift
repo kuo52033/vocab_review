@@ -10,47 +10,69 @@ struct LibraryView: View {
     var body: some View {
         Group {
             if sessionStore.isLoadingLibraryCards && sessionStore.libraryCards.isEmpty {
-                ProgressView("Loading library...")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if sessionStore.libraryCards.isEmpty {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        statusMessages
-                        Text("No cards yet")
-                            .font(.largeTitle.bold())
-                        Text("Use Add to create your first vocabulary card.")
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding()
+                ZStack {
+                    ReadingDeskBackground()
+                    ProgressView("Loading library...")
+                        .padding()
+                        .readingCard()
                 }
-                .refreshable {
-                    await sessionStore.loadLibraryCards()
+            } else if sessionStore.libraryCards.isEmpty {
+                ZStack {
+                    ReadingDeskBackground()
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            statusMessages
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("No cards yet")
+                                    .readingTitle()
+                                Text("Use Add to create your first vocabulary card.")
+                                    .readingMuted()
+                            }
+                            .readingCard()
+                        }
+                        .padding()
+                    }
+                    .refreshable {
+                        await sessionStore.loadLibraryCards()
+                    }
                 }
             } else if filteredCards.isEmpty {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        filterPicker
-                        statusMessages
-                        Text("No matching cards")
-                            .font(.largeTitle.bold())
-                        Text("Try a different search or status filter.")
-                            .foregroundStyle(.secondary)
+                ZStack {
+                    ReadingDeskBackground()
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            filterPicker
+                            statusMessages
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("No matching cards")
+                                    .readingTitle()
+                                Text("Try a different search or status filter.")
+                                    .readingMuted()
+                            }
+                            .readingCard()
+                        }
+                        .padding()
                     }
-                    .padding()
-                }
-                .refreshable {
-                    await sessionStore.loadLibraryCards()
+                    .refreshable {
+                        await sessionStore.loadLibraryCards()
+                    }
                 }
             } else {
-                List {
-                    filterPicker
-                    statusMessages
-                    ForEach(filteredCards) { card in
-                        libraryRow(card)
+                ZStack {
+                    ReadingDeskBackground()
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 14) {
+                            filterPicker
+                            statusMessages
+                            ForEach(filteredCards) { card in
+                                libraryRow(card)
+                            }
+                        }
+                        .padding()
                     }
-                }
-                .refreshable {
-                    await sessionStore.loadLibraryCards()
+                    .refreshable {
+                        await sessionStore.loadLibraryCards()
+                    }
                 }
             }
         }
@@ -81,7 +103,9 @@ struct LibraryView: View {
             selectedStatus.matches(card.state.status)
                 && (query.isEmpty
                     || card.item.term.lowercased().contains(query)
-                    || card.item.meaning.lowercased().contains(query))
+                    || card.item.meaning.lowercased().contains(query)
+                    || card.item.example_sentence.lowercased().contains(query)
+                    || card.item.notes.lowercased().contains(query))
         }
     }
 
@@ -103,6 +127,7 @@ struct LibraryView: View {
             }
         }
         .pickerStyle(.segmented)
+        .tint(AppTheme.sage)
     }
 
     @ViewBuilder
@@ -127,21 +152,33 @@ struct LibraryView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text(card.item.term)
-                    .font(.headline)
+                    .readingTerm()
                 Spacer()
                 Text(card.state.status)
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(.thinMaterial, in: Capsule())
+                    .foregroundStyle(AppTheme.sageDark)
+                    .background(AppTheme.sage.opacity(0.12), in: Capsule())
             }
 
             Text(card.item.meaning.isEmpty ? "Meaning not added yet." : card.item.meaning)
                 .foregroundStyle(.primary)
 
+            if !card.item.example_sentence.isEmpty {
+                Text(card.item.example_sentence)
+                    .readingMuted()
+            }
+
+            if !card.item.notes.isEmpty {
+                Text("Notes: \(card.item.notes)")
+                    .font(.callout)
+                    .readingMuted()
+            }
+
             Text("Next due: \(formattedDate(card.state.next_due_at))")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .readingMuted()
 
             HStack {
                 Button("Edit") {
@@ -157,7 +194,8 @@ struct LibraryView: View {
                 .disabled(sessionStore.isCreatingVocab || sessionStore.isDeletingVocab)
             }
         }
-        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .readingCard()
     }
 
     private func formattedDate(_ value: String) -> String {

@@ -18,6 +18,9 @@ export interface VocabItem {
   source_text: string;
   source_url: string;
   notes: string;
+  created_at: string;
+  updated_at: string;
+  archived_at?: string;
 }
 
 export interface VocabWithState {
@@ -73,6 +76,19 @@ export async function createVocab(payload: Partial<VocabItem>) {
   return request<{ item: VocabItem; state: ReviewState }>("/vocab", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export async function updateVocab(vocabID: string, payload: Partial<VocabItem>) {
+  return request<{ item: VocabItem }>(`/vocab/${vocabID}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteVocab(vocabID: string) {
+  return request<{ item: VocabItem }>(`/vocab/${vocabID}`, {
+    method: "DELETE"
   });
 }
 

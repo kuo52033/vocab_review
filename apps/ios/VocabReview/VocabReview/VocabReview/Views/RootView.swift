@@ -21,6 +21,7 @@ struct RootView: View {
                             Label("Library", systemImage: "books.vertical")
                         }
                 }
+                .tint(AppTheme.sage)
                 .task { await sessionStore.refreshAuthenticatedData() }
                 .toolbar {
                     ToolbarItemGroup(placement: .topBarTrailing) {
@@ -39,6 +40,7 @@ struct RootView: View {
                 signInView
             }
         }
+        .tint(AppTheme.sage)
         .sheet(isPresented: $isAddingVocab) {
             AddVocabView()
                 .environmentObject(sessionStore)
@@ -50,13 +52,16 @@ struct RootView: View {
     }
 
     private var signInView: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+        ZStack {
+            ReadingDeskBackground()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Review before you forget")
-                        .font(.largeTitle.bold())
+                        .readingTitle()
                     Text("Request a development magic link, then verify it in-app.")
-                        .foregroundStyle(.secondary)
+                        .readingMuted()
                 }
 
                 statusMessages
@@ -83,6 +88,7 @@ struct RootView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(sessionStore.isRequestingMagicLink || sessionStore.isSigningIn)
                 }
+                .readingCard()
 
                 if let link = sessionStore.requestedMagicLink {
                     VStack(alignment: .leading, spacing: 12) {
@@ -108,8 +114,7 @@ struct RootView: View {
                             .buttonStyle(.bordered)
                         }
                     }
-                    .padding()
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .readingCard()
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -133,8 +138,10 @@ struct RootView: View {
                     .buttonStyle(.bordered)
                     .disabled(sessionStore.isSigningIn || sessionStore.isRequestingMagicLink)
                 }
+                .readingCard()
             }
             .padding()
+            }
         }
     }
 
