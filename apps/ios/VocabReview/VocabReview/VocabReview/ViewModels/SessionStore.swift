@@ -7,6 +7,7 @@ final class SessionStore: ObservableObject {
     @Published var sessionToken: String = UserDefaults.standard.string(forKey: "session_token") ?? ""
     @Published var dueCards: [DueCard] = []
     @Published var libraryCards: [DueCard] = []
+    @Published var reviewHistory: [ReviewHistoryEntry] = []
     @Published var errorMessage: String = ""
     @Published var infoMessage: String = ""
     @Published var requestedMagicLink: MagicLinkResponse?
@@ -14,6 +15,7 @@ final class SessionStore: ObservableObject {
     @Published var isSigningIn: Bool = false
     @Published var isLoadingDueCards: Bool = false
     @Published var isLoadingLibraryCards: Bool = false
+    @Published var isLoadingReviewHistory: Bool = false
     @Published var isGrading: Bool = false
     @Published var isCreatingVocab: Bool = false
     @Published var isDeletingVocab: Bool = false
@@ -117,9 +119,26 @@ final class SessionStore: ObservableObject {
         isLoadingLibraryCards = false
     }
 
+    func loadReviewHistory() async {
+        guard isAuthenticated else { return }
+
+        isLoadingReviewHistory = true
+        errorMessage = ""
+
+        do {
+            let response: ReviewHistoryResponse = try await sendRequest(path: "/reviews/history")
+            reviewHistory = response.items
+        } catch {
+            handleRequestError(error)
+        }
+
+        isLoadingReviewHistory = false
+    }
+
     func refreshAuthenticatedData() async {
         await loadDueCards()
         await loadLibraryCards()
+        await loadReviewHistory()
     }
 
     func grade(cardID: String, grade: String) async {
@@ -269,6 +288,7 @@ final class SessionStore: ObservableObject {
         sessionToken = ""
         dueCards = []
         libraryCards = []
+        reviewHistory = []
         requestedMagicLink = nil
         errorMessage = ""
         infoMessage = ""

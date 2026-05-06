@@ -20,6 +20,11 @@ struct RootView: View {
                         .tabItem {
                             Label("Library", systemImage: "books.vertical")
                         }
+
+                    HistoryView()
+                        .tabItem {
+                            Label("History", systemImage: "clock.arrow.circlepath")
+                        }
                 }
                 .tint(AppTheme.sage)
                 .task { await sessionStore.refreshAuthenticatedData() }
