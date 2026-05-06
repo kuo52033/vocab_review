@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useState } from "react";
+import React, { FormEvent, useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import "./popup.css";
 
@@ -29,12 +29,14 @@ const emptyDraft: Draft = {
 };
 
 function Popup() {
+  const termInputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [email, setEmail] = useState("");
   const [magicToken, setMagicToken] = useState("");
   const [magicLink, setMagicLink] = useState<MagicLink | null>(null);
   const [sessionToken, setSessionToken] = useState("");
   const [status, setStatus] = useState("");
+  const [lastSavedTerm, setLastSavedTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -114,6 +116,7 @@ function Popup() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    const savedTerm = draft.term.trim();
     setStatus("Saving...");
     setIsLoading(true);
     try {
@@ -129,8 +132,14 @@ function Popup() {
         })
       });
       await chrome.storage.local.remove(["draftSelection", "draftPageURL", "draftPageTitle"]);
-      setStatus("Saved to your review queue.");
-      setDraft((current) => ({ ...current, meaning: "", example_sentence: "" }));
+      setLastSavedTerm(savedTerm);
+      setStatus(`Saved "${savedTerm}". Ready for another capture.`);
+      setDraft({
+        ...emptyDraft,
+        page_title: draft.page_title,
+        page_url: draft.page_url
+      });
+      requestAnimationFrame(() => termInputRef.current?.focus());
     } catch (error) {
       setStatus((error as Error).message);
     } finally {
@@ -188,7 +197,10 @@ function Popup() {
       ) : (
         <section className="card">
           <div className="capture-heading">
-            <h2>Quick capture</h2>
+            <div>
+              <h2>Quick capture</h2>
+              <p className="small">Only the word or phrase is required.</p>
+            </div>
             <button type="button" className="text-button" onClick={handleSignOut}>
               Sign out
             </button>
@@ -196,23 +208,29 @@ function Popup() {
           <form onSubmit={handleSubmit}>
             <label>
               Word or phrase
-              <input value={draft.term} onChange={(event) => setDraft({ ...draft, term: event.target.value })} />
+              <input ref={termInputRef} value={draft.term} onChange={(event) => setDraft({ ...draft, term: event.target.value })} />
             </label>
-            <label>
-              Meaning
-              <textarea value={draft.meaning} onChange={(event) => setDraft({ ...draft, meaning: event.target.value })} />
-            </label>
-            <label>
-              Example sentence
-              <textarea
-                value={draft.example_sentence}
-                onChange={(event) => setDraft({ ...draft, example_sentence: event.target.value })}
-              />
-            </label>
-            <label>
-              Source selection
-              <textarea value={draft.selection} onChange={(event) => setDraft({ ...draft, selection: event.target.value })} />
-            </label>
+            <details className="optional-fields">
+              <summary>Meaning and example</summary>
+              <label>
+                Meaning
+                <textarea value={draft.meaning} onChange={(event) => setDraft({ ...draft, meaning: event.target.value })} />
+              </label>
+              <label>
+                Example sentence
+                <textarea
+                  value={draft.example_sentence}
+                  onChange={(event) => setDraft({ ...draft, example_sentence: event.target.value })}
+                />
+              </label>
+            </details>
+            <details className="optional-fields" open={Boolean(draft.selection)}>
+              <summary>Source context</summary>
+              <label>
+                Source selection
+                <textarea value={draft.selection} onChange={(event) => setDraft({ ...draft, selection: event.target.value })} />
+              </label>
+            </details>
             {draft.page_title || draft.page_url ? (
               <div className="source">
                 <strong>{draft.page_title || "Current page"}</strong>
@@ -220,8 +238,9 @@ function Popup() {
               </div>
             ) : null}
             <button type="submit" disabled={isLoading || !draft.term.trim()}>
-              {isLoading ? "Saving..." : "Save card"}
+              {isLoading ? "Saving..." : "Save + capture another"}
             </button>
+            {lastSavedTerm ? <p className="saved-note">Last saved: {lastSavedTerm}</p> : null}
           </form>
         </section>
       )}

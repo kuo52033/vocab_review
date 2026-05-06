@@ -119,6 +119,25 @@ textarea {
   resize: vertical;
 }
 
+details {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(255, 253, 246, 0.52);
+}
+
+summary {
+  cursor: pointer;
+  color: var(--sage-dark);
+  font-family: "Avenir Next", "Gill Sans", "Trebuchet MS", sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+details[open] summary {
+  margin-bottom: 10px;
+}
+
 button {
   border: none;
   padding: 11px 12px;
@@ -158,6 +177,7 @@ a {
   align-items: start;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 12px;
 }
 
 .text-button {
@@ -187,6 +207,20 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.optional-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.saved-note {
+  border: 1px solid rgba(101, 123, 95, 0.18);
+  border-radius: 14px;
+  padding: 9px 11px;
+  color: var(--sage-dark);
+  background: rgba(101, 123, 95, 0.08);
+  font-size: 13px;
 }
 
 .status {

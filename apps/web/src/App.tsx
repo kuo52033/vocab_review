@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   createVocab,
   deleteVocab,
@@ -77,6 +77,7 @@ function formatDate(value: string) {
 }
 
 export function App() {
+  const termInputRef = useRef<HTMLInputElement>(null);
   const [auth, setAuth] = useState<AuthState>({ email: "", token: localStorage.getItem("session_token") ?? "" });
   const [vocab, setVocab] = useState<VocabWithState[]>([]);
   const [due, setDue] = useState<VocabWithState[]>([]);
@@ -95,6 +96,7 @@ export function App() {
   const [sessionAgainCount, setSessionAgainCount] = useState(0);
   const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
   const [isAnswerRevealed, setIsAnswerRevealed] = useState(false);
+  const [lastCreatedTerm, setLastCreatedTerm] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
@@ -165,13 +167,32 @@ export function App() {
     }
   }
 
-  async function handleCreateVocab(event: FormEvent) {
+  async function handleCreateVocab(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const nextAction = submitter?.name === "save-review" ? "review" : "add";
     setIsSaving(true);
     try {
-      await createVocab(form);
+      const response = await createVocab(form);
+      const createdCard = { item: response.item, state: response.state };
+      const isDueNow = new Date(response.state.next_due_at).getTime() <= Date.now();
       setForm(emptyForm);
-      await refresh();
+      setVocab((current) => [createdCard, ...current]);
+      if (isDueNow) {
+        setDue((current) => [createdCard, ...current]);
+      }
+      setStats((current) => ({
+        ...current,
+        active_cards: current.active_cards + 1,
+        due_now: current.due_now + (isDueNow ? 1 : 0)
+      }));
+      setLastCreatedTerm(response.item.term);
+      setError("");
+      if (nextAction === "review") {
+        setActiveSection("review");
+      } else {
+        requestAnimationFrame(() => termInputRef.current?.focus());
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -447,22 +468,41 @@ export function App() {
               <div>
                 <p className="eyebrow">Capture</p>
                 <h2>Quick add</h2>
+                <small>Only the word or phrase is required. Add meaning later if you are moving fast.</small>
               </div>
             </div>
             <form className="stack" onSubmit={handleCreateVocab}>
-              <input value={form.term} placeholder="Word or phrase" onChange={(event) => setForm({ ...form, term: event.target.value })} />
-              <select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as "word" | "phrase" })}>
-                <option value="word">Word</option>
-                <option value="phrase">Phrase</option>
-              </select>
-              <textarea value={form.meaning} placeholder="Meaning" onChange={(event) => setForm({ ...form, meaning: event.target.value })} />
-              <textarea
-                value={form.example_sentence}
-                placeholder="Example sentence"
-                onChange={(event) => setForm({ ...form, example_sentence: event.target.value })}
-              />
-              <textarea value={form.notes} placeholder="Notes" onChange={(event) => setForm({ ...form, notes: event.target.value })} />
-              <button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save card"}</button>
+              <div className="quick-capture-line">
+                <input
+                  ref={termInputRef}
+                  value={form.term}
+                  placeholder="Word or phrase"
+                  onChange={(event) => setForm({ ...form, term: event.target.value })}
+                />
+                <select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as "word" | "phrase" })}>
+                  <option value="word">Word</option>
+                  <option value="phrase">Phrase</option>
+                </select>
+              </div>
+              <details className="optional-fields">
+                <summary>Meaning, example, and notes</summary>
+                <textarea value={form.meaning} placeholder="Meaning" onChange={(event) => setForm({ ...form, meaning: event.target.value })} />
+                <textarea
+                  value={form.example_sentence}
+                  placeholder="Example sentence"
+                  onChange={(event) => setForm({ ...form, example_sentence: event.target.value })}
+                />
+                <textarea value={form.notes} placeholder="Notes" onChange={(event) => setForm({ ...form, notes: event.target.value })} />
+              </details>
+              <div className="action-row quick-actions">
+                <button type="submit" name="save-add" disabled={isSaving || !form.term.trim()}>
+                  {isSaving ? "Saving..." : "Save + add another"}
+                </button>
+                <button type="submit" name="save-review" className="ghost-button" disabled={isSaving || !form.term.trim()}>
+                  Save + review
+                </button>
+              </div>
+              {lastCreatedTerm ? <p className="save-confirmation">Saved "{lastCreatedTerm}". Ready for the next one.</p> : null}
             </form>
           </section>
         ) : null}
