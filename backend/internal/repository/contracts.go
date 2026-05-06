@@ -24,6 +24,14 @@ type ReviewHistoryEntry struct {
 	State domain.ReviewState
 }
 
+type ReviewStats struct {
+	ReviewedToday int
+	Reviewed7Days int
+	ActiveCards   int
+	DueNow        int
+	ArchivedCards int
+}
+
 type HealthChecker interface {
 	HealthCheck(ctx context.Context) error
 }
@@ -44,6 +52,7 @@ type VocabRepository interface {
 	GetReviewState(ctx context.Context, vocabID string) (domain.ReviewState, bool, error)
 	RecordReview(ctx context.Context, state domain.ReviewState, log domain.ReviewLog, job *domain.NotificationJob) error
 	ListReviewHistory(ctx context.Context, userID string, limit int) ([]ReviewHistoryEntry, error)
+	GetReviewStats(ctx context.Context, userID string, now time.Time) (ReviewStats, error)
 }
 
 type DeviceRepository interface {

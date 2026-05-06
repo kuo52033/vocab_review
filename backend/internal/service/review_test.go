@@ -185,6 +185,38 @@ func (f *fakeRepository) ListReviewHistory(_ context.Context, userID string, lim
 	return entries, nil
 }
 
+func (f *fakeRepository) GetReviewStats(_ context.Context, userID string, now time.Time) (repository.ReviewStats, error) {
+	startOfToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	sevenDaysAgo := now.AddDate(0, 0, -7)
+	var stats repository.ReviewStats
+	for _, log := range f.reviewLogs {
+		if log.UserID != userID {
+			continue
+		}
+		if !log.ReviewedAt.Before(startOfToday) {
+			stats.ReviewedToday++
+		}
+		if !log.ReviewedAt.Before(sevenDaysAgo) {
+			stats.Reviewed7Days++
+		}
+	}
+	for _, item := range f.vocab {
+		if item.UserID != userID {
+			continue
+		}
+		if item.ArchivedAt != nil {
+			stats.ArchivedCards++
+			continue
+		}
+		stats.ActiveCards++
+		state := f.reviewStates[item.ID]
+		if !state.NextDueAt.After(now) {
+			stats.DueNow++
+		}
+	}
+	return stats, nil
+}
+
 func (f *fakeRepository) UpsertDeviceToken(_ context.Context, token domain.DeviceToken) (domain.DeviceToken, error) {
 	for id, existing := range f.deviceTokens {
 		if existing.UserID == token.UserID && existing.Token == token.Token {
@@ -276,6 +308,47 @@ func TestReviewHistoryReturnsRecentReviewedCards(t *testing.T) {
 	}
 	if history[0].Item.ID != item.ID || history[0].Log.Grade != domain.ReviewGradeGood {
 		t.Fatalf("unexpected history entry: %+v", history[0])
+	}
+}
+
+func TestReviewStatsCountsProgressAndCards(t *testing.T) {
+	repo := newFakeRepository()
+	app := NewApp(repo, stubClock{now: time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)})
+	link, err := app.RequestMagicLink("test@example.com", "http://localhost:8080")
+	if err != nil {
+		t.Fatalf("request link: %v", err)
+	}
+	auth, err := app.VerifyMagicLink(link["token"])
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	item, _, err := app.CreateVocab(auth.User.ID, CreateVocabInput{
+		Term:    "serendipity",
+		Meaning: "a happy accident",
+	})
+	if err != nil {
+		t.Fatalf("create vocab: %v", err)
+	}
+	if _, err := app.GradeReview(auth.User.ID, item.ID, domain.ReviewGradeGood); err != nil {
+		t.Fatalf("grade review: %v", err)
+	}
+	archived, _, err := app.CreateVocab(auth.User.ID, CreateVocabInput{
+		Term:    "ephemeral",
+		Meaning: "lasting briefly",
+	})
+	if err != nil {
+		t.Fatalf("create archived vocab: %v", err)
+	}
+	if _, err := app.ArchiveVocab(auth.User.ID, archived.ID); err != nil {
+		t.Fatalf("archive vocab: %v", err)
+	}
+
+	stats, err := app.ReviewStats(auth.User.ID)
+	if err != nil {
+		t.Fatalf("review stats: %v", err)
+	}
+	if stats.ReviewedToday != 1 || stats.Reviewed7Days != 1 || stats.ActiveCards != 1 || stats.DueNow != 0 || stats.ArchivedCards != 1 {
+		t.Fatalf("unexpected stats: %+v", stats)
 	}
 }
 

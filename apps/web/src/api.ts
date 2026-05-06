@@ -42,6 +42,14 @@ export interface ReviewHistoryEntry {
   state: ReviewState;
 }
 
+export interface ReviewStats {
+  reviewed_today: number;
+  reviewed_7_days: number;
+  active_cards: number;
+  due_now: number;
+  archived_cards: number;
+}
+
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8080";
 
 function getToken() {
@@ -112,6 +120,10 @@ export async function listDue() {
 
 export async function listReviewHistory() {
   return request<{ items: ReviewHistoryEntry[] }>("/reviews/history");
+}
+
+export async function getReviewStats() {
+  return request<{ stats: ReviewStats }>("/reviews/stats");
 }
 
 export async function gradeReview(vocabID: string, grade: ReviewGrade) {

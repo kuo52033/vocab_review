@@ -17,12 +17,14 @@ struct HistoryView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         statusMessages
                         header
+                        statsGrid
                         historyCards
                     }
                     .padding()
                 }
                 .refreshable {
                     await sessionStore.loadReviewHistory()
+                    await sessionStore.loadReviewStats()
                 }
             }
         }
@@ -40,6 +42,16 @@ struct HistoryView: View {
                 .readingMuted()
         }
         .readingCard()
+    }
+
+    private var statsGrid: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 12)], spacing: 12) {
+            StatCard(value: sessionStore.reviewStats.due_now, label: "Due now")
+            StatCard(value: sessionStore.reviewStats.reviewed_today, label: "Reviewed today")
+            StatCard(value: sessionStore.reviewStats.reviewed_7_days, label: "7 day reviews")
+            StatCard(value: sessionStore.reviewStats.active_cards, label: "Active cards")
+            StatCard(value: sessionStore.reviewStats.archived_cards, label: "Archived")
+        }
     }
 
     @ViewBuilder
@@ -118,6 +130,24 @@ struct HistoryView: View {
             return value
         }
         return date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+private struct StatCard: View {
+    let value: Int
+    let label: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(value)")
+                .font(.system(.title, design: .serif, weight: .semibold))
+                .foregroundStyle(AppTheme.sageDark)
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .readingMuted()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .readingCard()
     }
 }
 

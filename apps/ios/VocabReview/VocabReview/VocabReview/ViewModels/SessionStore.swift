@@ -8,6 +8,7 @@ final class SessionStore: ObservableObject {
     @Published var dueCards: [DueCard] = []
     @Published var libraryCards: [DueCard] = []
     @Published var reviewHistory: [ReviewHistoryEntry] = []
+    @Published var reviewStats = ReviewStats(reviewed_today: 0, reviewed_7_days: 0, active_cards: 0, due_now: 0, archived_cards: 0)
     @Published var errorMessage: String = ""
     @Published var infoMessage: String = ""
     @Published var requestedMagicLink: MagicLinkResponse?
@@ -135,10 +136,22 @@ final class SessionStore: ObservableObject {
         isLoadingReviewHistory = false
     }
 
+    func loadReviewStats() async {
+        guard isAuthenticated else { return }
+
+        do {
+            let response: ReviewStatsResponse = try await sendRequest(path: "/reviews/stats")
+            reviewStats = response.stats
+        } catch {
+            handleRequestError(error)
+        }
+    }
+
     func refreshAuthenticatedData() async {
         await loadDueCards()
         await loadLibraryCards()
         await loadReviewHistory()
+        await loadReviewStats()
     }
 
     func grade(cardID: String, grade: String) async {
@@ -289,6 +302,7 @@ final class SessionStore: ObservableObject {
         dueCards = []
         libraryCards = []
         reviewHistory = []
+        reviewStats = ReviewStats(reviewed_today: 0, reviewed_7_days: 0, active_cards: 0, due_now: 0, archived_cards: 0)
         requestedMagicLink = nil
         errorMessage = ""
         infoMessage = ""

@@ -147,6 +147,14 @@ func TestStoreLifecycle(t *testing.T) {
 		t.Fatalf("unexpected review history: %+v", history)
 	}
 
+	stats, err := store.GetReviewStats(ctx, user.ID, reviewedAt)
+	if err != nil {
+		t.Fatalf("get review stats: %v", err)
+	}
+	if stats.ReviewedToday != 1 || stats.Reviewed7Days != 1 || stats.ActiveCards != 1 || stats.DueNow != 0 || stats.ArchivedCards != 0 {
+		t.Fatalf("unexpected review stats: %+v", stats)
+	}
+
 	device, err := store.UpsertDeviceToken(ctx, domain.DeviceToken{
 		ID:        "dev_test",
 		UserID:    user.ID,

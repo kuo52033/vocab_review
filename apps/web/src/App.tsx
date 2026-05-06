@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import {
   createVocab,
   deleteVocab,
+  getReviewStats,
   gradeReview,
   listDue,
   listNotificationJobs,
@@ -9,6 +10,7 @@ import {
   listVocab,
   requestMagicLink,
   ReviewHistoryEntry,
+  ReviewStats,
   setToken,
   updateVocab,
   verifyMagicLink,
@@ -41,6 +43,14 @@ const emptyForm: CardDraft = {
   notes: ""
 };
 
+const emptyStats: ReviewStats = {
+  reviewed_today: 0,
+  reviewed_7_days: 0,
+  active_cards: 0,
+  due_now: 0,
+  archived_cards: 0
+};
+
 function draftFromItem(item: VocabItem): CardDraft {
   return {
     term: item.term,
@@ -65,6 +75,7 @@ export function App() {
   const [vocab, setVocab] = useState<VocabWithState[]>([]);
   const [due, setDue] = useState<VocabWithState[]>([]);
   const [history, setHistory] = useState<ReviewHistoryEntry[]>([]);
+  const [stats, setStats] = useState<ReviewStats>(emptyStats);
   const [jobs, setJobs] = useState<Array<{ id: string; vocab_item_id: string; status: string; scheduled_at: string }>>([]);
   const [form, setForm] = useState(emptyForm);
   const [editingID, setEditingID] = useState("");
@@ -108,15 +119,17 @@ export function App() {
   async function refresh() {
     setIsRefreshing(true);
     try {
-      const [vocabResponse, dueResponse, historyResponse, jobsResponse] = await Promise.all([
+      const [vocabResponse, dueResponse, historyResponse, statsResponse, jobsResponse] = await Promise.all([
         listVocab(),
         listDue(),
         listReviewHistory(),
+        getReviewStats(),
         listNotificationJobs()
       ]);
       setVocab(vocabResponse.items);
       setDue(dueResponse.items);
       setHistory(historyResponse.items);
+      setStats(statsResponse.stats);
       setJobs(jobsResponse.items);
       setError("");
     } catch (err) {
@@ -257,16 +270,24 @@ export function App() {
 
         <div className="sidebar-stats">
           <article>
-            <strong>{due.length}</strong>
+            <strong>{stats.due_now}</strong>
             <span>Due now</span>
           </article>
           <article>
-            <strong>{vocab.length}</strong>
-            <span>Total cards</span>
+            <strong>{stats.reviewed_today}</strong>
+            <span>Reviewed today</span>
           </article>
           <article>
-            <strong>{jobs.length}</strong>
-            <span>Queued reminders</span>
+            <strong>{stats.active_cards}</strong>
+            <span>Active cards</span>
+          </article>
+          <article>
+            <strong>{stats.reviewed_7_days}</strong>
+            <span>7 day reviews</span>
+          </article>
+          <article>
+            <strong>{stats.archived_cards}</strong>
+            <span>Archived</span>
           </article>
         </div>
 

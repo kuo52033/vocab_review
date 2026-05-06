@@ -25,6 +25,15 @@ func (s *Server) handleReviewHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+func (s *Server) handleReviewStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.app.ReviewStats(userIDFromContext(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"stats": stats})
+}
+
 func (s *Server) handleGradeReview(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/reviews/")
 	if !strings.HasSuffix(path, "/grade") {

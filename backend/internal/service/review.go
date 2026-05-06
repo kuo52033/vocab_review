@@ -225,6 +225,14 @@ type ReviewHistoryEntry struct {
 	State domain.ReviewState `json:"state"`
 }
 
+type ReviewStats struct {
+	ReviewedToday int `json:"reviewed_today"`
+	Reviewed7Days int `json:"reviewed_7_days"`
+	ActiveCards   int `json:"active_cards"`
+	DueNow        int `json:"due_now"`
+	ArchivedCards int `json:"archived_cards"`
+}
+
 func (a *App) DueCards(userID string) ([]DueCard, error) {
 	states, err := a.store.ListDueVocab(context.Background(), userID, a.clock.Now())
 	if err != nil {
@@ -330,6 +338,20 @@ func (a *App) ReviewHistory(userID string) ([]ReviewHistoryEntry, error) {
 		result = append(result, ReviewHistoryEntry{Log: entry.Log, Item: entry.Item, State: entry.State})
 	}
 	return result, nil
+}
+
+func (a *App) ReviewStats(userID string) (ReviewStats, error) {
+	stats, err := a.store.GetReviewStats(context.Background(), userID, a.clock.Now())
+	if err != nil {
+		return ReviewStats{}, err
+	}
+	return ReviewStats{
+		ReviewedToday: stats.ReviewedToday,
+		Reviewed7Days: stats.Reviewed7Days,
+		ActiveCards:   stats.ActiveCards,
+		DueNow:        stats.DueNow,
+		ArchivedCards: stats.ArchivedCards,
+	}, nil
 }
 
 type CaptureInput struct {

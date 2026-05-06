@@ -6,6 +6,8 @@
     "apps/chrome-extension"
   ],
   "scripts": {
+    "dev": "npm run dev:web",
+    "build": "npm run build:web && npm run build:extension",
     "dev:web": "npm --workspace apps/web run dev",
     "build:web": "npm --workspace apps/web run build",
     "build:extension": "npm --workspace apps/chrome-extension run build"

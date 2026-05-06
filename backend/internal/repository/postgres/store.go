@@ -352,6 +352,38 @@ func (s *Store) ListReviewHistory(ctx context.Context, userID string, limit int)
 	return result, rows.Err()
 }
 
+func (s *Store) GetReviewStats(ctx context.Context, userID string, now time.Time) (repository.ReviewStats, error) {
+	var stats repository.ReviewStats
+	startOfToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).UTC()
+	sevenDaysAgo := now.AddDate(0, 0, -7).UTC()
+
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE l.reviewed_at >= $2),
+			COUNT(*) FILTER (WHERE l.reviewed_at >= $3)
+		FROM review_logs l
+		WHERE l.user_id = $1
+	`, userID, startOfToday, sevenDaysAgo).Scan(&stats.ReviewedToday, &stats.Reviewed7Days)
+	if err != nil {
+		return repository.ReviewStats{}, err
+	}
+
+	err = s.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE v.archived_at IS NULL),
+			COUNT(*) FILTER (WHERE v.archived_at IS NOT NULL),
+			COUNT(*) FILTER (WHERE v.archived_at IS NULL AND r.next_due_at <= $2)
+		FROM vocab_items v
+		JOIN review_states r ON r.vocab_item_id = v.id
+		WHERE v.user_id = $1
+	`, userID, now.UTC()).Scan(&stats.ActiveCards, &stats.ArchivedCards, &stats.DueNow)
+	if err != nil {
+		return repository.ReviewStats{}, err
+	}
+
+	return stats, nil
+}
+
 func (s *Store) UpsertDeviceToken(ctx context.Context, token domain.DeviceToken) (domain.DeviceToken, error) {
 	var stored domain.DeviceToken
 	err := s.pool.QueryRow(ctx, `

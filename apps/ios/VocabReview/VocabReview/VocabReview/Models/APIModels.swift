@@ -26,6 +26,18 @@ struct ReviewHistoryResponse: Codable {
     let items: [ReviewHistoryEntry]
 }
 
+struct ReviewStatsResponse: Codable {
+    let stats: ReviewStats
+}
+
+struct ReviewStats: Codable {
+    let reviewed_today: Int
+    let reviewed_7_days: Int
+    let active_cards: Int
+    let due_now: Int
+    let archived_cards: Int
+}
+
 struct CreateVocabResponse: Codable {
     let item: VocabItem
     let state: ReviewState
