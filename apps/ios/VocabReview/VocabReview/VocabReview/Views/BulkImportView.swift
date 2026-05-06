@@ -4,9 +4,20 @@ struct BulkImportView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @Environment(\.dismiss) private var dismiss
     @State private var rawText = ""
+    @State private var sharedCaptures: [SharedQueuedCapture] = []
 
     private var parsedCards: [VocabDraftInput] {
         parseBulkInput(rawText)
+    }
+
+    private var sharedCards: [VocabDraftInput] {
+        sharedCaptures.map {
+            VocabDraftInput(term: $0.term, meaning: "", exampleSentence: "", notes: sourceNote(for: $0))
+        }
+    }
+
+    private var importCandidates: [VocabDraftInput] {
+        sharedCards + parsedCards
     }
 
     var body: some View {
@@ -19,9 +30,11 @@ struct BulkImportView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Bulk import")
                                 .readingTitle()
-                            Text("Paste one card per line. Use \"term - meaning\" or just the term.")
+                            Text("Import shared selections or paste one card per line.")
                                 .readingMuted()
                         }
+
+                        sharedQueueSection
 
                         VStack(alignment: .leading, spacing: 12) {
                             TextEditor(text: $rawText)
@@ -70,10 +83,57 @@ struct BulkImportView: View {
                             Text("Import")
                         }
                     }
-                    .disabled(sessionStore.isCreatingVocab || parsedCards.isEmpty)
+                    .disabled(sessionStore.isCreatingVocab || importCandidates.isEmpty)
                 }
             }
+            .task {
+                sharedCaptures = SharedCaptureQueue.load()
+            }
         }
+    }
+
+    @ViewBuilder
+    private var sharedQueueSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Shared queue")
+                    .font(.headline)
+                    .foregroundStyle(AppTheme.sageDark)
+                Spacer()
+                Text("\(sharedCaptures.count) \(sharedCaptures.count == 1 ? "item" : "items")")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(AppTheme.muted)
+            }
+
+            if sharedCaptures.isEmpty {
+                Text("Select text in Safari or another app, tap Share, then choose Vocab Review.")
+                    .readingMuted()
+            } else {
+                ForEach(sharedCaptures) { capture in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(capture.term)
+                            .readingTerm()
+                        Text(capture.sourceTitle)
+                            .font(.footnote)
+                            .readingMuted()
+                    }
+                    .padding(.vertical, 8)
+                    .overlay(alignment: .bottom) {
+                        Rectangle()
+                            .fill(AppTheme.ink.opacity(0.07))
+                            .frame(height: 1)
+                    }
+                }
+
+                Button("Clear shared queue", role: .destructive) {
+                    SharedCaptureQueue.clear()
+                    sharedCaptures = []
+                }
+                .buttonStyle(.bordered)
+                .disabled(sessionStore.isCreatingVocab)
+            }
+        }
+        .readingCard()
     }
 
     @ViewBuilder
@@ -84,16 +144,16 @@ struct BulkImportView: View {
                     .font(.headline)
                     .foregroundStyle(AppTheme.sageDark)
                 Spacer()
-                Text("\(parsedCards.count) \(parsedCards.count == 1 ? "card" : "cards")")
+                Text("\(importCandidates.count) \(importCandidates.count == 1 ? "card" : "cards")")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(AppTheme.muted)
             }
 
-            if parsedCards.isEmpty {
-                Text("Paste lines above to preview import cards.")
+            if importCandidates.isEmpty {
+                Text("Shared or pasted cards will appear here before import.")
                     .readingMuted()
             } else {
-                ForEach(Array(parsedCards.enumerated()), id: \.offset) { _, card in
+                ForEach(Array(importCandidates.enumerated()), id: \.offset) { _, card in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(card.term)
                             .readingTerm()
@@ -118,10 +178,21 @@ struct BulkImportView: View {
     }
 
     private func importCards() async {
-        let created = await sessionStore.createVocabCards(parsedCards)
-        if created == parsedCards.count {
+        let cards = importCandidates
+        let created = await sessionStore.createVocabCards(cards)
+        if created == cards.count {
+            if !sharedCaptures.isEmpty {
+                SharedCaptureQueue.clear()
+            }
             dismiss()
         }
+    }
+
+    private func sourceNote(for capture: SharedQueuedCapture) -> String {
+        if capture.sourceURL.isEmpty {
+            return "Shared from iOS"
+        }
+        return "Shared from \(capture.sourceURL)"
     }
 
     private func parseBulkInput(_ input: String) -> [VocabDraftInput] {
