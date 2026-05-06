@@ -9,6 +9,7 @@ import {
   listReviewHistory,
   listVocab,
   requestMagicLink,
+  ReviewGrade,
   ReviewHistoryEntry,
   ReviewStats,
   setToken,
@@ -34,6 +35,11 @@ type AuthState = {
 
 type StatusFilter = "all" | "new" | "learning" | "review";
 type ActiveSection = "review" | "add" | "history" | "library";
+type SessionSummary = {
+  reviewed: number;
+  again: number;
+  lastNextDue?: string;
+};
 
 const emptyForm: CardDraft = {
   term: "",
@@ -84,8 +90,14 @@ export function App() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [activeSection, setActiveSection] = useState<ActiveSection>("review");
   const [selectedHistory, setSelectedHistory] = useState<ReviewHistoryEntry | null>(null);
+  const [sessionDeck, setSessionDeck] = useState<VocabWithState[]>([]);
+  const [sessionIndex, setSessionIndex] = useState(0);
+  const [sessionAgainCount, setSessionAgainCount] = useState(0);
+  const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
+  const [isAnswerRevealed, setIsAnswerRevealed] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isGrading, setIsGrading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -115,6 +127,9 @@ export function App() {
       return [item.term, item.meaning, item.example_sentence, item.notes].join(" ").toLowerCase().includes(normalizedQuery);
     })
     .sort((left, right) => new Date(right.item.created_at).getTime() - new Date(left.item.created_at).getTime());
+  const currentSessionCard = sessionDeck[sessionIndex];
+  const sessionActive = Boolean(currentSessionCard);
+  const sessionProgress = sessionDeck.length > 0 ? Math.round((sessionIndex / sessionDeck.length) * 100) : 0;
 
   async function refresh() {
     setIsRefreshing(true);
@@ -197,11 +212,55 @@ export function App() {
   }
 
   async function handleGrade(id: string, grade: "again" | "hard" | "good" | "easy") {
+    setIsGrading(true);
     try {
       await gradeReview(id, grade);
       await refresh();
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setIsGrading(false);
+    }
+  }
+
+  function startReviewSession() {
+    if (due.length === 0) return;
+    setSessionDeck(due);
+    setSessionIndex(0);
+    setSessionAgainCount(0);
+    setSessionSummary(null);
+    setIsAnswerRevealed(false);
+    setError("");
+  }
+
+  function endReviewSession() {
+    setSessionDeck([]);
+    setSessionIndex(0);
+    setSessionAgainCount(0);
+    setIsAnswerRevealed(false);
+  }
+
+  async function handleSessionGrade(grade: ReviewGrade) {
+    if (!currentSessionCard) return;
+    setIsGrading(true);
+    try {
+      const response = await gradeReview(currentSessionCard.item.id, grade);
+      const reviewed = sessionIndex + 1;
+      const again = sessionAgainCount + (grade === "again" ? 1 : 0);
+      setSessionAgainCount(again);
+      await refresh();
+      if (reviewed >= sessionDeck.length) {
+        setSessionSummary({ reviewed, again, lastNextDue: response.state.next_due_at });
+        endReviewSession();
+      } else {
+        setSessionIndex(reviewed);
+        setIsAnswerRevealed(false);
+      }
+      setError("");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setIsGrading(false);
     }
   }
 
@@ -304,7 +363,57 @@ export function App() {
                 <p className="eyebrow">Today</p>
                 <h2>Due now</h2>
               </div>
+              <button type="button" className="compact-button" onClick={startReviewSession} disabled={due.length === 0 || sessionActive}>
+                {sessionActive ? "Session running" : "Start session"}
+              </button>
             </div>
+            {sessionActive ? (
+              <article className="session-card">
+                <div className="session-topline">
+                  <span>
+                    Card {sessionIndex + 1} of {sessionDeck.length}
+                  </span>
+                  <button type="button" className="ghost-button compact-button" onClick={endReviewSession} disabled={isGrading}>
+                    End
+                  </button>
+                </div>
+                <div className="session-progress" aria-label={`${sessionProgress}% complete`}>
+                  <span style={{ width: `${sessionProgress}%` }} />
+                </div>
+                <div className="session-prompt">
+                  <p className="eyebrow">{currentSessionCard.item.kind}</p>
+                  <h3>{currentSessionCard.item.term}</h3>
+                  {currentSessionCard.item.example_sentence ? <small>{currentSessionCard.item.example_sentence}</small> : null}
+                </div>
+                {isAnswerRevealed ? (
+                  <div className="answer-panel">
+                    <strong>Answer</strong>
+                    <p>{currentSessionCard.item.meaning || "Meaning not added yet."}</p>
+                    {currentSessionCard.item.notes ? <small className="notes">Notes: {currentSessionCard.item.notes}</small> : null}
+                  </div>
+                ) : (
+                  <button type="button" className="reveal-button" onClick={() => setIsAnswerRevealed(true)}>
+                    Reveal answer
+                  </button>
+                )}
+                <div className="grade-row session-grades">
+                  {(["again", "hard", "good", "easy"] as const).map((grade) => (
+                    <button key={grade} type="button" onClick={() => handleSessionGrade(grade)} disabled={!isAnswerRevealed || isGrading}>
+                      {isGrading ? "Saving..." : grade}
+                    </button>
+                  ))}
+                </div>
+              </article>
+            ) : null}
+            {sessionSummary ? (
+              <div className="session-summary">
+                <strong>Session complete.</strong>
+                <span>
+                  Reviewed {sessionSummary.reviewed} card{sessionSummary.reviewed === 1 ? "" : "s"} with {sessionSummary.again} marked again.
+                </span>
+                {sessionSummary.lastNextDue ? <span>Last card returns {formatDate(sessionSummary.lastNextDue)}.</span> : null}
+              </div>
+            ) : null}
             <div className="review-list">
               {due.map(({ item, state }) => (
                 <article className="review-card" key={item.id}>
@@ -315,8 +424,8 @@ export function App() {
                   </div>
                   <div className="grade-row">
                     {(["again", "hard", "good", "easy"] as const).map((grade) => (
-                      <button key={grade} type="button" onClick={() => handleGrade(item.id, grade)}>
-                        {grade}
+                      <button key={grade} type="button" onClick={() => handleGrade(item.id, grade)} disabled={isGrading || sessionActive}>
+                        {isGrading ? "Saving..." : grade}
                       </button>
                     ))}
                   </div>
