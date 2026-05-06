@@ -6,6 +6,7 @@ struct RootView: View {
     @State private var email = ""
     @State private var magicToken = ""
     @State private var isAddingVocab = false
+    @State private var isImportingVocab = false
 
     var body: some View {
         NavigationStack {
@@ -33,6 +34,9 @@ struct RootView: View {
                         Button("Add") {
                             isAddingVocab = true
                         }
+                        Button("Import") {
+                            isImportingVocab = true
+                        }
                         Button("Notify") {
                             Task { await sessionStore.registerNotifications() }
                         }
@@ -48,6 +52,10 @@ struct RootView: View {
         .tint(AppTheme.sage)
         .sheet(isPresented: $isAddingVocab) {
             AddVocabView()
+                .environmentObject(sessionStore)
+        }
+        .sheet(isPresented: $isImportingVocab) {
+            BulkImportView()
                 .environmentObject(sessionStore)
         }
         .onChange(of: scenePhase) { _, newPhase in

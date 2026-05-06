@@ -40,6 +40,10 @@ type SessionSummary = {
   again: number;
   lastNextDue?: string;
 };
+type ParsedImportCard = {
+  term: string;
+  meaning: string;
+};
 
 const emptyForm: CardDraft = {
   term: "",
@@ -76,6 +80,28 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function parseImportLine(line: string): ParsedImportCard {
+  const separators = [" - ", "\t", ": ", "："];
+  for (const separator of separators) {
+    const index = line.indexOf(separator);
+    if (index === -1) continue;
+    return {
+      term: line.slice(0, index).trim(),
+      meaning: line.slice(index + separator.length).trim()
+    };
+  }
+  return { term: line.trim(), meaning: "" };
+}
+
+function parseBulkImport(input: string) {
+  return input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map(parseImportLine)
+    .filter((card) => card.term);
+}
+
 export function App() {
   const termInputRef = useRef<HTMLInputElement>(null);
   const [auth, setAuth] = useState<AuthState>({ email: "", token: localStorage.getItem("session_token") ?? "" });
@@ -85,6 +111,7 @@ export function App() {
   const [stats, setStats] = useState<ReviewStats>(emptyStats);
   const [jobs, setJobs] = useState<Array<{ id: string; vocab_item_id: string; status: string; scheduled_at: string }>>([]);
   const [form, setForm] = useState(emptyForm);
+  const [bulkText, setBulkText] = useState("");
   const [editingID, setEditingID] = useState("");
   const [editDraft, setEditDraft] = useState<CardDraft>(emptyForm);
   const [query, setQuery] = useState("");
@@ -97,6 +124,7 @@ export function App() {
   const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
   const [isAnswerRevealed, setIsAnswerRevealed] = useState(false);
   const [lastCreatedTerm, setLastCreatedTerm] = useState("");
+  const [lastImportCount, setLastImportCount] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
@@ -132,6 +160,7 @@ export function App() {
   const currentSessionCard = sessionDeck[sessionIndex];
   const sessionActive = Boolean(currentSessionCard);
   const sessionProgress = sessionDeck.length > 0 ? Math.round((sessionIndex / sessionDeck.length) * 100) : 0;
+  const parsedImportCards = parseBulkImport(bulkText);
 
   async function refresh() {
     setIsRefreshing(true);
@@ -167,6 +196,19 @@ export function App() {
     }
   }
 
+  function applyCreatedCard(createdCard: VocabWithState) {
+    const isDueNow = new Date(createdCard.state.next_due_at).getTime() <= Date.now();
+    setVocab((current) => [createdCard, ...current]);
+    if (isDueNow) {
+      setDue((current) => [createdCard, ...current]);
+    }
+    setStats((current) => ({
+      ...current,
+      active_cards: current.active_cards + 1,
+      due_now: current.due_now + (isDueNow ? 1 : 0)
+    }));
+  }
+
   async function handleCreateVocab(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
@@ -175,18 +217,10 @@ export function App() {
     try {
       const response = await createVocab(form);
       const createdCard = { item: response.item, state: response.state };
-      const isDueNow = new Date(response.state.next_due_at).getTime() <= Date.now();
       setForm(emptyForm);
-      setVocab((current) => [createdCard, ...current]);
-      if (isDueNow) {
-        setDue((current) => [createdCard, ...current]);
-      }
-      setStats((current) => ({
-        ...current,
-        active_cards: current.active_cards + 1,
-        due_now: current.due_now + (isDueNow ? 1 : 0)
-      }));
+      applyCreatedCard(createdCard);
       setLastCreatedTerm(response.item.term);
+      setLastImportCount(0);
       setError("");
       if (nextAction === "review") {
         setActiveSection("review");
@@ -194,6 +228,36 @@ export function App() {
         requestAnimationFrame(() => termInputRef.current?.focus());
       }
     } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleBulkImport(event: FormEvent) {
+    event.preventDefault();
+    if (parsedImportCards.length === 0) return;
+
+    setIsSaving(true);
+    let importedCount = 0;
+    try {
+      for (const card of parsedImportCards) {
+        const response = await createVocab({
+          term: card.term,
+          kind: "word",
+          meaning: card.meaning,
+          example_sentence: "",
+          notes: ""
+        });
+        applyCreatedCard({ item: response.item, state: response.state });
+        importedCount += 1;
+      }
+      setBulkText("");
+      setLastCreatedTerm("");
+      setLastImportCount(importedCount);
+      setError("");
+    } catch (err) {
+      setLastImportCount(importedCount);
       setError((err as Error).message);
     } finally {
       setIsSaving(false);
@@ -503,6 +567,44 @@ export function App() {
                 </button>
               </div>
               {lastCreatedTerm ? <p className="save-confirmation">Saved "{lastCreatedTerm}". Ready for the next one.</p> : null}
+            </form>
+
+            <form className="bulk-import" onSubmit={handleBulkImport}>
+              <div className="section-heading import-heading">
+                <div>
+                  <p className="eyebrow">Batch capture</p>
+                  <h2>Bulk import</h2>
+                  <small>Paste one card per line. Use "term - meaning", "term: meaning", or just the term.</small>
+                </div>
+                <span className="import-count">{parsedImportCards.length} cards</span>
+              </div>
+              <textarea
+                className="bulk-textarea"
+                value={bulkText}
+                placeholder={"abandon - to leave behind\nmeticulous: very careful\nmake up"}
+                onChange={(event) => setBulkText(event.target.value)}
+              />
+              <div className="import-preview">
+                {parsedImportCards.length === 0 ? (
+                  <span className="muted">Parsed cards will appear here before import.</span>
+                ) : (
+                  parsedImportCards.slice(0, 8).map((card, index) => (
+                    <article key={`${card.term}-${index}`} className="import-preview-card">
+                      <strong>{card.term}</strong>
+                      <span>{card.meaning || "Meaning can be added later."}</span>
+                    </article>
+                  ))
+                )}
+                {parsedImportCards.length > 8 ? <span className="muted">+ {parsedImportCards.length - 8} more</span> : null}
+              </div>
+              <button type="submit" disabled={isSaving || parsedImportCards.length === 0}>
+                {isSaving ? "Importing..." : `Import ${parsedImportCards.length || ""} cards`}
+              </button>
+              {lastImportCount ? (
+                <p className="save-confirmation">
+                  Imported {lastImportCount} card{lastImportCount === 1 ? "" : "s"}.
+                </p>
+              ) : null}
             </form>
           </section>
         ) : null}

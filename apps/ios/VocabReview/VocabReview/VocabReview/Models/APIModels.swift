@@ -117,6 +117,13 @@ struct CreateVocabRequest: Codable {
     let notes: String
 }
 
+struct VocabDraftInput {
+    let term: String
+    let meaning: String
+    let exampleSentence: String
+    let notes: String
+}
+
 struct EmptyRequest: Encodable {}
 
 struct APIErrorResponse: Codable {

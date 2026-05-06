@@ -629,6 +629,61 @@ button:disabled {
   background: rgba(101, 123, 95, 0.08);
 }
 
+.bulk-import {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+  border-top: 1px solid var(--line);
+  padding-top: 22px;
+}
+
+.import-heading {
+  margin-bottom: 0;
+}
+
+.import-count {
+  border: 1px solid rgba(185, 101, 63, 0.18);
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: var(--clay);
+  background: rgba(185, 101, 63, 0.08);
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.bulk-textarea {
+  min-height: 170px;
+  font-family: var(--font-body);
+}
+
+.import-preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.import-preview-card {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 13px;
+  background: rgba(255, 253, 246, 0.62);
+}
+
+.import-preview-card strong {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 500;
+  line-height: 1.05;
+}
+
+.import-preview-card span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 .term {
   margin: 0 0 8px;
   font-family: var(--font-display);

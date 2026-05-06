@@ -17,7 +17,28 @@ type MagicLink = {
   expires_at: string;
 };
 
+type QueuedCapture = {
+  id: string;
+  term: string;
+  selection: string;
+  page_title: string;
+  page_url: string;
+  created_at: string;
+};
+
 const API_URL = "http://localhost:8080";
+const QUEUE_KEY = "queuedCaptures";
+
+function newQueuedCapture(term: string, pageTitle = "", pageURL = ""): QueuedCapture {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    term,
+    selection: term,
+    page_title: pageTitle,
+    page_url: pageURL,
+    created_at: new Date().toISOString()
+  };
+}
 
 const emptyDraft: Draft = {
   term: "",
@@ -35,12 +56,13 @@ function Popup() {
   const [magicToken, setMagicToken] = useState("");
   const [magicLink, setMagicLink] = useState<MagicLink | null>(null);
   const [sessionToken, setSessionToken] = useState("");
+  const [queuedCaptures, setQueuedCaptures] = useState<QueuedCapture[]>([]);
   const [status, setStatus] = useState("");
   const [lastSavedTerm, setLastSavedTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    chrome.storage.local.get(["draftSelection", "draftPageURL", "draftPageTitle", "sessionToken", "email"], async (stored) => {
+    chrome.storage.local.get(["draftSelection", "draftPageURL", "draftPageTitle", "sessionToken", "email", QUEUE_KEY], async (stored) => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       const response = tab.id ? await chrome.tabs.sendMessage(tab.id, { type: "GET_SELECTION" }).catch(() => null) : null;
       const selection = stored.draftSelection || response?.selection || "";
@@ -54,7 +76,30 @@ function Popup() {
       });
       setSessionToken(stored.sessionToken || "");
       setEmail(stored.email || "");
+
+      const storedQueue = (stored[QUEUE_KEY] || []) as QueuedCapture[];
+      if (storedQueue.length === 0 && stored.draftSelection) {
+        const migratedQueue = [newQueuedCapture(stored.draftSelection, stored.draftPageTitle || "", stored.draftPageURL || "")];
+        await chrome.storage.local.set({ [QUEUE_KEY]: migratedQueue });
+        await chrome.action.setBadgeText({ text: "1" });
+        await chrome.action.setBadgeBackgroundColor({ color: "#657b5f" });
+        setQueuedCaptures(migratedQueue);
+      } else {
+        setQueuedCaptures(storedQueue);
+        await chrome.action.setBadgeText({ text: storedQueue.length ? String(Math.min(storedQueue.length, 99)) : "" });
+        if (storedQueue.length) {
+          await chrome.action.setBadgeBackgroundColor({ color: "#657b5f" });
+        }
+      }
     });
+
+    const handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+      if (areaName !== "local" || !changes[QUEUE_KEY]) return;
+      setQueuedCaptures(changes[QUEUE_KEY].newValue || []);
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    return () => chrome.storage.onChanged.removeListener(handleStorageChange);
   }, []);
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -145,6 +190,55 @@ function Popup() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  async function handleImportQueue() {
+    if (queuedCaptures.length === 0) return;
+    setStatus(`Importing ${queuedCaptures.length} captures...`);
+    setIsLoading(true);
+    let importedCount = 0;
+    try {
+      for (const capture of queuedCaptures) {
+        await request("/captures", {
+          method: "POST",
+          body: JSON.stringify({
+            term: capture.term,
+            meaning: "",
+            example_sentence: "",
+            selection: capture.selection,
+            page_title: capture.page_title,
+            page_url: capture.page_url
+          })
+        });
+        importedCount += 1;
+      }
+      await chrome.storage.local.set({ [QUEUE_KEY]: [] });
+      await chrome.action.setBadgeText({ text: "" });
+      setQueuedCaptures([]);
+      setStatus(`Imported ${importedCount} ${importedCount === 1 ? "card" : "cards"}.`);
+    } catch (error) {
+      const remaining = queuedCaptures.slice(importedCount);
+      await chrome.storage.local.set({ [QUEUE_KEY]: remaining });
+      await chrome.action.setBadgeText({ text: remaining.length ? String(Math.min(remaining.length, 99)) : "" });
+      setQueuedCaptures(remaining);
+      setStatus((error as Error).message);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function removeQueuedCapture(id: string) {
+    const nextQueue = queuedCaptures.filter((capture) => capture.id !== id);
+    await chrome.storage.local.set({ [QUEUE_KEY]: nextQueue });
+    await chrome.action.setBadgeText({ text: nextQueue.length ? String(Math.min(nextQueue.length, 99)) : "" });
+    setQueuedCaptures(nextQueue);
+  }
+
+  async function clearQueue() {
+    await chrome.storage.local.set({ [QUEUE_KEY]: [] });
+    await chrome.action.setBadgeText({ text: "" });
+    setQueuedCaptures([]);
+    setStatus("Capture queue cleared.");
   }
 
   async function handleSignOut() {
@@ -242,6 +336,43 @@ function Popup() {
             </button>
             {lastSavedTerm ? <p className="saved-note">Last saved: {lastSavedTerm}</p> : null}
           </form>
+
+          <section className="queue-panel">
+            <div className="queue-heading">
+              <div>
+                <h2>Bulk import queue</h2>
+                <p className="small">Right-click selected words on a page, then import them here once.</p>
+              </div>
+              <span className="queue-count">{queuedCaptures.length}</span>
+            </div>
+
+            {queuedCaptures.length === 0 ? (
+              <p className="empty-queue">No queued words yet.</p>
+            ) : (
+              <div className="queue-list">
+                {queuedCaptures.map((capture) => (
+                  <article className="queue-item" key={capture.id}>
+                    <div>
+                      <strong>{capture.term}</strong>
+                      <span>{capture.page_title || "Current page"}</span>
+                    </div>
+                    <button type="button" className="text-button" onClick={() => removeQueuedCapture(capture.id)} disabled={isLoading}>
+                      Remove
+                    </button>
+                  </article>
+                ))}
+              </div>
+            )}
+
+            <div className="queue-actions">
+              <button type="button" onClick={handleImportQueue} disabled={isLoading || queuedCaptures.length === 0}>
+                {isLoading ? "Importing..." : `Import ${queuedCaptures.length || ""} cards`}
+              </button>
+              <button type="button" className="secondary-button" onClick={clearQueue} disabled={isLoading || queuedCaptures.length === 0}>
+                Clear
+              </button>
+            </div>
+          </section>
         </section>
       )}
 

@@ -180,9 +180,20 @@ final class SessionStore: ObservableObject {
         exampleSentence: String,
         notes: String
     ) async -> Bool {
+        await createVocab(
+            VocabDraftInput(
+                term: term,
+                meaning: meaning,
+                exampleSentence: exampleSentence,
+                notes: notes
+            )
+        )
+    }
+
+    func createVocab(_ draft: VocabDraftInput) async -> Bool {
         guard isAuthenticated else { return false }
 
-        let trimmedTerm = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTerm = draft.term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTerm.isEmpty else {
             errorMessage = "Term is required."
             return false
@@ -193,21 +204,21 @@ final class SessionStore: ObservableObject {
         infoMessage = ""
 
         do {
-            let _: CreateVocabResponse = try await sendRequest(
+            let response: CreateVocabResponse = try await sendRequest(
                 path: "/vocab",
                 method: "POST",
                 body: CreateVocabRequest(
                     term: trimmedTerm,
                     kind: "word",
-                    meaning: meaning.trimmingCharacters(in: .whitespacesAndNewlines),
-                    example_sentence: exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
+                    meaning: draft.meaning.trimmingCharacters(in: .whitespacesAndNewlines),
+                    example_sentence: draft.exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
                     source_text: trimmedTerm,
                     source_url: "",
-                    notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                    notes: draft.notes.trimmingCharacters(in: .whitespacesAndNewlines)
                 )
             )
             infoMessage = "Card added."
-            await refreshAuthenticatedData()
+            applyCreatedVocab(response)
             isCreatingVocab = false
             return true
         } catch {
@@ -215,6 +226,60 @@ final class SessionStore: ObservableObject {
             isCreatingVocab = false
             return false
         }
+    }
+
+    func createVocabCards(_ drafts: [VocabDraftInput]) async -> Int {
+        guard isAuthenticated else { return 0 }
+
+        let trimmedDrafts = drafts
+            .map {
+                VocabDraftInput(
+                    term: $0.term.trimmingCharacters(in: .whitespacesAndNewlines),
+                    meaning: $0.meaning.trimmingCharacters(in: .whitespacesAndNewlines),
+                    exampleSentence: $0.exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
+                    notes: $0.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            }
+            .filter { !$0.term.isEmpty }
+
+        guard !trimmedDrafts.isEmpty else {
+            errorMessage = "Paste at least one term."
+            return 0
+        }
+
+        isCreatingVocab = true
+        errorMessage = ""
+        infoMessage = ""
+        var createdCount = 0
+
+        for draft in trimmedDrafts {
+            do {
+                let response: CreateVocabResponse = try await sendRequest(
+                    path: "/vocab",
+                    method: "POST",
+                    body: CreateVocabRequest(
+                        term: draft.term,
+                        kind: "word",
+                        meaning: draft.meaning,
+                        example_sentence: draft.exampleSentence,
+                        source_text: draft.term,
+                        source_url: "",
+                        notes: draft.notes
+                    )
+                )
+                applyCreatedVocab(response)
+                createdCount += 1
+            } catch {
+                handleRequestError(error)
+                break
+            }
+        }
+
+        if createdCount > 0 {
+            infoMessage = "Imported \(createdCount) \(createdCount == 1 ? "card" : "cards")."
+        }
+        isCreatingVocab = false
+        return createdCount
     }
 
     func updateVocab(
@@ -389,11 +454,43 @@ final class SessionStore: ObservableObject {
         }
         errorMessage = error.localizedDescription
     }
+
+    private func applyCreatedVocab(_ response: CreateVocabResponse) {
+        let card = DueCard(item: response.item, state: response.state)
+        libraryCards.insert(card, at: 0)
+        libraryCards.sort { lhs, rhs in
+            lhs.item.createdAtDate > rhs.item.createdAtDate
+        }
+        if response.state.nextDueAtDate <= Date() {
+            dueCards.insert(card, at: 0)
+            reviewStats = ReviewStats(
+                reviewed_today: reviewStats.reviewed_today,
+                reviewed_7_days: reviewStats.reviewed_7_days,
+                active_cards: reviewStats.active_cards + 1,
+                due_now: reviewStats.due_now + 1,
+                archived_cards: reviewStats.archived_cards
+            )
+        } else {
+            reviewStats = ReviewStats(
+                reviewed_today: reviewStats.reviewed_today,
+                reviewed_7_days: reviewStats.reviewed_7_days,
+                active_cards: reviewStats.active_cards + 1,
+                due_now: reviewStats.due_now,
+                archived_cards: reviewStats.archived_cards
+            )
+        }
+    }
 }
 
 extension VocabItem {
     var createdAtDate: Date {
         ISO8601DateFormatter.vocabReview.date(from: created_at) ?? .distantPast
+    }
+}
+
+extension ReviewState {
+    var nextDueAtDate: Date {
+        ISO8601DateFormatter.vocabReview.date(from: next_due_at) ?? .distantPast
     }
 }
 

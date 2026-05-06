@@ -192,6 +192,16 @@ a {
   text-decoration: underline;
 }
 
+.secondary-button {
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: rgba(255, 253, 246, 0.72);
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: rgba(101, 123, 95, 0.1);
+}
+
 .source {
   display: grid;
   gap: 4px;
@@ -221,6 +231,89 @@ a {
   color: var(--sage-dark);
   background: rgba(101, 123, 95, 0.08);
   font-size: 13px;
+}
+
+.queue-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.queue-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.queue-heading h2 {
+  margin-bottom: 4px;
+}
+
+.queue-count {
+  min-width: 32px;
+  border: 1px solid rgba(185, 101, 63, 0.18);
+  border-radius: 999px;
+  padding: 6px 9px;
+  color: var(--clay);
+  background: rgba(185, 101, 63, 0.08);
+  font-family: "Avenir Next", "Gill Sans", "Trebuchet MS", sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.empty-queue {
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  color: var(--muted);
+  background: rgba(255, 253, 246, 0.48);
+  font-size: 13px;
+}
+
+.queue-list {
+  display: grid;
+  gap: 8px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.queue-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 253, 246, 0.62);
+}
+
+.queue-item div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.queue-item strong,
+.queue-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-item span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.queue-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 86px;
+  gap: 8px;
 }
 
 .status {
