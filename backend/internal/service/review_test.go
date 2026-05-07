@@ -414,3 +414,39 @@ func TestArchiveVocabRemovesCardFromDueReview(t *testing.T) {
 		t.Fatalf("expected archived card removed from due review, got %d", len(due))
 	}
 }
+
+func TestUpdateVocabClearsPartOfSpeech(t *testing.T) {
+	app := newTestApp()
+	link, err := app.RequestMagicLink("test@example.com", "http://localhost:8080")
+	if err != nil {
+		t.Fatalf("request link: %v", err)
+	}
+	auth, err := app.VerifyMagicLink(link["token"])
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+
+	noun := domain.PartOfSpeechNoun
+	item, _, err := app.CreateVocab(auth.User.ID, CreateVocabInput{
+		Term:         "serendipity",
+		Meaning:      "a happy accident",
+		PartOfSpeech: &noun,
+	})
+	if err != nil {
+		t.Fatalf("create vocab: %v", err)
+	}
+	if item.PartOfSpeech != domain.PartOfSpeechNoun {
+		t.Fatalf("part of speech after create: got %q want %q", item.PartOfSpeech, domain.PartOfSpeechNoun)
+	}
+
+	unspecified := domain.PartOfSpeechUnspecified
+	updated, err := app.UpdateVocab(auth.User.ID, item.ID, CreateVocabInput{
+		PartOfSpeech: &unspecified,
+	})
+	if err != nil {
+		t.Fatalf("update vocab: %v", err)
+	}
+	if updated.PartOfSpeech != domain.PartOfSpeechUnspecified {
+		t.Fatalf("part of speech after clear: got %q want %q", updated.PartOfSpeech, domain.PartOfSpeechUnspecified)
+	}
+}

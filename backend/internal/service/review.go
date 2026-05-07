@@ -94,14 +94,14 @@ func (a *App) Session(token string) (domain.Session, domain.User, error) {
 }
 
 type CreateVocabInput struct {
-	Term            string              `json:"term"`
-	Kind            domain.CardKind     `json:"kind"`
-	Meaning         string              `json:"meaning"`
-	ExampleSentence string              `json:"example_sentence"`
-	PartOfSpeech    domain.PartOfSpeech `json:"part_of_speech"`
-	SourceText      string              `json:"source_text"`
-	SourceURL       string              `json:"source_url"`
-	Notes           string              `json:"notes"`
+	Term            string               `json:"term"`
+	Kind            domain.CardKind      `json:"kind"`
+	Meaning         string               `json:"meaning"`
+	ExampleSentence string               `json:"example_sentence"`
+	PartOfSpeech    *domain.PartOfSpeech `json:"part_of_speech"`
+	SourceText      string               `json:"source_text"`
+	SourceURL       string               `json:"source_url"`
+	Notes           string               `json:"notes"`
 }
 
 func (a *App) CreateVocab(userID string, input CreateVocabInput) (domain.VocabItem, domain.ReviewState, error) {
@@ -111,7 +111,7 @@ func (a *App) CreateVocab(userID string, input CreateVocabInput) (domain.VocabIt
 		Kind:            input.Kind,
 		Meaning:         input.Meaning,
 		ExampleSentence: input.ExampleSentence,
-		PartOfSpeech:    input.PartOfSpeech,
+		PartOfSpeech:    partOfSpeechValue(input.PartOfSpeech),
 		SourceText:      input.SourceText,
 		SourceURL:       input.SourceURL,
 		Notes:           input.Notes,
@@ -142,8 +142,8 @@ func (a *App) UpdateVocab(userID, id string, input CreateVocabInput) (domain.Voc
 	}
 	item.Meaning = strings.TrimSpace(defaultString(input.Meaning, item.Meaning))
 	item.ExampleSentence = strings.TrimSpace(defaultString(input.ExampleSentence, item.ExampleSentence))
-	if input.PartOfSpeech != "" {
-		item.PartOfSpeech = input.PartOfSpeech
+	if input.PartOfSpeech != nil {
+		item.PartOfSpeech = *input.PartOfSpeech
 	}
 	item.SourceText = strings.TrimSpace(defaultString(input.SourceText, item.SourceText))
 	item.SourceURL = strings.TrimSpace(defaultString(input.SourceURL, item.SourceURL))
@@ -165,6 +165,13 @@ func (a *App) ArchiveVocab(userID, id string) (domain.VocabItem, error) {
 		return domain.VocabItem{}, err
 	}
 	return item, nil
+}
+
+func partOfSpeechValue(value *domain.PartOfSpeech) domain.PartOfSpeech {
+	if value == nil {
+		return domain.PartOfSpeechUnspecified
+	}
+	return *value
 }
 
 func defaultString(next, current string) string {
