@@ -44,6 +44,20 @@ func TestEnricherPreservesOrderAndFillsMissingFields(t *testing.T) {
 	}
 }
 
+func TestEnricherPreservesInputTermWhenProviderRewritesIt(t *testing.T) {
+	enricher := New(&fakeProvider{results: []Suggestion{
+		{Term: "serendipitous", Meaning: "happy accident"},
+	}}, 20)
+
+	result, err := enricher.Autocomplete(context.Background(), []Item{{Term: "serendipity"}})
+	if err != nil {
+		t.Fatalf("autocomplete: %v", err)
+	}
+	if result[0].Term != "serendipity" {
+		t.Fatalf("term: got %q want %q", result[0].Term, "serendipity")
+	}
+}
+
 func TestEnricherValidatesBatch(t *testing.T) {
 	enricher := New(&fakeProvider{}, 1)
 	if _, err := enricher.Autocomplete(context.Background(), nil); !errors.Is(err, ErrEmptyBatch) {

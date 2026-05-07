@@ -96,14 +96,11 @@ func (e *Enricher) validateItems(items []Item) ([]Item, error) {
 
 func fillMissingFields(item Item, suggestion Suggestion) Suggestion {
 	result := Suggestion{
-		Term:            strings.TrimSpace(suggestion.Term),
+		Term:            item.Term,
 		Meaning:         strings.TrimSpace(suggestion.Meaning),
 		ExampleSentence: strings.TrimSpace(suggestion.ExampleSentence),
 		PartOfSpeech:    suggestion.PartOfSpeech,
 		Error:           suggestion.Error,
-	}
-	if result.Term == "" {
-		result.Term = item.Term
 	}
 	if item.Meaning != "" {
 		result.Meaning = item.Meaning
