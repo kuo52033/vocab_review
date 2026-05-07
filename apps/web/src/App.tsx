@@ -51,6 +51,23 @@ type ParsedImportCard = {
   error?: string;
 };
 
+const allowedPartsOfSpeech = new Set([
+  "",
+  "noun",
+  "verb",
+  "adjective",
+  "adverb",
+  "phrase",
+  "idiom",
+  "phrasal_verb",
+  "preposition",
+  "conjunction",
+  "interjection",
+  "determiner",
+  "pronoun",
+  "other"
+]);
+
 const emptyForm: CardDraft = {
   term: "",
   kind: "word",
@@ -110,15 +127,22 @@ function parseBulkImport(input: string) {
     .filter((card) => card.term);
 }
 
+function normalizePartOfSpeech(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (allowedPartsOfSpeech.has(normalized)) return normalized;
+  return normalized ? "other" : "";
+}
+
 function mergeAutocompleteResults(cards: ParsedImportCard[], results: AutocompleteResult[]): ParsedImportCard[] {
   return cards.map((card, index) => {
     const result = results[index];
     if (!result) return card;
+    const partOfSpeech = normalizePartOfSpeech(result.part_of_speech || "");
     return {
       ...card,
       meaning: card.meaning || result.meaning || "",
       example_sentence: card.example_sentence || result.example_sentence || "",
-      part_of_speech: card.part_of_speech || result.part_of_speech || "",
+      part_of_speech: card.part_of_speech || partOfSpeech,
       error: result.error || undefined
     };
   });
@@ -126,6 +150,7 @@ function mergeAutocompleteResults(cards: ParsedImportCard[], results: Autocomple
 
 export function App() {
   const termInputRef = useRef<HTMLInputElement>(null);
+  const bulkTextRef = useRef("");
   const [auth, setAuth] = useState<AuthState>({ email: "", token: localStorage.getItem("session_token") ?? "" });
   const [vocab, setVocab] = useState<VocabWithState[]>([]);
   const [due, setDue] = useState<VocabWithState[]>([]);
@@ -279,7 +304,7 @@ export function App() {
         applyCreatedCard({ item: response.item, state: response.state });
         importedCount += 1;
       }
-      setBulkText("");
+      handleBulkTextChange("");
       setEnrichedCards(null);
       setEnrichmentError("");
       setLastCreatedTerm("");
@@ -294,7 +319,8 @@ export function App() {
   }
 
   async function handleAutocompleteBulk() {
-    const cards = parseBulkImport(bulkText);
+    const inputSnapshot = bulkText;
+    const cards = parseBulkImport(inputSnapshot);
     if (cards.length === 0) return;
 
     setIsEnriching(true);
@@ -307,8 +333,10 @@ export function App() {
         part_of_speech
       }));
       const response = await autocompleteVocab(items);
+      if (bulkTextRef.current !== inputSnapshot) return;
       setEnrichedCards(mergeAutocompleteResults(cards, response.items));
     } catch (err) {
+      if (bulkTextRef.current !== inputSnapshot) return;
       setEnrichmentError(`${(err as Error).message}. Manual import still works with the details currently shown.`);
     } finally {
       setIsEnriching(false);
@@ -410,6 +438,7 @@ export function App() {
   }
 
   function handleBulkTextChange(value: string) {
+    bulkTextRef.current = value;
     setBulkText(value);
     setEnrichedCards(null);
     setEnrichmentError("");
