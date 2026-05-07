@@ -34,6 +34,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /auth/verify", s.handleVerify)
 
 	s.mux.Handle("GET /vocab", s.requireAuth(http.HandlerFunc(s.handleListVocab)))
+	s.mux.Handle("POST /vocab/autocomplete", s.requireAuth(http.HandlerFunc(s.handleAutocompleteVocab)))
 	s.mux.Handle("POST /vocab", s.requireAuth(http.HandlerFunc(s.handleCreateVocab)))
 	s.mux.Handle("PATCH /vocab/", s.requireAuth(http.HandlerFunc(s.handleUpdateVocab)))
 	s.mux.Handle("DELETE /vocab/", s.requireAuth(http.HandlerFunc(s.handleDeleteVocab)))

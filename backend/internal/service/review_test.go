@@ -8,6 +8,7 @@ import (
 
 	"vocabreview/backend/internal/domain"
 	"vocabreview/backend/internal/repository"
+	"vocabreview/backend/internal/service/enrichment"
 )
 
 type stubClock struct {
@@ -251,6 +252,48 @@ func (f *fakeRepository) ListNotificationJobs(_ context.Context, userID string) 
 
 func newTestApp() *App {
 	return NewApp(newFakeRepository(), stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
+}
+
+type fakeEnricher struct {
+	items       []enrichment.Item
+	suggestions []enrichment.Suggestion
+	err         error
+}
+
+func (f *fakeEnricher) Autocomplete(_ context.Context, items []enrichment.Item) ([]enrichment.Suggestion, error) {
+	f.items = append([]enrichment.Item(nil), items...)
+	return f.suggestions, f.err
+}
+
+func TestAutocompleteVocabRequiresConfiguredEnricher(t *testing.T) {
+	_, err := newTestApp().AutocompleteVocab([]enrichment.Item{{Term: "serendipity"}})
+	if !errors.Is(err, ErrEnrichmentNotConfigured) {
+		t.Fatalf("autocomplete error: got %v want %v", err, ErrEnrichmentNotConfigured)
+	}
+}
+
+func TestAutocompleteVocabUsesConfiguredEnricher(t *testing.T) {
+	enricher := &fakeEnricher{
+		suggestions: []enrichment.Suggestion{{
+			Term:            "serendipity",
+			Meaning:         "a fortunate discovery",
+			ExampleSentence: "Finding the cafe was pure serendipity.",
+			PartOfSpeech:    domain.PartOfSpeechNoun,
+		}},
+	}
+	app := NewAppWithEnricher(newFakeRepository(), stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)}, enricher)
+	items := []enrichment.Item{{Term: "serendipity"}}
+
+	suggestions, err := app.AutocompleteVocab(items)
+	if err != nil {
+		t.Fatalf("autocomplete vocab: %v", err)
+	}
+	if len(suggestions) != 1 || suggestions[0].Meaning != "a fortunate discovery" {
+		t.Fatalf("unexpected suggestions: %#v", suggestions)
+	}
+	if len(enricher.items) != 1 || enricher.items[0].Term != "serendipity" {
+		t.Fatalf("enricher input: %#v", enricher.items)
+	}
 }
 
 func TestReviewScheduling(t *testing.T) {

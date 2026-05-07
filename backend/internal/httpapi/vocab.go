@@ -1,10 +1,12 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	"vocabreview/backend/internal/service"
+	"vocabreview/backend/internal/service/enrichment"
 )
 
 func (s *Server) handleListVocab(w http.ResponseWriter, r *http.Request) {
@@ -28,6 +30,37 @@ func (s *Server) handleCreateVocab(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"item": item, "state": state})
+}
+
+func (s *Server) handleAutocompleteVocab(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Items []enrichment.Item `json:"items"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	items, err := s.app.AutocompleteVocab(req.Items)
+	if err != nil {
+		writeError(w, autocompleteVocabStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func autocompleteVocabStatus(err error) int {
+	switch {
+	case errors.Is(err, service.ErrEnrichmentNotConfigured):
+		return http.StatusBadGateway
+	case errors.Is(err, enrichment.ErrEmptyBatch),
+		errors.Is(err, enrichment.ErrBatchTooLarge),
+		errors.Is(err, enrichment.ErrTermRequired):
+		return http.StatusBadRequest
+	case errors.Is(err, enrichment.ErrProviderFailed):
+		return http.StatusBadGateway
+	default:
+		return http.StatusInternalServerError
+	}
 }
 
 func (s *Server) handleUpdateVocab(w http.ResponseWriter, r *http.Request) {

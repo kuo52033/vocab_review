@@ -9,17 +9,29 @@ import (
 	"vocabreview/backend/internal/clock"
 	"vocabreview/backend/internal/domain"
 	"vocabreview/backend/internal/repository"
+	"vocabreview/backend/internal/service/enrichment"
 	"vocabreview/backend/internal/service/intake"
 	"vocabreview/backend/internal/service/scheduling"
 )
 
+var ErrEnrichmentNotConfigured = errors.New("vocab enrichment is not configured")
+
+type VocabEnricher interface {
+	Autocomplete(ctx context.Context, items []enrichment.Item) ([]enrichment.Suggestion, error)
+}
+
 type App struct {
-	store repository.AppRepository
-	clock clock.Clock
+	store    repository.AppRepository
+	clock    clock.Clock
+	enricher VocabEnricher
 }
 
 func NewApp(store repository.AppRepository, appClock clock.Clock) *App {
-	return &App{store: store, clock: appClock}
+	return NewAppWithEnricher(store, appClock, nil)
+}
+
+func NewAppWithEnricher(store repository.AppRepository, appClock clock.Clock, enricher VocabEnricher) *App {
+	return &App{store: store, clock: appClock, enricher: enricher}
 }
 
 type AuthResult struct {
@@ -126,6 +138,13 @@ func (a *App) CreateVocab(userID string, input CreateVocabInput) (domain.VocabIt
 		return domain.VocabItem{}, domain.ReviewState{}, err
 	}
 	return card.Item, card.State, nil
+}
+
+func (a *App) AutocompleteVocab(items []enrichment.Item) ([]enrichment.Suggestion, error) {
+	if a.enricher == nil {
+		return nil, ErrEnrichmentNotConfigured
+	}
+	return a.enricher.Autocomplete(context.Background(), items)
 }
 
 func (a *App) UpdateVocab(userID, id string, input CreateVocabInput) (domain.VocabItem, error) {

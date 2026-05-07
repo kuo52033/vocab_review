@@ -16,6 +16,7 @@ import (
 	"vocabreview/backend/internal/httpapi"
 	"vocabreview/backend/internal/repository/postgres"
 	"vocabreview/backend/internal/service"
+	"vocabreview/backend/internal/service/enrichment"
 )
 
 func main() {
@@ -37,7 +38,7 @@ func main() {
 	}
 	defer store.Close()
 
-	app := service.NewApp(store, clock.RealClock{})
+	app := service.NewAppWithEnricher(store, clock.RealClock{}, newVocabEnricherFromEnv())
 	logOutput := logFormatWriter{
 		out:   os.Stdout,
 		color: logColorEnabled(os.Getenv("LOG_COLOR")),
@@ -182,6 +183,17 @@ func replaceLogAttr(_ []string, attr slog.Attr) slog.Attr {
 		return slog.String(slog.TimeKey, "["+attr.Value.Time().Format("2006-01-02T15:04:05.000")+"]")
 	}
 	return attr
+}
+
+func newVocabEnricherFromEnv() service.VocabEnricher {
+	baseURL := os.Getenv("VOCAB_ENRICHMENT_BASE_URL")
+	apiKey := os.Getenv("VOCAB_ENRICHMENT_API_KEY")
+	model := os.Getenv("VOCAB_ENRICHMENT_MODEL")
+	if baseURL == "" || apiKey == "" || model == "" {
+		return nil
+	}
+	provider := enrichment.NewOpenAIProvider(baseURL, apiKey, model, http.DefaultClient)
+	return enrichment.New(provider, 20)
 }
 
 func logColorEnabled(value string) bool {
