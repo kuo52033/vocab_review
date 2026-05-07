@@ -10,3 +10,4 @@ backend/data
 .xcode-derived-data/
 *.xcuserstate
 xcuserdata/
+.superpowers/
