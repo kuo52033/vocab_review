@@ -174,17 +174,12 @@ func (a *App) UpdateVocab(userID, id string, input CreateVocabInput) (domain.Voc
 }
 
 func (a *App) ArchiveVocab(userID, id string) (domain.VocabItem, error) {
-	item, ok, err := a.store.GetVocab(context.Background(), id)
-	if err != nil {
-		return domain.VocabItem{}, err
-	}
-	if !ok || item.UserID != userID {
+	now := a.clock.Now()
+	item, err := a.store.ArchiveVocabForUser(context.Background(), userID, id, now)
+	if errors.Is(err, repository.ErrNotFound) {
 		return domain.VocabItem{}, errors.New("vocab not found")
 	}
-	now := a.clock.Now()
-	item.ArchivedAt = &now
-	item.UpdatedAt = now
-	if err := a.store.UpdateVocab(context.Background(), item); err != nil {
+	if err != nil {
 		return domain.VocabItem{}, err
 	}
 	return item, nil

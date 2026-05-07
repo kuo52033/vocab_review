@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/pressly/goose/v3"
 
 	"vocabreview/backend/internal/domain"
+	"vocabreview/backend/internal/repository"
 )
 
 func TestStoreLifecycle(t *testing.T) {
@@ -176,6 +178,81 @@ func TestStoreLifecycle(t *testing.T) {
 	}
 	if len(jobs) != 1 || jobs[0].ID != job.ID {
 		t.Fatalf("unexpected jobs: %+v", jobs)
+	}
+}
+
+func TestArchiveVocabForUserScopesArchiveByOwner(t *testing.T) {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DATABASE_URL is required for postgres integration tests")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resetDatabase(t, databaseURL)
+
+	store, err := New(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	user := domain.User{
+		ID:        "usr_owner",
+		Email:     "owner@example.com",
+		CreatedAt: now,
+	}
+	otherUser := domain.User{
+		ID:        "usr_other",
+		Email:     "other@example.com",
+		CreatedAt: now,
+	}
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO users (id, email, created_at)
+		VALUES ($1, $2, $3), ($4, $5, $6)
+	`, user.ID, user.Email, user.CreatedAt, otherUser.ID, otherUser.Email, otherUser.CreatedAt); err != nil {
+		t.Fatalf("insert users: %v", err)
+	}
+
+	item := domain.VocabItem{
+		ID:              "voc_archive",
+		UserID:          user.ID,
+		Term:            "archive",
+		Kind:            domain.CardKindWord,
+		Meaning:         "store away",
+		ExampleSentence: "Archive this card.",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	state := domain.ReviewState{
+		VocabItemID:     item.ID,
+		UserID:          user.ID,
+		Status:          domain.ReviewStatusNew,
+		EaseFactor:      2.5,
+		IntervalDays:    0,
+		RepetitionCount: 0,
+		NextDueAt:       now,
+	}
+	if err := store.CreateVocab(ctx, item, state, nil); err != nil {
+		t.Fatalf("create vocab: %v", err)
+	}
+
+	archivedAt := now.Add(time.Minute)
+	if _, err := store.ArchiveVocabForUser(ctx, otherUser.ID, item.ID, archivedAt); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("archive as other user: got %v want %v", err, repository.ErrNotFound)
+	}
+
+	archived, err := store.ArchiveVocabForUser(ctx, user.ID, item.ID, archivedAt)
+	if err != nil {
+		t.Fatalf("archive as owner: %v", err)
+	}
+	if archived.ArchivedAt == nil || !archived.ArchivedAt.Equal(archivedAt) {
+		t.Fatalf("archived at: got %v want %s", archived.ArchivedAt, archivedAt)
+	}
+	if archived.UpdatedAt != archivedAt {
+		t.Fatalf("updated at: got %s want %s", archived.UpdatedAt, archivedAt)
 	}
 }
 

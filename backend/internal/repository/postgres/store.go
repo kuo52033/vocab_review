@@ -217,6 +217,26 @@ func (s *Store) UpdateVocab(ctx context.Context, item domain.VocabItem) error {
 	return err
 }
 
+func (s *Store) ArchiveVocabForUser(ctx context.Context, userID string, vocabID string, archivedAt time.Time) (domain.VocabItem, error) {
+	item, err := scanVocab(
+		s.pool.QueryRow(ctx, `
+			UPDATE vocab_items
+			SET updated_at = $3,
+			    archived_at = $3
+			WHERE id = $1
+			  AND user_id = $2
+			RETURNING id, user_id, term, kind, meaning, example_sentence, source_text, source_url, notes, created_at, updated_at, archived_at
+		`, vocabID, userID, archivedAt.UTC()),
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.VocabItem{}, repository.ErrNotFound
+	}
+	if err != nil {
+		return domain.VocabItem{}, err
+	}
+	return item, nil
+}
+
 func (s *Store) ListVocabByUser(ctx context.Context, userID string) ([]repository.VocabWithState, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT

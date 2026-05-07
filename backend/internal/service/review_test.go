@@ -115,6 +115,17 @@ func (f *fakeRepository) UpdateVocab(_ context.Context, item domain.VocabItem) e
 	return nil
 }
 
+func (f *fakeRepository) ArchiveVocabForUser(_ context.Context, userID string, vocabID string, archivedAt time.Time) (domain.VocabItem, error) {
+	item, ok := f.vocab[vocabID]
+	if !ok || item.UserID != userID {
+		return domain.VocabItem{}, repository.ErrNotFound
+	}
+	item.ArchivedAt = &archivedAt
+	item.UpdatedAt = archivedAt
+	f.vocab[item.ID] = item
+	return item, nil
+}
+
 func (f *fakeRepository) ListVocabByUser(_ context.Context, userID string) ([]repository.VocabWithState, error) {
 	items := make([]repository.VocabWithState, 0)
 	for _, item := range f.vocab {
