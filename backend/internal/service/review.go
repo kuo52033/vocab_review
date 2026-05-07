@@ -94,13 +94,14 @@ func (a *App) Session(token string) (domain.Session, domain.User, error) {
 }
 
 type CreateVocabInput struct {
-	Term            string          `json:"term"`
-	Kind            domain.CardKind `json:"kind"`
-	Meaning         string          `json:"meaning"`
-	ExampleSentence string          `json:"example_sentence"`
-	SourceText      string          `json:"source_text"`
-	SourceURL       string          `json:"source_url"`
-	Notes           string          `json:"notes"`
+	Term            string              `json:"term"`
+	Kind            domain.CardKind     `json:"kind"`
+	Meaning         string              `json:"meaning"`
+	ExampleSentence string              `json:"example_sentence"`
+	PartOfSpeech    domain.PartOfSpeech `json:"part_of_speech"`
+	SourceText      string              `json:"source_text"`
+	SourceURL       string              `json:"source_url"`
+	Notes           string              `json:"notes"`
 }
 
 func (a *App) CreateVocab(userID string, input CreateVocabInput) (domain.VocabItem, domain.ReviewState, error) {
@@ -110,6 +111,7 @@ func (a *App) CreateVocab(userID string, input CreateVocabInput) (domain.VocabIt
 		Kind:            input.Kind,
 		Meaning:         input.Meaning,
 		ExampleSentence: input.ExampleSentence,
+		PartOfSpeech:    input.PartOfSpeech,
 		SourceText:      input.SourceText,
 		SourceURL:       input.SourceURL,
 		Notes:           input.Notes,
@@ -140,6 +142,9 @@ func (a *App) UpdateVocab(userID, id string, input CreateVocabInput) (domain.Voc
 	}
 	item.Meaning = strings.TrimSpace(defaultString(input.Meaning, item.Meaning))
 	item.ExampleSentence = strings.TrimSpace(defaultString(input.ExampleSentence, item.ExampleSentence))
+	if input.PartOfSpeech != "" {
+		item.PartOfSpeech = input.PartOfSpeech
+	}
 	item.SourceText = strings.TrimSpace(defaultString(input.SourceText, item.SourceText))
 	item.SourceURL = strings.TrimSpace(defaultString(input.SourceURL, item.SourceURL))
 	item.Notes = strings.TrimSpace(defaultString(input.Notes, item.Notes))

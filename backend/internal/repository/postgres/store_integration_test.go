@@ -256,6 +256,80 @@ func TestArchiveVocabForUserScopesArchiveByOwner(t *testing.T) {
 	}
 }
 
+func TestStorePersistsPartOfSpeech(t *testing.T) {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DATABASE_URL is required for postgres integration tests")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resetDatabase(t, databaseURL)
+
+	store, err := New(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	user := domain.User{ID: "usr_pos", Email: "pos@example.com", CreatedAt: now}
+	if _, err := store.pool.Exec(ctx, `INSERT INTO users (id, email, created_at) VALUES ($1, $2, $3)`, user.ID, user.Email, user.CreatedAt); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	item := domain.VocabItem{
+		ID:              "voc_pos",
+		UserID:          user.ID,
+		Term:            "serendipity",
+		Kind:            domain.CardKindWord,
+		Meaning:         "happy accident",
+		ExampleSentence: "It was serendipity.",
+		PartOfSpeech:    domain.PartOfSpeechNoun,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	state := domain.ReviewState{
+		VocabItemID:     item.ID,
+		UserID:          user.ID,
+		Status:          domain.ReviewStatusNew,
+		EaseFactor:      2.5,
+		IntervalDays:    0,
+		RepetitionCount: 0,
+		NextDueAt:       now,
+	}
+	if err := store.CreateVocab(ctx, item, state, nil); err != nil {
+		t.Fatalf("create vocab: %v", err)
+	}
+
+	loaded, ok, err := store.GetVocab(ctx, item.ID)
+	if err != nil {
+		t.Fatalf("get vocab: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected vocab")
+	}
+	if loaded.PartOfSpeech != domain.PartOfSpeechNoun {
+		t.Fatalf("part of speech: got %q want %q", loaded.PartOfSpeech, domain.PartOfSpeechNoun)
+	}
+
+	item.ID = "voc_invalid_pos"
+	item.PartOfSpeech = domain.PartOfSpeech("invalid")
+	err = store.CreateVocab(ctx, item, domain.ReviewState{
+		VocabItemID:     item.ID,
+		UserID:          user.ID,
+		Status:          domain.ReviewStatusNew,
+		EaseFactor:      2.5,
+		IntervalDays:    0,
+		RepetitionCount: 0,
+		NextDueAt:       now,
+	}, nil)
+	if err == nil {
+		t.Fatal("expected invalid part_of_speech constraint error")
+	}
+}
+
 func resetDatabase(t *testing.T, databaseURL string) {
 	t.Helper()
 

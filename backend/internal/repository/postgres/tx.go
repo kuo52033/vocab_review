@@ -28,10 +28,10 @@ func withTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) erro
 func insertVocab(ctx context.Context, tx pgx.Tx, item domain.VocabItem) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO vocab_items (
-			id, user_id, term, kind, meaning, example_sentence, source_text, source_url, notes, created_at, updated_at, archived_at
+			id, user_id, term, kind, meaning, example_sentence, part_of_speech, source_text, source_url, notes, created_at, updated_at, archived_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-	`, item.ID, item.UserID, item.Term, item.Kind, item.Meaning, item.ExampleSentence, item.SourceText, item.SourceURL, item.Notes, item.CreatedAt.UTC(), item.UpdatedAt.UTC(), nullableTime(item.ArchivedAt))
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	`, item.ID, item.UserID, item.Term, item.Kind, item.Meaning, item.ExampleSentence, item.PartOfSpeech, item.SourceText, item.SourceURL, item.Notes, item.CreatedAt.UTC(), item.UpdatedAt.UTC(), nullableTime(item.ArchivedAt))
 	return err
 }
 

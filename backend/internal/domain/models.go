@@ -9,6 +9,25 @@ const (
 	CardKindPhrase CardKind = "phrase"
 )
 
+type PartOfSpeech string
+
+const (
+	PartOfSpeechUnspecified  PartOfSpeech = ""
+	PartOfSpeechNoun         PartOfSpeech = "noun"
+	PartOfSpeechVerb         PartOfSpeech = "verb"
+	PartOfSpeechAdjective    PartOfSpeech = "adjective"
+	PartOfSpeechAdverb       PartOfSpeech = "adverb"
+	PartOfSpeechPhrase       PartOfSpeech = "phrase"
+	PartOfSpeechIdiom        PartOfSpeech = "idiom"
+	PartOfSpeechPhrasalVerb  PartOfSpeech = "phrasal_verb"
+	PartOfSpeechPreposition  PartOfSpeech = "preposition"
+	PartOfSpeechConjunction  PartOfSpeech = "conjunction"
+	PartOfSpeechInterjection PartOfSpeech = "interjection"
+	PartOfSpeechDeterminer   PartOfSpeech = "determiner"
+	PartOfSpeechPronoun      PartOfSpeech = "pronoun"
+	PartOfSpeechOther        PartOfSpeech = "other"
+)
+
 type ReviewGrade string
 
 const (
@@ -46,18 +65,19 @@ type MagicLinkToken struct {
 }
 
 type VocabItem struct {
-	ID              string     `json:"id"`
-	UserID          string     `json:"user_id"`
-	Term            string     `json:"term"`
-	Kind            CardKind   `json:"kind"`
-	Meaning         string     `json:"meaning"`
-	ExampleSentence string     `json:"example_sentence"`
-	SourceText      string     `json:"source_text"`
-	SourceURL       string     `json:"source_url"`
-	Notes           string     `json:"notes"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	ArchivedAt      *time.Time `json:"archived_at,omitempty"`
+	ID              string       `json:"id"`
+	UserID          string       `json:"user_id"`
+	Term            string       `json:"term"`
+	Kind            CardKind     `json:"kind"`
+	Meaning         string       `json:"meaning"`
+	ExampleSentence string       `json:"example_sentence"`
+	PartOfSpeech    PartOfSpeech `json:"part_of_speech"`
+	SourceText      string       `json:"source_text"`
+	SourceURL       string       `json:"source_url"`
+	Notes           string       `json:"notes"`
+	CreatedAt       time.Time    `json:"created_at"`
+	UpdatedAt       time.Time    `json:"updated_at"`
+	ArchivedAt      *time.Time   `json:"archived_at,omitempty"`
 }
 
 type ReviewState struct {

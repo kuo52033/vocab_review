@@ -15,6 +15,7 @@ func TestNewVocabCardBuildsInitialDueCard(t *testing.T) {
 		Kind:            "",
 		Meaning:         "  happy accident  ",
 		ExampleSentence: "  That was serendipity.  ",
+		PartOfSpeech:    domain.PartOfSpeechNoun,
 		SourceText:      "  source text  ",
 		SourceURL:       "  https://example.com  ",
 		Notes:           "  note  ",
@@ -31,6 +32,9 @@ func TestNewVocabCardBuildsInitialDueCard(t *testing.T) {
 	}
 	if card.Item.ExampleSentence != "That was serendipity." || card.Item.SourceText != "source text" || card.Item.SourceURL != "https://example.com" || card.Item.Notes != "note" {
 		t.Fatalf("unexpected trimmed fields: %+v", card.Item)
+	}
+	if card.Item.PartOfSpeech != domain.PartOfSpeechNoun {
+		t.Fatalf("part of speech: got %q want %q", card.Item.PartOfSpeech, domain.PartOfSpeechNoun)
 	}
 	if !card.Item.CreatedAt.Equal(now) || !card.Item.UpdatedAt.Equal(now) {
 		t.Fatalf("unexpected timestamps: %+v", card.Item)

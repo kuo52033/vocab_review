@@ -25,6 +25,7 @@ type VocabInput struct {
 	Kind            domain.CardKind
 	Meaning         string
 	ExampleSentence string
+	PartOfSpeech    domain.PartOfSpeech
 	SourceText      string
 	SourceURL       string
 	Notes           string
@@ -68,6 +69,7 @@ func NewVocabCard(userID string, input VocabInput, ids IDs, now time.Time) (Card
 		Kind:            kind,
 		Meaning:         strings.TrimSpace(input.Meaning),
 		ExampleSentence: strings.TrimSpace(input.ExampleSentence),
+		PartOfSpeech:    input.PartOfSpeech,
 		SourceText:      strings.TrimSpace(input.SourceText),
 		SourceURL:       strings.TrimSpace(input.SourceURL),
 		Notes:           strings.TrimSpace(input.Notes),
@@ -89,6 +91,7 @@ func NewCapturedCard(userID string, input CaptureInput, ids IDs, now time.Time) 
 		Kind:            domain.CardKindPhrase,
 		Meaning:         input.Meaning,
 		ExampleSentence: input.ExampleSentence,
+		PartOfSpeech:    domain.PartOfSpeechUnspecified,
 		SourceText:      input.Selection,
 		SourceURL:       input.PageURL,
 		Notes:           input.Notes,
