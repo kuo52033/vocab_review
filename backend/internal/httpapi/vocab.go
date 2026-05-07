@@ -40,7 +40,7 @@ func (s *Server) handleAutocompleteVocab(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	items, err := s.app.AutocompleteVocab(req.Items)
+	items, err := s.app.AutocompleteVocab(r.Context(), req.Items)
 	if err != nil {
 		writeError(w, autocompleteVocabStatus(err), err.Error())
 		return

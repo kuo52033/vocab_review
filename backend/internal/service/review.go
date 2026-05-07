@@ -140,11 +140,11 @@ func (a *App) CreateVocab(userID string, input CreateVocabInput) (domain.VocabIt
 	return card.Item, card.State, nil
 }
 
-func (a *App) AutocompleteVocab(items []enrichment.Item) ([]enrichment.Suggestion, error) {
+func (a *App) AutocompleteVocab(ctx context.Context, items []enrichment.Item) ([]enrichment.Suggestion, error) {
 	if a.enricher == nil {
 		return nil, ErrEnrichmentNotConfigured
 	}
-	return a.enricher.Autocomplete(context.Background(), items)
+	return a.enricher.Autocomplete(ctx, items)
 }
 
 func (a *App) UpdateVocab(userID, id string, input CreateVocabInput) (domain.VocabItem, error) {

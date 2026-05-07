@@ -255,18 +255,20 @@ func newTestApp() *App {
 }
 
 type fakeEnricher struct {
+	ctx         context.Context
 	items       []enrichment.Item
 	suggestions []enrichment.Suggestion
 	err         error
 }
 
-func (f *fakeEnricher) Autocomplete(_ context.Context, items []enrichment.Item) ([]enrichment.Suggestion, error) {
+func (f *fakeEnricher) Autocomplete(ctx context.Context, items []enrichment.Item) ([]enrichment.Suggestion, error) {
+	f.ctx = ctx
 	f.items = append([]enrichment.Item(nil), items...)
 	return f.suggestions, f.err
 }
 
 func TestAutocompleteVocabRequiresConfiguredEnricher(t *testing.T) {
-	_, err := newTestApp().AutocompleteVocab([]enrichment.Item{{Term: "serendipity"}})
+	_, err := newTestApp().AutocompleteVocab(context.Background(), []enrichment.Item{{Term: "serendipity"}})
 	if !errors.Is(err, ErrEnrichmentNotConfigured) {
 		t.Fatalf("autocomplete error: got %v want %v", err, ErrEnrichmentNotConfigured)
 	}
@@ -284,7 +286,7 @@ func TestAutocompleteVocabUsesConfiguredEnricher(t *testing.T) {
 	app := NewAppWithEnricher(newFakeRepository(), stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)}, enricher)
 	items := []enrichment.Item{{Term: "serendipity"}}
 
-	suggestions, err := app.AutocompleteVocab(items)
+	suggestions, err := app.AutocompleteVocab(context.Background(), items)
 	if err != nil {
 		t.Fatalf("autocomplete vocab: %v", err)
 	}
@@ -293,6 +295,23 @@ func TestAutocompleteVocabUsesConfiguredEnricher(t *testing.T) {
 	}
 	if len(enricher.items) != 1 || enricher.items[0].Term != "serendipity" {
 		t.Fatalf("enricher input: %#v", enricher.items)
+	}
+}
+
+func TestAutocompleteVocabPassesCallerContext(t *testing.T) {
+	enricher := &fakeEnricher{}
+	app := NewAppWithEnricher(newFakeRepository(), stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)}, enricher)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := app.AutocompleteVocab(ctx, []enrichment.Item{{Term: "serendipity"}})
+	if err != nil {
+		t.Fatalf("autocomplete vocab: %v", err)
+	}
+	select {
+	case <-enricher.ctx.Done():
+	default:
+		t.Fatal("expected enricher to receive canceled caller context")
 	}
 }
 

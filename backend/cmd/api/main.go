@@ -192,7 +192,7 @@ func newVocabEnricherFromEnv() service.VocabEnricher {
 	if baseURL == "" || apiKey == "" || model == "" {
 		return nil
 	}
-	provider := enrichment.NewOpenAIProvider(baseURL, apiKey, model, http.DefaultClient)
+	provider := enrichment.NewOpenAIProvider(baseURL, apiKey, model, &http.Client{Timeout: 15 * time.Second})
 	return enrichment.New(provider, 20)
 }
 
