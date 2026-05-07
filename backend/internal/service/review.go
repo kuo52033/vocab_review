@@ -9,6 +9,7 @@ import (
 	"vocabreview/backend/internal/clock"
 	"vocabreview/backend/internal/domain"
 	"vocabreview/backend/internal/repository"
+	"vocabreview/backend/internal/service/intake"
 	"vocabreview/backend/internal/service/scheduling"
 )
 
@@ -103,50 +104,26 @@ type CreateVocabInput struct {
 }
 
 func (a *App) CreateVocab(userID string, input CreateVocabInput) (domain.VocabItem, domain.ReviewState, error) {
-	if strings.TrimSpace(input.Term) == "" {
-		return domain.VocabItem{}, domain.ReviewState{}, errors.New("term is required")
-	}
-	if input.Kind == "" {
-		input.Kind = domain.CardKindWord
-	}
 	now := a.clock.Now()
-	item := domain.VocabItem{
-		ID:              newID("voc"),
-		UserID:          userID,
-		Term:            strings.TrimSpace(input.Term),
+	card, err := intake.NewVocabCard(userID, intake.VocabInput{
+		Term:            input.Term,
 		Kind:            input.Kind,
-		Meaning:         strings.TrimSpace(input.Meaning),
-		ExampleSentence: strings.TrimSpace(input.ExampleSentence),
-		SourceText:      strings.TrimSpace(input.SourceText),
-		SourceURL:       strings.TrimSpace(input.SourceURL),
-		Notes:           strings.TrimSpace(input.Notes),
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	}
-	state := domain.ReviewState{
-		VocabItemID:     item.ID,
-		UserID:          userID,
-		Status:          domain.ReviewStatusNew,
-		EaseFactor:      2.5,
-		IntervalDays:    0,
-		RepetitionCount: 0,
-		NextDueAt:       now,
-	}
-	var job *domain.NotificationJob
-	if !state.NextDueAt.After(now) {
-		job = &domain.NotificationJob{
-			ID:          newID("job"),
-			UserID:      userID,
-			VocabItemID: item.ID,
-			ScheduledAt: now,
-			Status:      "pending",
-			Message:     "Time to review your vocabulary.",
-		}
-	}
-	if err := a.store.CreateVocab(context.Background(), item, state, job); err != nil {
+		Meaning:         input.Meaning,
+		ExampleSentence: input.ExampleSentence,
+		SourceText:      input.SourceText,
+		SourceURL:       input.SourceURL,
+		Notes:           input.Notes,
+	}, intake.IDs{
+		VocabItemID:       newID("voc"),
+		NotificationJobID: newID("job"),
+	}, now)
+	if err != nil {
 		return domain.VocabItem{}, domain.ReviewState{}, err
 	}
-	return item, state, nil
+	if err := a.store.CreateVocab(context.Background(), card.Item, card.State, card.NotificationJob); err != nil {
+		return domain.VocabItem{}, domain.ReviewState{}, err
+	}
+	return card.Item, card.State, nil
 }
 
 func (a *App) UpdateVocab(userID, id string, input CreateVocabInput) (domain.VocabItem, error) {
@@ -316,55 +293,28 @@ type CaptureInput struct {
 }
 
 func (a *App) CreateCapture(userID string, input CaptureInput) (DueCard, error) {
-	if strings.TrimSpace(input.Term) == "" {
-		return DueCard{}, errors.New("term is required")
-	}
 	now := a.clock.Now()
-	item := domain.VocabItem{
-		ID:              newID("voc"),
-		UserID:          userID,
-		Term:            strings.TrimSpace(input.Term),
-		Kind:            domain.CardKindPhrase,
-		Meaning:         strings.TrimSpace(input.Meaning),
-		ExampleSentence: strings.TrimSpace(input.ExampleSentence),
-		SourceText:      strings.TrimSpace(input.Selection),
-		SourceURL:       strings.TrimSpace(input.PageURL),
-		Notes:           strings.TrimSpace(input.Notes),
-		CreatedAt:       now,
-		UpdatedAt:       now,
+	card, err := intake.NewCapturedCard(userID, intake.CaptureInput{
+		Term:            input.Term,
+		Meaning:         input.Meaning,
+		ExampleSentence: input.ExampleSentence,
+		Selection:       input.Selection,
+		PageTitle:       input.PageTitle,
+		PageURL:         input.PageURL,
+		Notes:           input.Notes,
+	}, intake.IDs{
+		VocabItemID:       newID("voc"),
+		CaptureSourceID:   newID("cap"),
+		NotificationJobID: newID("job"),
+	}, now)
+	if err != nil {
+		return DueCard{}, err
 	}
-	state := domain.ReviewState{
-		VocabItemID:     item.ID,
-		UserID:          userID,
-		Status:          domain.ReviewStatusNew,
-		EaseFactor:      2.5,
-		IntervalDays:    0,
-		RepetitionCount: 0,
-		NextDueAt:       now,
-	}
-	capture := domain.CaptureSource{
-		ID:          newID("cap"),
-		UserID:      userID,
-		VocabItemID: item.ID,
-		Source:      "chrome-extension",
-		Selection:   input.Selection,
-		PageTitle:   input.PageTitle,
-		PageURL:     input.PageURL,
-		CreatedAt:   now,
-	}
-	job := &domain.NotificationJob{
-		ID:          newID("job"),
-		UserID:      userID,
-		VocabItemID: item.ID,
-		ScheduledAt: now,
-		Status:      "pending",
-		Message:     "Time to review your vocabulary.",
-	}
-	if err := a.store.CreateCapturedVocab(context.Background(), item, state, capture, job); err != nil {
+	if err := a.store.CreateCapturedVocab(context.Background(), card.Item, card.State, card.Capture, card.NotificationJob); err != nil {
 		return DueCard{}, err
 	}
 
-	return DueCard{Item: item, State: state}, nil
+	return DueCard{Item: card.Item, State: card.State}, nil
 }
 
 func (a *App) RegisterDevice(userID, platform, token string) (domain.DeviceToken, error) {
