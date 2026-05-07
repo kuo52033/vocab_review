@@ -684,6 +684,29 @@ button:disabled {
   font-size: 0.92rem;
 }
 
+.import-preview-card .pos-pill {
+  width: fit-content;
+  border: 1px solid rgba(63, 85, 60, 0.16);
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: var(--sage-dark);
+  background: rgba(101, 123, 95, 0.09);
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.form-error,
+.import-preview-card .form-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.92rem;
+}
+
+.bulk-actions {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 180px);
+}
+
 .term {
   margin: 0 0 8px;
   font-family: var(--font-display);

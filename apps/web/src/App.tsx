@@ -1,5 +1,8 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import {
+  autocompleteVocab,
+  AutocompleteItem,
+  AutocompleteResult,
   createVocab,
   deleteVocab,
   getReviewStats,
@@ -43,6 +46,9 @@ type SessionSummary = {
 type ParsedImportCard = {
   term: string;
   meaning: string;
+  example_sentence: string;
+  part_of_speech: string;
+  error?: string;
 };
 
 const emptyForm: CardDraft = {
@@ -87,10 +93,12 @@ function parseImportLine(line: string): ParsedImportCard {
     if (index === -1) continue;
     return {
       term: line.slice(0, index).trim(),
-      meaning: line.slice(index + separator.length).trim()
+      meaning: line.slice(index + separator.length).trim(),
+      example_sentence: "",
+      part_of_speech: ""
     };
   }
-  return { term: line.trim(), meaning: "" };
+  return { term: line.trim(), meaning: "", example_sentence: "", part_of_speech: "" };
 }
 
 function parseBulkImport(input: string) {
@@ -100,6 +108,20 @@ function parseBulkImport(input: string) {
     .filter(Boolean)
     .map(parseImportLine)
     .filter((card) => card.term);
+}
+
+function mergeAutocompleteResults(cards: ParsedImportCard[], results: AutocompleteResult[]): ParsedImportCard[] {
+  return cards.map((card, index) => {
+    const result = results[index];
+    if (!result) return card;
+    return {
+      ...card,
+      meaning: card.meaning || result.meaning || "",
+      example_sentence: card.example_sentence || result.example_sentence || "",
+      part_of_speech: card.part_of_speech || result.part_of_speech || "",
+      error: result.error || undefined
+    };
+  });
 }
 
 export function App() {
@@ -112,6 +134,9 @@ export function App() {
   const [jobs, setJobs] = useState<Array<{ id: string; vocab_item_id: string; status: string; scheduled_at: string }>>([]);
   const [form, setForm] = useState(emptyForm);
   const [bulkText, setBulkText] = useState("");
+  const [enrichedCards, setEnrichedCards] = useState<ParsedImportCard[] | null>(null);
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [enrichmentError, setEnrichmentError] = useState("");
   const [editingID, setEditingID] = useState("");
   const [editDraft, setEditDraft] = useState<CardDraft>(emptyForm);
   const [query, setQuery] = useState("");
@@ -160,7 +185,8 @@ export function App() {
   const currentSessionCard = sessionDeck[sessionIndex];
   const sessionActive = Boolean(currentSessionCard);
   const sessionProgress = sessionDeck.length > 0 ? Math.round((sessionIndex / sessionDeck.length) * 100) : 0;
-  const parsedImportCards = parseBulkImport(bulkText);
+  const rawImportCards = parseBulkImport(bulkText);
+  const parsedImportCards = enrichedCards ?? rawImportCards;
 
   async function refresh() {
     setIsRefreshing(true);
@@ -246,13 +272,16 @@ export function App() {
           term: card.term,
           kind: "word",
           meaning: card.meaning,
-          example_sentence: "",
+          example_sentence: card.example_sentence,
+          part_of_speech: card.part_of_speech,
           notes: ""
         });
         applyCreatedCard({ item: response.item, state: response.state });
         importedCount += 1;
       }
       setBulkText("");
+      setEnrichedCards(null);
+      setEnrichmentError("");
       setLastCreatedTerm("");
       setLastImportCount(importedCount);
       setError("");
@@ -261,6 +290,28 @@ export function App() {
       setError((err as Error).message);
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleAutocompleteBulk() {
+    const cards = parseBulkImport(bulkText);
+    if (cards.length === 0) return;
+
+    setIsEnriching(true);
+    setEnrichmentError("");
+    try {
+      const items: AutocompleteItem[] = cards.map(({ term, meaning, example_sentence, part_of_speech }) => ({
+        term,
+        meaning,
+        example_sentence,
+        part_of_speech
+      }));
+      const response = await autocompleteVocab(items);
+      setEnrichedCards(mergeAutocompleteResults(cards, response.items));
+    } catch (err) {
+      setEnrichmentError(`${(err as Error).message}. Manual import still works with the details currently shown.`);
+    } finally {
+      setIsEnriching(false);
     }
   }
 
@@ -356,6 +407,12 @@ export function App() {
 
   function toggleHistoryDetail(entry: ReviewHistoryEntry) {
     setSelectedHistory((current) => (current?.log.id === entry.log.id ? null : entry));
+  }
+
+  function handleBulkTextChange(value: string) {
+    setBulkText(value);
+    setEnrichedCards(null);
+    setEnrichmentError("");
   }
 
   if (!auth.token) {
@@ -582,7 +639,7 @@ export function App() {
                 className="bulk-textarea"
                 value={bulkText}
                 placeholder={"abandon - to leave behind\nmeticulous: very careful\nmake up"}
-                onChange={(event) => setBulkText(event.target.value)}
+                onChange={(event) => handleBulkTextChange(event.target.value)}
               />
               <div className="import-preview">
                 {parsedImportCards.length === 0 ? (
@@ -591,15 +648,24 @@ export function App() {
                   parsedImportCards.slice(0, 8).map((card, index) => (
                     <article key={`${card.term}-${index}`} className="import-preview-card">
                       <strong>{card.term}</strong>
+                      {card.part_of_speech ? <span className="pos-pill">{card.part_of_speech}</span> : null}
                       <span>{card.meaning || "Meaning can be added later."}</span>
+                      {card.example_sentence ? <span>{card.example_sentence}</span> : null}
+                      {card.error ? <span className="form-error">{card.error}</span> : null}
                     </article>
                   ))
                 )}
                 {parsedImportCards.length > 8 ? <span className="muted">+ {parsedImportCards.length - 8} more</span> : null}
               </div>
-              <button type="submit" disabled={isSaving || parsedImportCards.length === 0}>
-                {isSaving ? "Importing..." : `Import ${parsedImportCards.length || ""} cards`}
-              </button>
+              {enrichmentError ? <p className="form-error">{enrichmentError}</p> : null}
+              <div className="action-row bulk-actions">
+                <button type="button" className="ghost-button" disabled={isEnriching || rawImportCards.length === 0} onClick={handleAutocompleteBulk}>
+                  {isEnriching ? "Auto-completing..." : "Auto-complete missing details"}
+                </button>
+                <button type="submit" disabled={isSaving || parsedImportCards.length === 0}>
+                  {isSaving ? "Importing..." : `Import ${parsedImportCards.length || ""} cards`}
+                </button>
+              </div>
               {lastImportCount ? (
                 <p className="save-confirmation">
                   Imported {lastImportCount} card{lastImportCount === 1 ? "" : "s"}.

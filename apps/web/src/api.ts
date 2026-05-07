@@ -15,12 +15,24 @@ export interface VocabItem {
   kind: "word" | "phrase";
   meaning: string;
   example_sentence: string;
+  part_of_speech: string;
   source_text: string;
   source_url: string;
   notes: string;
   created_at: string;
   updated_at: string;
   archived_at?: string;
+}
+
+export interface AutocompleteItem {
+  term: string;
+  meaning: string;
+  example_sentence: string;
+  part_of_speech: string;
+}
+
+export interface AutocompleteResult extends AutocompleteItem {
+  error: string;
 }
 
 export interface VocabWithState {
@@ -98,6 +110,13 @@ export async function createVocab(payload: Partial<VocabItem>) {
   return request<{ item: VocabItem; state: ReviewState }>("/vocab", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export async function autocompleteVocab(items: AutocompleteItem[]) {
+  return request<{ items: AutocompleteResult[] }>("/vocab/autocomplete", {
+    method: "POST",
+    body: JSON.stringify({ items })
   });
 }
 
