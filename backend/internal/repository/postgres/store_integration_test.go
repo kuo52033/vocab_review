@@ -251,7 +251,7 @@ func TestArchiveVocabForUserScopesArchiveByOwner(t *testing.T) {
 	if archived.ArchivedAt == nil || !archived.ArchivedAt.Equal(archivedAt) {
 		t.Fatalf("archived at: got %v want %s", archived.ArchivedAt, archivedAt)
 	}
-	if archived.UpdatedAt != archivedAt {
+	if !archived.UpdatedAt.Equal(archivedAt) {
 		t.Fatalf("updated at: got %s want %s", archived.UpdatedAt, archivedAt)
 	}
 }
