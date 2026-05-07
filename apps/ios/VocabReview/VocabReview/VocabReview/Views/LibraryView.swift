@@ -8,6 +8,8 @@ struct LibraryView: View {
     @State private var selectedStatus = LibraryStatusFilter.all
 
     var body: some View {
+        let visibleCards = filteredCards
+
         Group {
             if sessionStore.isLoadingLibraryCards && sessionStore.libraryCards.isEmpty {
                 ZStack {
@@ -36,7 +38,7 @@ struct LibraryView: View {
                         await sessionStore.loadLibraryCards()
                     }
                 }
-            } else if filteredCards.isEmpty {
+            } else if visibleCards.isEmpty {
                 ZStack {
                     ReadingDeskBackground()
                     ScrollView {
@@ -64,8 +66,13 @@ struct LibraryView: View {
                         LazyVStack(alignment: .leading, spacing: 14) {
                             filterPicker
                             statusMessages
-                            ForEach(filteredCards) { card in
-                                libraryRow(card)
+                            ForEach(visibleCards) { card in
+                                LibraryCardRow(
+                                    card: card,
+                                    isBusy: sessionStore.isCreatingVocab || sessionStore.isDeletingVocab,
+                                    onEdit: { editingCard = card },
+                                    onDelete: { deletingCard = card }
+                                )
                             }
                         }
                         .padding()
@@ -148,7 +155,15 @@ struct LibraryView: View {
         }
     }
 
-    private func libraryRow(_ card: DueCard) -> some View {
+}
+
+private struct LibraryCardRow: View {
+    let card: DueCard
+    let isBusy: Bool
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text(card.item.term)
@@ -181,17 +196,13 @@ struct LibraryView: View {
                 .readingMuted()
 
             HStack {
-                Button("Edit") {
-                    editingCard = card
-                }
-                .buttonStyle(.bordered)
-                .disabled(sessionStore.isCreatingVocab || sessionStore.isDeletingVocab)
+                Button("Edit", action: onEdit)
+                    .buttonStyle(.bordered)
+                    .disabled(isBusy)
 
-                Button("Delete", role: .destructive) {
-                    deletingCard = card
-                }
-                .buttonStyle(.bordered)
-                .disabled(sessionStore.isCreatingVocab || sessionStore.isDeletingVocab)
+                Button("Delete", role: .destructive, action: onDelete)
+                    .buttonStyle(.bordered)
+                    .disabled(isBusy)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

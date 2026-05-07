@@ -218,7 +218,7 @@ final class SessionStore: ObservableObject {
                 )
             )
             infoMessage = "Card added."
-            applyCreatedVocab(response)
+            applyCreatedVocabCards([response])
             isCreatingVocab = false
             return true
         } catch {
@@ -250,7 +250,7 @@ final class SessionStore: ObservableObject {
         isCreatingVocab = true
         errorMessage = ""
         infoMessage = ""
-        var createdCount = 0
+        var createdResponses: [CreateVocabResponse] = []
 
         for draft in trimmedDrafts {
             do {
@@ -267,14 +267,15 @@ final class SessionStore: ObservableObject {
                         notes: draft.notes
                     )
                 )
-                applyCreatedVocab(response)
-                createdCount += 1
+                createdResponses.append(response)
             } catch {
                 handleRequestError(error)
                 break
             }
         }
 
+        applyCreatedVocabCards(createdResponses)
+        let createdCount = createdResponses.count
         if createdCount > 0 {
             infoMessage = "Imported \(createdCount) \(createdCount == 1 ? "card" : "cards")."
         }
@@ -455,30 +456,25 @@ final class SessionStore: ObservableObject {
         errorMessage = error.localizedDescription
     }
 
-    private func applyCreatedVocab(_ response: CreateVocabResponse) {
-        let card = DueCard(item: response.item, state: response.state)
-        libraryCards.insert(card, at: 0)
+    private func applyCreatedVocabCards(_ responses: [CreateVocabResponse]) {
+        guard !responses.isEmpty else { return }
+
+        let now = Date()
+        let cards = responses.map { DueCard(item: $0.item, state: $0.state) }
+        let dueNowCards = cards.filter { $0.state.nextDueAtDate <= now }
+
+        libraryCards.insert(contentsOf: cards, at: 0)
         libraryCards.sort { lhs, rhs in
             lhs.item.createdAtDate > rhs.item.createdAtDate
         }
-        if response.state.nextDueAtDate <= Date() {
-            dueCards.insert(card, at: 0)
-            reviewStats = ReviewStats(
-                reviewed_today: reviewStats.reviewed_today,
-                reviewed_7_days: reviewStats.reviewed_7_days,
-                active_cards: reviewStats.active_cards + 1,
-                due_now: reviewStats.due_now + 1,
-                archived_cards: reviewStats.archived_cards
-            )
-        } else {
-            reviewStats = ReviewStats(
-                reviewed_today: reviewStats.reviewed_today,
-                reviewed_7_days: reviewStats.reviewed_7_days,
-                active_cards: reviewStats.active_cards + 1,
-                due_now: reviewStats.due_now,
-                archived_cards: reviewStats.archived_cards
-            )
-        }
+        dueCards.insert(contentsOf: dueNowCards, at: 0)
+        reviewStats = ReviewStats(
+            reviewed_today: reviewStats.reviewed_today,
+            reviewed_7_days: reviewStats.reviewed_7_days,
+            active_cards: reviewStats.active_cards + cards.count,
+            due_now: reviewStats.due_now + dueNowCards.count,
+            archived_cards: reviewStats.archived_cards
+        )
     }
 }
 

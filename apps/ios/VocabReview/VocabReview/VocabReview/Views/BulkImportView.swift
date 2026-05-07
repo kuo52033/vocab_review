@@ -4,11 +4,8 @@ struct BulkImportView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @Environment(\.dismiss) private var dismiss
     @State private var rawText = ""
+    @State private var parsedCards: [VocabDraftInput] = []
     @State private var sharedCaptures: [SharedQueuedCapture] = []
-
-    private var parsedCards: [VocabDraftInput] {
-        parseBulkInput(rawText)
-    }
 
     private var sharedCards: [VocabDraftInput] {
         sharedCaptures.map {
@@ -88,6 +85,9 @@ struct BulkImportView: View {
             }
             .task {
                 sharedCaptures = SharedCaptureQueue.load()
+            }
+            .onChange(of: rawText) { _, newValue in
+                parsedCards = parseBulkInput(newValue)
             }
         }
     }
