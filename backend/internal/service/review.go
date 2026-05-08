@@ -347,6 +347,7 @@ type CaptureInput struct {
 	Term            string `json:"term"`
 	Meaning         string `json:"meaning"`
 	ExampleSentence string `json:"example_sentence"`
+	PartOfSpeech    string `json:"part_of_speech"`
 	Selection       string `json:"selection"`
 	PageTitle       string `json:"page_title"`
 	PageURL         string `json:"page_url"`
@@ -359,6 +360,7 @@ func (a *App) CreateCapture(userID string, input CaptureInput) (DueCard, error) 
 		Term:            input.Term,
 		Meaning:         input.Meaning,
 		ExampleSentence: input.ExampleSentence,
+		PartOfSpeech:    domain.PartOfSpeech(strings.TrimSpace(input.PartOfSpeech)),
 		Selection:       input.Selection,
 		PageTitle:       input.PageTitle,
 		PageURL:         input.PageURL,

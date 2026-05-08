@@ -77,6 +77,7 @@ struct VocabItem: Codable {
     let kind: String
     let meaning: String
     let example_sentence: String
+    let part_of_speech: String
     let source_text: String
     let source_url: String
     let notes: String
@@ -112,6 +113,7 @@ struct CreateVocabRequest: Codable {
     let kind: String
     let meaning: String
     let example_sentence: String
+    let part_of_speech: String
     let source_text: String
     let source_url: String
     let notes: String
@@ -121,11 +123,43 @@ struct VocabDraftInput {
     let term: String
     let meaning: String
     let exampleSentence: String
+    let partOfSpeech: String
     let notes: String
+
+    init(term: String, meaning: String, exampleSentence: String, partOfSpeech: String = "", notes: String) {
+        self.term = term
+        self.meaning = meaning
+        self.exampleSentence = exampleSentence
+        self.partOfSpeech = partOfSpeech
+        self.notes = notes
+    }
 }
 
 struct EmptyRequest: Encodable {}
 
 struct APIErrorResponse: Codable {
+    let error: String
+}
+
+struct AutocompleteVocabRequest: Codable {
+    let items: [AutocompleteVocabItem]
+}
+
+struct AutocompleteVocabItem: Codable {
+    let term: String
+    let meaning: String
+    let example_sentence: String
+    let part_of_speech: String
+}
+
+struct AutocompleteVocabResponse: Codable {
+    let items: [AutocompleteVocabSuggestion]
+}
+
+struct AutocompleteVocabSuggestion: Codable {
+    let term: String
+    let meaning: String
+    let example_sentence: String
+    let part_of_speech: String
     let error: String
 }

@@ -28,7 +28,7 @@ struct ReviewListView: View {
                         .padding()
                         .readingCard()
                 }
-            } else if let card = currentSessionCard ?? sessionStore.currentCard {
+            } else if currentSessionCard != nil || !sessionStore.dueCards.isEmpty {
                 ZStack {
                     ReadingDeskBackground()
                     ScrollView {
@@ -38,11 +38,11 @@ struct ReviewListView: View {
                                 sessionSummaryCard(summary)
                             }
                             progressHeader(totalDue: isSessionActive ? sessionDeck.count : sessionStore.dueCards.count)
-                            if isSessionActive {
+                            if let card = currentSessionCard {
                                 sessionCard(card)
                             } else {
                                 startSessionCard()
-                                reviewCard(card)
+                                dueCardsList
                             }
                         }
                         .padding()
@@ -222,6 +222,14 @@ struct ReviewListView: View {
                     .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
             }
             .shadow(color: AppTheme.ink.opacity(0.1), radius: 26, x: 0, y: 16)
+    }
+
+    private var dueCardsList: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(sessionStore.dueCards) { card in
+                reviewCard(card)
+            }
+        }
     }
 
     private func reviewCardContent(_ card: DueCard) -> some View {

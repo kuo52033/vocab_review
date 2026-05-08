@@ -69,6 +69,7 @@ func TestNewCapturedCardBuildsCaptureSource(t *testing.T) {
 		Term:            " phrase ",
 		Meaning:         " meaning ",
 		ExampleSentence: " example ",
+		PartOfSpeech:    domain.PartOfSpeechPhrase,
 		Selection:       " selected text ",
 		PageTitle:       "Page title",
 		PageURL:         "https://example.com/page",
@@ -80,6 +81,9 @@ func TestNewCapturedCardBuildsCaptureSource(t *testing.T) {
 
 	if card.Item.Kind != domain.CardKindPhrase || card.Item.SourceText != "selected text" || card.Item.SourceURL != "https://example.com/page" {
 		t.Fatalf("unexpected captured item: %+v", card.Item)
+	}
+	if card.Item.PartOfSpeech != domain.PartOfSpeechPhrase {
+		t.Fatalf("part of speech: got %q want %q", card.Item.PartOfSpeech, domain.PartOfSpeechPhrase)
 	}
 	if card.Capture.ID != "cap_1" || card.Capture.UserID != "usr_1" || card.Capture.VocabItemID != "voc_1" {
 		t.Fatalf("unexpected capture identity: %+v", card.Capture)

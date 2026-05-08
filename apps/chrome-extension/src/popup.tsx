@@ -6,6 +6,7 @@ type Draft = {
   term: string;
   meaning: string;
   example_sentence: string;
+  part_of_speech: string;
   selection: string;
   page_title: string;
   page_url: string;
@@ -20,6 +21,9 @@ type MagicLink = {
 type QueuedCapture = {
   id: string;
   term: string;
+  meaning?: string;
+  example_sentence?: string;
+  part_of_speech?: string;
   selection: string;
   page_title: string;
   page_url: string;
@@ -28,6 +32,22 @@ type QueuedCapture = {
 
 const API_URL = "http://localhost:8080";
 const QUEUE_KEY = "queuedCaptures";
+const allowedPartsOfSpeech = new Set([
+  "",
+  "noun",
+  "verb",
+  "adjective",
+  "adverb",
+  "phrase",
+  "idiom",
+  "phrasal_verb",
+  "preposition",
+  "conjunction",
+  "interjection",
+  "determiner",
+  "pronoun",
+  "other"
+]);
 
 function newQueuedCapture(term: string, pageTitle = "", pageURL = ""): QueuedCapture {
   return {
@@ -44,10 +64,28 @@ const emptyDraft: Draft = {
   term: "",
   meaning: "",
   example_sentence: "",
+  part_of_speech: "",
   selection: "",
   page_title: "",
   page_url: ""
 };
+
+type AutocompleteItem = {
+  term: string;
+  meaning: string;
+  example_sentence: string;
+  part_of_speech: string;
+};
+
+type AutocompleteResult = AutocompleteItem & {
+  error: string;
+};
+
+function normalizePartOfSpeech(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (allowedPartsOfSpeech.has(normalized)) return normalized;
+  return normalized ? "other" : "";
+}
 
 function Popup() {
   const termInputRef = useRef<HTMLInputElement>(null);
@@ -171,6 +209,7 @@ function Popup() {
           term: draft.term,
           meaning: draft.meaning,
           example_sentence: draft.example_sentence,
+          part_of_speech: draft.part_of_speech,
           selection: draft.selection,
           page_title: draft.page_title,
           page_url: draft.page_url
@@ -203,8 +242,9 @@ function Popup() {
           method: "POST",
           body: JSON.stringify({
             term: capture.term,
-            meaning: "",
-            example_sentence: "",
+            meaning: capture.meaning ?? "",
+            example_sentence: capture.example_sentence ?? "",
+            part_of_speech: capture.part_of_speech ?? "",
             selection: capture.selection,
             page_title: capture.page_title,
             page_url: capture.page_url
@@ -232,6 +272,41 @@ function Popup() {
     await chrome.storage.local.set({ [QUEUE_KEY]: nextQueue });
     await chrome.action.setBadgeText({ text: nextQueue.length ? String(Math.min(nextQueue.length, 99)) : "" });
     setQueuedCaptures(nextQueue);
+  }
+
+  async function handleAutocompleteQueue() {
+    if (queuedCaptures.length === 0) return;
+    setStatus(`Auto-completing ${queuedCaptures.length} queued captures...`);
+    setIsLoading(true);
+    try {
+      const items: AutocompleteItem[] = queuedCaptures.map((capture) => ({
+        term: capture.term,
+        meaning: capture.meaning ?? "",
+        example_sentence: capture.example_sentence ?? "",
+        part_of_speech: capture.part_of_speech ?? ""
+      }));
+      const response = await request<{ items: AutocompleteResult[] }>("/vocab/autocomplete", {
+        method: "POST",
+        body: JSON.stringify({ items })
+      });
+      const enrichedQueue = queuedCaptures.map((capture, index) => {
+        const result = response.items[index];
+        if (!result) return capture;
+        return {
+          ...capture,
+          meaning: capture.meaning || result.meaning || "",
+          example_sentence: capture.example_sentence || result.example_sentence || "",
+          part_of_speech: capture.part_of_speech || normalizePartOfSpeech(result.part_of_speech || "")
+        };
+      });
+      await chrome.storage.local.set({ [QUEUE_KEY]: enrichedQueue });
+      setQueuedCaptures(enrichedQueue);
+      setStatus("Auto-completed queued captures. You can still edit later in the app.");
+    } catch (error) {
+      setStatus(`${(error as Error).message}. Queue import still works manually.`);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   async function clearQueue() {
@@ -355,6 +430,8 @@ function Popup() {
                     <div>
                       <strong>{capture.term}</strong>
                       <span>{capture.page_title || "Current page"}</span>
+                      {capture.meaning ? <span>{capture.meaning}</span> : null}
+                      {capture.part_of_speech ? <span className="pos-pill">{capture.part_of_speech.replace(/_/g, " ")}</span> : null}
                     </div>
                     <button type="button" className="text-button" onClick={() => removeQueuedCapture(capture.id)} disabled={isLoading}>
                       Remove
@@ -365,6 +442,9 @@ function Popup() {
             )}
 
             <div className="queue-actions">
+              <button type="button" className="secondary-button" onClick={handleAutocompleteQueue} disabled={isLoading || queuedCaptures.length === 0}>
+                {isLoading ? "Working..." : "Auto-complete"}
+              </button>
               <button type="button" onClick={handleImportQueue} disabled={isLoading || queuedCaptures.length === 0}>
                 {isLoading ? "Importing..." : `Import ${queuedCaptures.length || ""} cards`}
               </button>

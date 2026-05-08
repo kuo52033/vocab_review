@@ -6,6 +6,7 @@ struct BulkImportView: View {
     @State private var rawText = ""
     @State private var parsedCards: [VocabDraftInput] = []
     @State private var sharedCaptures: [SharedQueuedCapture] = []
+    @State private var enrichedCards: [VocabDraftInput]?
 
     private var sharedCards: [VocabDraftInput] {
         sharedCaptures.map {
@@ -14,7 +15,7 @@ struct BulkImportView: View {
     }
 
     private var importCandidates: [VocabDraftInput] {
-        sharedCards + parsedCards
+        enrichedCards ?? (sharedCards + parsedCards)
     }
 
     var body: some View {
@@ -85,9 +86,11 @@ struct BulkImportView: View {
             }
             .task {
                 sharedCaptures = SharedCaptureQueue.load()
+                enrichedCards = nil
             }
             .onChange(of: rawText) { _, newValue in
                 parsedCards = parseBulkInput(newValue)
+                enrichedCards = nil
             }
         }
     }
@@ -128,6 +131,7 @@ struct BulkImportView: View {
                 Button("Clear shared queue", role: .destructive) {
                     SharedCaptureQueue.clear()
                     sharedCaptures = []
+                    enrichedCards = nil
                 }
                 .buttonStyle(.bordered)
                 .disabled(sessionStore.isCreatingVocab)
@@ -164,6 +168,16 @@ struct BulkImportView: View {
                             Text(card.meaning)
                                 .foregroundStyle(AppTheme.ink)
                         }
+                        if !card.exampleSentence.isEmpty {
+                            Text(card.exampleSentence)
+                                .font(.footnote)
+                                .readingMuted()
+                        }
+                        if !card.partOfSpeech.isEmpty {
+                            Text(card.partOfSpeech.replacingOccurrences(of: "_", with: " "))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(AppTheme.sageDark)
+                        }
                     }
                     .padding(.vertical, 8)
                     .overlay(alignment: .bottom) {
@@ -173,6 +187,18 @@ struct BulkImportView: View {
                     }
                 }
             }
+
+            Button {
+                Task { await autocompleteCards() }
+            } label: {
+                if sessionStore.isAutocompletingVocab {
+                    ProgressView()
+                } else {
+                    Text("Auto-complete missing details")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(sessionStore.isAutocompletingVocab || sessionStore.isCreatingVocab || importCandidates.isEmpty)
         }
         .readingCard()
     }
@@ -186,6 +212,11 @@ struct BulkImportView: View {
             }
             dismiss()
         }
+    }
+
+    private func autocompleteCards() async {
+        guard let cards = await sessionStore.autocompleteVocabCards(sharedCards + parsedCards) else { return }
+        enrichedCards = cards
     }
 
     private func sourceNote(for capture: SharedQueuedCapture) -> String {

@@ -20,6 +20,7 @@ final class SessionStore: ObservableObject {
     @Published var isGrading: Bool = false
     @Published var isCreatingVocab: Bool = false
     @Published var isDeletingVocab: Bool = false
+    @Published var isAutocompletingVocab: Bool = false
 
     private let baseURL = URL(string: "http://localhost:8080")!
     private let sessionTokenKey = "session_token"
@@ -212,6 +213,7 @@ final class SessionStore: ObservableObject {
                     kind: "word",
                     meaning: draft.meaning.trimmingCharacters(in: .whitespacesAndNewlines),
                     example_sentence: draft.exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
+                    part_of_speech: draft.partOfSpeech.trimmingCharacters(in: .whitespacesAndNewlines),
                     source_text: trimmedTerm,
                     source_url: "",
                     notes: draft.notes.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -237,6 +239,7 @@ final class SessionStore: ObservableObject {
                     term: $0.term.trimmingCharacters(in: .whitespacesAndNewlines),
                     meaning: $0.meaning.trimmingCharacters(in: .whitespacesAndNewlines),
                     exampleSentence: $0.exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
+                    partOfSpeech: $0.partOfSpeech.trimmingCharacters(in: .whitespacesAndNewlines),
                     notes: $0.notes.trimmingCharacters(in: .whitespacesAndNewlines)
                 )
             }
@@ -262,6 +265,7 @@ final class SessionStore: ObservableObject {
                         kind: "word",
                         meaning: draft.meaning,
                         example_sentence: draft.exampleSentence,
+                        part_of_speech: draft.partOfSpeech,
                         source_text: draft.term,
                         source_url: "",
                         notes: draft.notes
@@ -311,6 +315,7 @@ final class SessionStore: ObservableObject {
                     kind: "word",
                     meaning: meaning.trimmingCharacters(in: .whitespacesAndNewlines),
                     example_sentence: exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
+                    part_of_speech: "",
                     source_text: trimmedTerm,
                     source_url: "",
                     notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -351,6 +356,55 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    func autocompleteVocabCards(_ drafts: [VocabDraftInput]) async -> [VocabDraftInput]? {
+        guard isAuthenticated else { return nil }
+
+        let trimmedDrafts = drafts
+            .map {
+                VocabDraftInput(
+                    term: $0.term.trimmingCharacters(in: .whitespacesAndNewlines),
+                    meaning: $0.meaning.trimmingCharacters(in: .whitespacesAndNewlines),
+                    exampleSentence: $0.exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
+                    partOfSpeech: $0.partOfSpeech.trimmingCharacters(in: .whitespacesAndNewlines),
+                    notes: $0.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            }
+            .filter { !$0.term.isEmpty }
+
+        guard !trimmedDrafts.isEmpty else {
+            errorMessage = "Add at least one term before auto-completing."
+            return nil
+        }
+
+        isAutocompletingVocab = true
+        errorMessage = ""
+        infoMessage = ""
+
+        do {
+            let response: AutocompleteVocabResponse = try await sendRequest(
+                path: "/vocab/autocomplete",
+                method: "POST",
+                body: AutocompleteVocabRequest(
+                    items: trimmedDrafts.map {
+                        AutocompleteVocabItem(
+                            term: $0.term,
+                            meaning: $0.meaning,
+                            example_sentence: $0.exampleSentence,
+                            part_of_speech: $0.partOfSpeech
+                        )
+                    }
+                )
+            )
+            isAutocompletingVocab = false
+            infoMessage = "Auto-completed missing details."
+            return mergeAutocompleteSuggestions(cards: trimmedDrafts, suggestions: response.items)
+        } catch {
+            handleRequestError(error)
+            isAutocompletingVocab = false
+            return nil
+        }
+    }
+
     func registerNotifications() async {
         let center = UNUserNotificationCenter.current()
         do {
@@ -374,6 +428,7 @@ final class SessionStore: ObservableObject {
         infoMessage = ""
         isCreatingVocab = false
         isDeletingVocab = false
+        isAutocompletingVocab = false
         UserDefaults.standard.removeObject(forKey: sessionTokenKey)
     }
 
@@ -454,6 +509,29 @@ final class SessionStore: ObservableObject {
             return
         }
         errorMessage = error.localizedDescription
+    }
+
+    private func mergeAutocompleteSuggestions(cards: [VocabDraftInput], suggestions: [AutocompleteVocabSuggestion]) -> [VocabDraftInput] {
+        cards.enumerated().map { index, card in
+            guard suggestions.indices.contains(index) else { return card }
+            let suggestion = suggestions[index]
+            return VocabDraftInput(
+                term: card.term,
+                meaning: card.meaning.isEmpty ? suggestion.meaning : card.meaning,
+                exampleSentence: card.exampleSentence.isEmpty ? suggestion.example_sentence : card.exampleSentence,
+                partOfSpeech: card.partOfSpeech.isEmpty ? normalizedPartOfSpeech(suggestion.part_of_speech) : card.partOfSpeech,
+                notes: card.notes
+            )
+        }
+    }
+
+    private func normalizedPartOfSpeech(_ value: String) -> String {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().replacingOccurrences(of: "-", with: "_").replacingOccurrences(of: " ", with: "_")
+        let allowed: Set<String> = ["", "noun", "verb", "adjective", "adverb", "phrase", "idiom", "phrasal_verb", "preposition", "conjunction", "interjection", "determiner", "pronoun", "other"]
+        if allowed.contains(normalized) {
+            return normalized
+        }
+        return normalized.isEmpty ? "" : "other"
     }
 
     private func applyCreatedVocabCards(_ responses: [CreateVocabResponse]) {

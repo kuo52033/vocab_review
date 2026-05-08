@@ -35,6 +35,7 @@ type CaptureInput struct {
 	Term            string
 	Meaning         string
 	ExampleSentence string
+	PartOfSpeech    domain.PartOfSpeech
 	Selection       string
 	PageTitle       string
 	PageURL         string
@@ -91,7 +92,7 @@ func NewCapturedCard(userID string, input CaptureInput, ids IDs, now time.Time) 
 		Kind:            domain.CardKindPhrase,
 		Meaning:         input.Meaning,
 		ExampleSentence: input.ExampleSentence,
-		PartOfSpeech:    domain.PartOfSpeechUnspecified,
+		PartOfSpeech:    input.PartOfSpeech,
 		SourceText:      input.Selection,
 		SourceURL:       input.PageURL,
 		Notes:           input.Notes,
