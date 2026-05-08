@@ -72,7 +72,16 @@ func (s *Store) RecordReview(ctx context.Context, state domain.ReviewState, log 
 	})
 }
 
-func (s *Store) ListReviewHistory(ctx context.Context, userID string, limit int) ([]repository.ReviewHistoryEntry, error) {
+func (s *Store) ListReviewHistory(ctx context.Context, userID string, pagination repository.Pagination) ([]repository.ReviewHistoryEntry, int, error) {
+	var total int
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM review_logs l
+		WHERE l.user_id = $1
+	`, userID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
 	rows, err := s.pool.Query(ctx, `
 		SELECT
 			l.id, l.user_id, l.vocab_item_id, l.grade, l.reviewed_at,
@@ -83,10 +92,11 @@ func (s *Store) ListReviewHistory(ctx context.Context, userID string, limit int)
 		JOIN review_states r ON r.vocab_item_id = l.vocab_item_id
 		WHERE l.user_id = $1
 		ORDER BY l.reviewed_at DESC
-		LIMIT $2
-	`, userID, limit)
+		LIMIT NULLIF($2, 0)
+		OFFSET $3
+	`, userID, pagination.Limit, pagination.Offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -122,11 +132,11 @@ func (s *Store) ListReviewHistory(ctx context.Context, userID string, limit int)
 			&entry.State.NextDueAt,
 			&entry.State.ConsecutiveAgain,
 		); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		result = append(result, entry)
 	}
-	return result, rows.Err()
+	return result, total, rows.Err()
 }
 
 func (s *Store) GetReviewStats(ctx context.Context, userID string, now time.Time) (repository.ReviewStats, error) {

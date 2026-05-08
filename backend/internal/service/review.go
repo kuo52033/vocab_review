@@ -205,16 +205,34 @@ type VocabWithState struct {
 	State domain.ReviewState `json:"state"`
 }
 
-func (a *App) ListVocab(userID string) ([]VocabWithState, error) {
-	items, err := a.store.ListVocabByUser(context.Background(), userID)
+type ListVocabInput struct {
+	Limit  int
+	Offset int
+	Query  string
+	Status domain.ReviewStatus
+}
+
+type VocabPage struct {
+	Items  []VocabWithState `json:"items"`
+	Total  int              `json:"total"`
+	Limit  int              `json:"limit"`
+	Offset int              `json:"offset"`
+}
+
+func (a *App) ListVocab(userID string, input ListVocabInput) (VocabPage, error) {
+	items, total, err := a.store.ListVocabByUser(context.Background(), userID, repository.ListVocabOptions{
+		Pagination: repository.Pagination{Limit: input.Limit, Offset: input.Offset},
+		Query:      strings.TrimSpace(input.Query),
+		Status:     input.Status,
+	})
 	if err != nil {
-		return nil, err
+		return VocabPage{}, err
 	}
 	result := make([]VocabWithState, 0, len(items))
 	for _, item := range items {
 		result = append(result, VocabWithState{Item: item.Item, State: item.State})
 	}
-	return result, nil
+	return VocabPage{Items: result, Total: total, Limit: input.Limit, Offset: input.Offset}, nil
 }
 
 type DueCard struct {
@@ -226,6 +244,18 @@ type ReviewHistoryEntry struct {
 	Log   domain.ReviewLog   `json:"log"`
 	Item  domain.VocabItem   `json:"item"`
 	State domain.ReviewState `json:"state"`
+}
+
+type PageInput struct {
+	Limit  int
+	Offset int
+}
+
+type ReviewHistoryPage struct {
+	Items  []ReviewHistoryEntry `json:"items"`
+	Total  int                  `json:"total"`
+	Limit  int                  `json:"limit"`
+	Offset int                  `json:"offset"`
 }
 
 type ReviewStats struct {
@@ -287,16 +317,16 @@ func (a *App) GradeReview(userID, vocabID string, grade domain.ReviewGrade) (dom
 	return next, nil
 }
 
-func (a *App) ReviewHistory(userID string) ([]ReviewHistoryEntry, error) {
-	entries, err := a.store.ListReviewHistory(context.Background(), userID, 20)
+func (a *App) ReviewHistory(userID string, input PageInput) (ReviewHistoryPage, error) {
+	entries, total, err := a.store.ListReviewHistory(context.Background(), userID, repository.Pagination{Limit: input.Limit, Offset: input.Offset})
 	if err != nil {
-		return nil, err
+		return ReviewHistoryPage{}, err
 	}
 	result := make([]ReviewHistoryEntry, 0, len(entries))
 	for _, entry := range entries {
 		result = append(result, ReviewHistoryEntry{Log: entry.Log, Item: entry.Item, State: entry.State})
 	}
-	return result, nil
+	return ReviewHistoryPage{Items: result, Total: total, Limit: input.Limit, Offset: input.Offset}, nil
 }
 
 func (a *App) ReviewStats(userID string) (ReviewStats, error) {

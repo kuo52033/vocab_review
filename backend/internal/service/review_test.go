@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,15 +128,35 @@ func (f *fakeRepository) ArchiveVocabForUser(_ context.Context, userID string, v
 	return item, nil
 }
 
-func (f *fakeRepository) ListVocabByUser(_ context.Context, userID string) ([]repository.VocabWithState, error) {
+func (f *fakeRepository) ListVocabByUser(_ context.Context, userID string, options repository.ListVocabOptions) ([]repository.VocabWithState, int, error) {
 	items := make([]repository.VocabWithState, 0)
 	for _, item := range f.vocab {
 		if item.UserID != userID || item.ArchivedAt != nil {
 			continue
 		}
-		items = append(items, repository.VocabWithState{Item: item, State: f.reviewStates[item.ID]})
+		state := f.reviewStates[item.ID]
+		if options.Status != "" && state.Status != options.Status {
+			continue
+		}
+		if options.Query != "" {
+			haystack := strings.ToLower(item.Term + " " + item.Meaning + " " + item.ExampleSentence + " " + item.Notes)
+			if !strings.Contains(haystack, strings.ToLower(options.Query)) {
+				continue
+			}
+		}
+		items = append(items, repository.VocabWithState{Item: item, State: state})
 	}
-	return items, nil
+	total := len(items)
+	if options.Offset > len(items) {
+		return []repository.VocabWithState{}, total, nil
+	}
+	if options.Offset > 0 {
+		items = items[options.Offset:]
+	}
+	if options.Limit > 0 && len(items) > options.Limit {
+		items = items[:options.Limit]
+	}
+	return items, total, nil
 }
 
 func (f *fakeRepository) ListDueVocab(_ context.Context, userID string, now time.Time) ([]repository.VocabWithState, error) {
@@ -172,7 +193,7 @@ func (f *fakeRepository) RecordReview(_ context.Context, state domain.ReviewStat
 	return nil
 }
 
-func (f *fakeRepository) ListReviewHistory(_ context.Context, userID string, limit int) ([]repository.ReviewHistoryEntry, error) {
+func (f *fakeRepository) ListReviewHistory(_ context.Context, userID string, pagination repository.Pagination) ([]repository.ReviewHistoryEntry, int, error) {
 	entries := make([]repository.ReviewHistoryEntry, 0)
 	for _, log := range f.reviewLogs {
 		if log.UserID != userID {
@@ -191,10 +212,17 @@ func (f *fakeRepository) ListReviewHistory(_ context.Context, userID string, lim
 			}
 		}
 	}
-	if len(entries) > limit {
-		entries = entries[:limit]
+	total := len(entries)
+	if pagination.Offset > len(entries) {
+		return []repository.ReviewHistoryEntry{}, total, nil
 	}
-	return entries, nil
+	if pagination.Offset > 0 {
+		entries = entries[pagination.Offset:]
+	}
+	if pagination.Limit > 0 && len(entries) > pagination.Limit {
+		entries = entries[:pagination.Limit]
+	}
+	return entries, total, nil
 }
 
 func (f *fakeRepository) GetReviewStats(_ context.Context, userID string, now time.Time) (repository.ReviewStats, error) {
@@ -372,15 +400,15 @@ func TestReviewHistoryReturnsRecentReviewedCards(t *testing.T) {
 		t.Fatalf("grade review: %v", err)
 	}
 
-	history, err := app.ReviewHistory(auth.User.ID)
+	history, err := app.ReviewHistory(auth.User.ID, PageInput{})
 	if err != nil {
 		t.Fatalf("review history: %v", err)
 	}
-	if len(history) != 1 {
-		t.Fatalf("expected one history entry, got %d", len(history))
+	if len(history.Items) != 1 || history.Total != 1 {
+		t.Fatalf("expected one history entry, got %+v", history)
 	}
-	if history[0].Item.ID != item.ID || history[0].Log.Grade != domain.ReviewGradeGood {
-		t.Fatalf("unexpected history entry: %+v", history[0])
+	if history.Items[0].Item.ID != item.ID || history.Items[0].Log.Grade != domain.ReviewGradeGood {
+		t.Fatalf("unexpected history entry: %+v", history.Items[0])
 	}
 }
 
@@ -460,12 +488,12 @@ func TestArchiveVocabRemovesCardFromDueReview(t *testing.T) {
 		t.Fatal("expected archived timestamp")
 	}
 
-	listed, err := app.ListVocab(auth.User.ID)
+	listed, err := app.ListVocab(auth.User.ID, ListVocabInput{})
 	if err != nil {
 		t.Fatalf("list vocab after archive: %v", err)
 	}
-	if len(listed) != 0 {
-		t.Fatalf("expected archived card removed from library, got %d", len(listed))
+	if len(listed.Items) != 0 {
+		t.Fatalf("expected archived card removed from library, got %d", len(listed.Items))
 	}
 
 	due, err = app.DueCards(auth.User.ID)

@@ -5,17 +5,28 @@ import (
 	"net/http"
 	"strings"
 
+	"vocabreview/backend/internal/domain"
 	"vocabreview/backend/internal/service"
 	"vocabreview/backend/internal/service/enrichment"
 )
 
 func (s *Server) handleListVocab(w http.ResponseWriter, r *http.Request) {
-	items, err := s.app.ListVocab(userIDFromContext(r.Context()))
+	page, err := parsePageQuery(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := s.app.ListVocab(userIDFromContext(r.Context()), service.ListVocabInput{
+		Limit:  page.Limit,
+		Offset: page.Offset,
+		Query:  r.URL.Query().Get("q"),
+		Status: domain.ReviewStatus(r.URL.Query().Get("status")),
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleCreateVocab(w http.ResponseWriter, r *http.Request) {

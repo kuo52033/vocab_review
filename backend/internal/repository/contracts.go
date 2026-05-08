@@ -32,6 +32,17 @@ type ReviewStats struct {
 	ArchivedCards int
 }
 
+type Pagination struct {
+	Limit  int
+	Offset int
+}
+
+type ListVocabOptions struct {
+	Pagination
+	Query  string
+	Status domain.ReviewStatus
+}
+
 type HealthChecker interface {
 	HealthCheck(ctx context.Context) error
 }
@@ -48,11 +59,11 @@ type VocabRepository interface {
 	GetVocab(ctx context.Context, id string) (domain.VocabItem, bool, error)
 	UpdateVocab(ctx context.Context, item domain.VocabItem) error
 	ArchiveVocabForUser(ctx context.Context, userID string, vocabID string, archivedAt time.Time) (domain.VocabItem, error)
-	ListVocabByUser(ctx context.Context, userID string) ([]VocabWithState, error)
+	ListVocabByUser(ctx context.Context, userID string, options ListVocabOptions) ([]VocabWithState, int, error)
 	ListDueVocab(ctx context.Context, userID string, now time.Time) ([]VocabWithState, error)
 	GetReviewState(ctx context.Context, vocabID string) (domain.ReviewState, bool, error)
 	RecordReview(ctx context.Context, state domain.ReviewState, log domain.ReviewLog, job *domain.NotificationJob) error
-	ListReviewHistory(ctx context.Context, userID string, limit int) ([]ReviewHistoryEntry, error)
+	ListReviewHistory(ctx context.Context, userID string, pagination Pagination) ([]ReviewHistoryEntry, int, error)
 	GetReviewStats(ctx context.Context, userID string, now time.Time) (ReviewStats, error)
 }
 

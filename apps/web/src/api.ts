@@ -62,6 +62,20 @@ export interface ReviewStats {
   archived_cards: number;
 }
 
+export interface PageParams {
+  limit?: number;
+  offset?: number;
+  q?: string;
+  status?: string;
+}
+
+export interface PageResponse<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8080";
 
 function getToken() {
@@ -88,6 +102,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json();
 }
 
+function withQuery(path: string, params?: PageParams) {
+  if (!params) return path;
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === "" || value === null) continue;
+    search.set(key, String(value));
+  }
+  const query = search.toString();
+  return query ? `${path}?${query}` : path;
+}
+
 export async function requestMagicLink(email: string) {
   return request<{ token: string; verification_url: string; expires_at: string }>("/auth/magic-link", {
     method: "POST",
@@ -102,8 +127,8 @@ export async function verifyMagicLink(token: string) {
   });
 }
 
-export async function listVocab() {
-  return request<{ items: VocabWithState[] }>("/vocab");
+export async function listVocab(params?: PageParams) {
+  return request<PageResponse<VocabWithState>>(withQuery("/vocab", params));
 }
 
 export async function createVocab(payload: Partial<VocabItem>) {
@@ -137,8 +162,8 @@ export async function listDue() {
   return request<{ items: VocabWithState[] }>("/reviews/due");
 }
 
-export async function listReviewHistory() {
-  return request<{ items: ReviewHistoryEntry[] }>("/reviews/history");
+export async function listReviewHistory(params?: PageParams) {
+  return request<PageResponse<ReviewHistoryEntry>>(withQuery("/reviews/history", params));
 }
 
 export async function getReviewStats() {

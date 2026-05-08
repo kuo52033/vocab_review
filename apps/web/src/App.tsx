@@ -84,6 +84,10 @@ const emptyStats: ReviewStats = {
   archived_cards: 0
 };
 
+const duePageSize = 10;
+const historyPageSize = 21;
+const libraryPageSize = 10;
+
 function draftFromItem(item: VocabItem): CardDraft {
   return {
     term: item.term,
@@ -127,6 +131,40 @@ function parseBulkImport(input: string) {
     .filter((card) => card.term);
 }
 
+function pageCount(totalItems: number, pageSize: number) {
+  return Math.max(1, Math.ceil(totalItems / pageSize));
+}
+
+function pageItems<T>(items: T[], page: number, pageSize: number) {
+  const start = (page - 1) * pageSize;
+  return items.slice(start, start + pageSize);
+}
+
+type PaginationProps = {
+  label: string;
+  page: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+};
+
+function Pagination({ label, page, totalPages, onPageChange }: PaginationProps) {
+  if (totalPages <= 1) return null;
+
+  return (
+    <nav className="pagination" aria-label={`${label} pagination`}>
+      <button type="button" className="ghost-button compact-button" onClick={() => onPageChange(page - 1)} disabled={page <= 1}>
+        Previous
+      </button>
+      <span>
+        Page {page} of {totalPages}
+      </span>
+      <button type="button" className="ghost-button compact-button" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}>
+        Next
+      </button>
+    </nav>
+  );
+}
+
 function normalizePartOfSpeech(value: string) {
   const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
   if (allowedPartsOfSpeech.has(normalized)) return normalized;
@@ -155,6 +193,8 @@ export function App() {
   const [vocab, setVocab] = useState<VocabWithState[]>([]);
   const [due, setDue] = useState<VocabWithState[]>([]);
   const [history, setHistory] = useState<ReviewHistoryEntry[]>([]);
+  const [vocabTotal, setVocabTotal] = useState(0);
+  const [historyTotal, setHistoryTotal] = useState(0);
   const [stats, setStats] = useState<ReviewStats>(emptyStats);
   const [jobs, setJobs] = useState<Array<{ id: string; vocab_item_id: string; status: string; scheduled_at: string }>>([]);
   const [form, setForm] = useState(emptyForm);
@@ -167,6 +207,9 @@ export function App() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [activeSection, setActiveSection] = useState<ActiveSection>("review");
+  const [duePage, setDuePage] = useState(1);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [libraryPage, setLibraryPage] = useState(1);
   const [selectedHistory, setSelectedHistory] = useState<ReviewHistoryEntry | null>(null);
   const [sessionDeck, setSessionDeck] = useState<VocabWithState[]>([]);
   const [sessionIndex, setSessionIndex] = useState(0);
@@ -196,20 +239,33 @@ export function App() {
   useEffect(() => {
     if (!auth.token) return;
     refresh();
-  }, [auth.token]);
+  }, [auth.token, historyPage, libraryPage, query, statusFilter]);
+
+  useEffect(() => {
+    setDuePage((current) => Math.min(current, pageCount(due.length, duePageSize)));
+  }, [due.length]);
+
+  useEffect(() => {
+    setHistoryPage((current) => Math.min(current, pageCount(historyTotal, historyPageSize)));
+  }, [historyTotal]);
 
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleVocab = vocab
-    .filter(({ item }) => !item.archived_at)
-    .filter(({ state }) => statusFilter === "all" || state.status === statusFilter)
-    .filter(({ item }) => {
-      if (!normalizedQuery) return true;
-      return [item.term, item.meaning, item.example_sentence, item.notes].join(" ").toLowerCase().includes(normalizedQuery);
-    })
+  const visibleVocab = [...vocab]
     .sort((left, right) => new Date(right.item.created_at).getTime() - new Date(left.item.created_at).getTime());
+
+  useEffect(() => {
+    setLibraryPage((current) => Math.min(current, pageCount(vocabTotal, libraryPageSize)));
+  }, [vocabTotal]);
+
   const currentSessionCard = sessionDeck[sessionIndex];
   const sessionActive = Boolean(currentSessionCard);
   const sessionProgress = sessionDeck.length > 0 ? Math.round((sessionIndex / sessionDeck.length) * 100) : 0;
+  const duePageCount = pageCount(due.length, duePageSize);
+  const visibleDue = pageItems(due, duePage, duePageSize);
+  const historyPageCount = pageCount(historyTotal, historyPageSize);
+  const visibleHistory = history;
+  const libraryPageCount = pageCount(vocabTotal, libraryPageSize);
+  const paginatedVocab = visibleVocab;
   const rawImportCards = parseBulkImport(bulkText);
   const parsedImportCards = enrichedCards ?? rawImportCards;
 
@@ -217,15 +273,22 @@ export function App() {
     setIsRefreshing(true);
     try {
       const [vocabResponse, dueResponse, historyResponse, statsResponse, jobsResponse] = await Promise.all([
-        listVocab(),
+        listVocab({
+          limit: libraryPageSize,
+          offset: (libraryPage - 1) * libraryPageSize,
+          q: normalizedQuery,
+          status: statusFilter === "all" ? "" : statusFilter
+        }),
         listDue(),
-        listReviewHistory(),
+        listReviewHistory({ limit: historyPageSize, offset: (historyPage - 1) * historyPageSize }),
         getReviewStats(),
         listNotificationJobs()
       ]);
       setVocab(vocabResponse.items);
       setDue(dueResponse.items);
       setHistory(historyResponse.items);
+      setVocabTotal(vocabResponse.total);
+      setHistoryTotal(historyResponse.total);
       setStats(statsResponse.stats);
       setJobs(jobsResponse.items);
       setError("");
@@ -249,7 +312,8 @@ export function App() {
 
   function applyCreatedCard(createdCard: VocabWithState) {
     const isDueNow = new Date(createdCard.state.next_due_at).getTime() <= Date.now();
-    setVocab((current) => [createdCard, ...current]);
+    setVocab((current) => [createdCard, ...current].slice(0, libraryPageSize));
+    setVocabTotal((current) => current + 1);
     if (isDueNow) {
       setDue((current) => [createdCard, ...current]);
     }
@@ -481,10 +545,10 @@ export function App() {
 
         <nav className="sidebar-nav" aria-label="Workspace sections">
           {[
-            ["review", "Due review", `${due.length} due`],
+            ["review", "Due review", `${stats.due_now} due`],
             ["add", "Add card", "Capture"],
-            ["history", "Recent reviews", `${history.length} logs`],
-            ["library", "Active cards", `${visibleVocab.length} cards`]
+            ["history", "Recent reviews", `${historyTotal} logs`],
+            ["library", "Active cards", `${stats.active_cards} cards`]
           ].map(([section, label, detail]) => (
             <button
               key={section}
@@ -585,30 +649,33 @@ export function App() {
                 {sessionSummary.lastNextDue ? <span>Last card returns {formatDate(sessionSummary.lastNextDue)}.</span> : null}
               </div>
             ) : null}
-            <div className="review-list">
-              {due.map(({ item, state }) => (
-                <article className="review-card" key={item.id}>
-                  <div>
-                    <p className="term">{item.term}</p>
-                    <p>{item.meaning || "Meaning not added yet."}</p>
-                    <small>Next due: {formatDate(state.next_due_at)}</small>
+            {!sessionActive ? (
+              <div className="review-list">
+                {visibleDue.map(({ item, state }) => (
+                  <article className="review-card" key={item.id}>
+                    <div>
+                      <p className="term">{item.term}</p>
+                      <p>{item.meaning || "Meaning not added yet."}</p>
+                      <small>Next due: {formatDate(state.next_due_at)}</small>
+                    </div>
+                    <div className="grade-row">
+                      {(["again", "hard", "good", "easy"] as const).map((grade) => (
+                        <button key={grade} type="button" onClick={() => handleGrade(item.id, grade)} disabled={isGrading}>
+                          {isGrading ? "Saving..." : grade}
+                        </button>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+                {due.length === 0 ? (
+                  <div className="empty-state">
+                    <strong>All caught up.</strong>
+                    <span>No cards are due right now.</span>
                   </div>
-                  <div className="grade-row">
-                    {(["again", "hard", "good", "easy"] as const).map((grade) => (
-                      <button key={grade} type="button" onClick={() => handleGrade(item.id, grade)} disabled={isGrading || sessionActive}>
-                        {isGrading ? "Saving..." : grade}
-                      </button>
-                    ))}
-                  </div>
-                </article>
-              ))}
-              {due.length === 0 ? (
-                <div className="empty-state">
-                  <strong>All caught up.</strong>
-                  <span>No cards are due right now.</span>
-                </div>
-              ) : null}
-            </div>
+                ) : null}
+                <Pagination label="Due review" page={duePage} totalPages={duePageCount} onPageChange={setDuePage} />
+              </div>
+            ) : null}
           </section>
         ) : null}
 
@@ -713,7 +780,7 @@ export function App() {
               </div>
             </div>
             <div className="history-grid">
-              {history.map((entry) => (
+              {visibleHistory.map((entry) => (
                 <button
                   className={selectedHistory?.log.id === entry.log.id ? "history-card selected" : "history-card"}
                   key={entry.log.id}
@@ -727,33 +794,44 @@ export function App() {
                 </button>
               ))}
             </div>
-            {selectedHistory ? (
-              <article className="history-detail">
-                <div className="section-heading">
-                  <div>
-                    <p className="eyebrow">Full info</p>
-                    <h2>{selectedHistory.item.term}</h2>
-                  </div>
-                  <button type="button" className="ghost-button compact-button" onClick={() => setSelectedHistory(null)}>
-                    Close
-                  </button>
-                </div>
-                <p>{selectedHistory.item.meaning || "Meaning not added yet."}</p>
-                {selectedHistory.item.example_sentence ? <small>{selectedHistory.item.example_sentence}</small> : null}
-                {selectedHistory.item.notes ? <small className="notes">Notes: {selectedHistory.item.notes}</small> : null}
-                <div className="meta">
-                  <span>Grade: {selectedHistory.log.grade}</span>
-                  <span>Status: {selectedHistory.state.status}</span>
-                  <span>Reviewed {formatDate(selectedHistory.log.reviewed_at)}</span>
-                  <span>Next due {formatDate(selectedHistory.state.next_due_at)}</span>
-                  {selectedHistory.item.archived_at ? <span className="archived-badge">Archived</span> : null}
-                </div>
-              </article>
-            ) : null}
+            <Pagination
+              label="Recent reviews"
+              page={historyPage}
+              totalPages={historyPageCount}
+              onPageChange={(page) => {
+                setSelectedHistory(null);
+                setHistoryPage(page);
+              }}
+            />
             {history.length === 0 ? (
               <div className="empty-state">
                 <strong>No reviews yet.</strong>
                 <span>Review a due card and it will appear here.</span>
+              </div>
+            ) : null}
+            {selectedHistory ? (
+              <div className="modal-backdrop" role="presentation" onClick={() => setSelectedHistory(null)}>
+                <article className="history-detail modal-card" role="dialog" aria-modal="true" aria-labelledby="history-detail-title" onClick={(event) => event.stopPropagation()}>
+                  <div className="section-heading">
+                    <div>
+                      <p className="eyebrow">Full info</p>
+                      <h2 id="history-detail-title">{selectedHistory.item.term}</h2>
+                    </div>
+                    <button type="button" className="ghost-button compact-button" onClick={() => setSelectedHistory(null)}>
+                      Close
+                    </button>
+                  </div>
+                  <p>{selectedHistory.item.meaning || "Meaning not added yet."}</p>
+                  {selectedHistory.item.example_sentence ? <small>{selectedHistory.item.example_sentence}</small> : null}
+                  {selectedHistory.item.notes ? <small className="notes">Notes: {selectedHistory.item.notes}</small> : null}
+                  <div className="meta modal-meta">
+                    <span>Grade: {selectedHistory.log.grade}</span>
+                    <span>Status: {selectedHistory.state.status}</span>
+                    <span>Reviewed {formatDate(selectedHistory.log.reviewed_at)}</span>
+                    <span>Next due {formatDate(selectedHistory.state.next_due_at)}</span>
+                    {selectedHistory.item.archived_at ? <span className="archived-badge">Archived</span> : null}
+                  </div>
+                </article>
               </div>
             ) : null}
           </section>
@@ -773,7 +851,10 @@ export function App() {
                 className="search-input"
                 value={query}
                 placeholder="Search term, meaning, example, notes..."
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setLibraryPage(1);
+                }}
               />
               <div className="filter-chips" aria-label="Filter cards by status">
                 {(["all", "new", "learning", "review"] as const).map((status) => (
@@ -781,7 +862,10 @@ export function App() {
                     key={status}
                     type="button"
                     className={statusFilter === status ? "chip active" : "chip"}
-                    onClick={() => setStatusFilter(status)}
+                    onClick={() => {
+                      setStatusFilter(status);
+                      setLibraryPage(1);
+                    }}
                   >
                     {status}
                   </button>
@@ -790,7 +874,7 @@ export function App() {
             </div>
 
             <div className="library">
-              {visibleVocab.map(({ item, state }) => (
+              {paginatedVocab.map(({ item, state }) => (
                 <article className={editingID === item.id ? "library-card editing" : "library-card"} key={item.id}>
                   {editingID === item.id ? (
                     <form className="edit-form" onSubmit={handleSaveEdit}>
@@ -842,11 +926,12 @@ export function App() {
                 </article>
               ))}
             </div>
+            <Pagination label="Active cards" page={libraryPage} totalPages={libraryPageCount} onPageChange={setLibraryPage} />
 
-            {visibleVocab.length === 0 ? (
+            {vocabTotal === 0 ? (
               <div className="empty-state spacious">
-                <strong>{vocab.length === 0 ? "No cards yet." : "No matching cards."}</strong>
-                <span>{vocab.length === 0 ? "Add your first word above." : "Try another search or status filter."}</span>
+                <strong>{stats.active_cards === 0 ? "No cards yet." : "No matching cards."}</strong>
+                <span>{stats.active_cards === 0 ? "Add your first word above." : "Try another search or status filter."}</span>
               </div>
             ) : null}
           </section>

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"vocabreview/backend/internal/domain"
+	"vocabreview/backend/internal/service"
 )
 
 func (s *Server) handleDueCards(w http.ResponseWriter, r *http.Request) {
@@ -17,12 +18,17 @@ func (s *Server) handleDueCards(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReviewHistory(w http.ResponseWriter, r *http.Request) {
-	items, err := s.app.ReviewHistory(userIDFromContext(r.Context()))
+	page, err := parsePageQuery(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := s.app.ReviewHistory(userIDFromContext(r.Context()), service.PageInput{Limit: page.Limit, Offset: page.Offset})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleReviewStats(w http.ResponseWriter, r *http.Request) {

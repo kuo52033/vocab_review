@@ -98,7 +98,28 @@ func (s *Store) ArchiveVocabForUser(ctx context.Context, userID string, vocabID 
 	return item, nil
 }
 
-func (s *Store) ListVocabByUser(ctx context.Context, userID string) ([]repository.VocabWithState, error) {
+func (s *Store) ListVocabByUser(ctx context.Context, userID string, options repository.ListVocabOptions) ([]repository.VocabWithState, int, error) {
+	query := "%" + options.Query + "%"
+	status := string(options.Status)
+	var total int
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM vocab_items v
+		JOIN review_states r ON r.vocab_item_id = v.id
+		WHERE v.user_id = $1
+		  AND v.archived_at IS NULL
+		  AND ($2 = '' OR r.status = $2)
+		  AND (
+		    $3 = '%%'
+		    OR v.term ILIKE $3
+		    OR v.meaning ILIKE $3
+		    OR v.example_sentence ILIKE $3
+		    OR v.notes ILIKE $3
+		  )
+	`, userID, status, query).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
 	rows, err := s.pool.Query(ctx, `
 		SELECT
 			v.id, v.user_id, v.term, v.kind, v.meaning, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes, v.created_at, v.updated_at, v.archived_at,
@@ -107,11 +128,22 @@ func (s *Store) ListVocabByUser(ctx context.Context, userID string) ([]repositor
 		JOIN review_states r ON r.vocab_item_id = v.id
 		WHERE v.user_id = $1
 		  AND v.archived_at IS NULL
-		ORDER BY v.created_at ASC
-	`, userID)
+		  AND ($2 = '' OR r.status = $2)
+		  AND (
+		    $3 = '%%'
+		    OR v.term ILIKE $3
+		    OR v.meaning ILIKE $3
+		    OR v.example_sentence ILIKE $3
+		    OR v.notes ILIKE $3
+		  )
+		ORDER BY v.created_at DESC
+		LIMIT NULLIF($4, 0)
+		OFFSET $5
+	`, userID, status, query, options.Limit, options.Offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
-	return scanVocabWithStates(rows)
+	items, err := scanVocabWithStates(rows)
+	return items, total, err
 }
