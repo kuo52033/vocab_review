@@ -8,6 +8,10 @@ final class SessionStore: ObservableObject {
     @Published var dueCards: [DueCard] = []
     @Published var libraryCards: [DueCard] = []
     @Published var reviewHistory: [ReviewHistoryEntry] = []
+    @Published var libraryTotal: Int = 0
+    @Published var reviewHistoryTotal: Int = 0
+    @Published var libraryPage: Int = 1
+    @Published var reviewHistoryPage: Int = 1
     @Published var reviewStats = ReviewStats(reviewed_today: 0, reviewed_7_days: 0, active_cards: 0, due_now: 0, archived_cards: 0)
     @Published var errorMessage: String = ""
     @Published var infoMessage: String = ""
@@ -24,6 +28,8 @@ final class SessionStore: ObservableObject {
 
     private let baseURL = URL(string: "http://localhost:8080")!
     private let sessionTokenKey = "session_token"
+    let libraryPageSize = 10
+    let reviewHistoryPageSize = 21
 
     var isAuthenticated: Bool {
         !sessionToken.isEmpty
@@ -103,17 +109,32 @@ final class SessionStore: ObservableObject {
         isLoadingDueCards = false
     }
 
-    func loadLibraryCards() async {
+    var libraryPageCount: Int {
+        pageCount(total: libraryTotal, pageSize: libraryPageSize)
+    }
+
+    var reviewHistoryPageCount: Int {
+        pageCount(total: reviewHistoryTotal, pageSize: reviewHistoryPageSize)
+    }
+
+    func loadLibraryCards(query: String = "", status: String = "") async {
         guard isAuthenticated else { return }
 
         isLoadingLibraryCards = true
         errorMessage = ""
 
         do {
-            let response: LibraryResponse = try await sendRequest(path: "/vocab")
+            let response: LibraryResponse = try await sendRequest(path: pathWithQuery("/vocab", [
+                URLQueryItem(name: "limit", value: String(libraryPageSize)),
+                URLQueryItem(name: "offset", value: String((libraryPage - 1) * libraryPageSize)),
+                URLQueryItem(name: "q", value: query.trimmingCharacters(in: .whitespacesAndNewlines)),
+                URLQueryItem(name: "status", value: status)
+            ]))
             libraryCards = response.items.sorted { lhs, rhs in
                 lhs.item.createdAtDate > rhs.item.createdAtDate
             }
+            libraryTotal = response.total ?? response.items.count
+            libraryPage = min(libraryPage, libraryPageCount)
         } catch {
             handleRequestError(error)
         }
@@ -128,8 +149,13 @@ final class SessionStore: ObservableObject {
         errorMessage = ""
 
         do {
-            let response: ReviewHistoryResponse = try await sendRequest(path: "/reviews/history")
+            let response: ReviewHistoryResponse = try await sendRequest(path: pathWithQuery("/reviews/history", [
+                URLQueryItem(name: "limit", value: String(reviewHistoryPageSize)),
+                URLQueryItem(name: "offset", value: String((reviewHistoryPage - 1) * reviewHistoryPageSize))
+            ]))
             reviewHistory = response.items
+            reviewHistoryTotal = response.total ?? response.items.count
+            reviewHistoryPage = min(reviewHistoryPage, reviewHistoryPageCount)
         } catch {
             handleRequestError(error)
         }
@@ -422,6 +448,10 @@ final class SessionStore: ObservableObject {
         dueCards = []
         libraryCards = []
         reviewHistory = []
+        libraryTotal = 0
+        reviewHistoryTotal = 0
+        libraryPage = 1
+        reviewHistoryPage = 1
         reviewStats = ReviewStats(reviewed_today: 0, reviewed_7_days: 0, active_cards: 0, due_now: 0, archived_cards: 0)
         requestedMagicLink = nil
         errorMessage = ""
@@ -442,6 +472,16 @@ final class SessionStore: ObservableObject {
 
     func clearError() {
         errorMessage = ""
+    }
+
+    func setLibraryPage(_ page: Int, query: String = "", status: String = "") async {
+        libraryPage = min(max(page, 1), libraryPageCount)
+        await loadLibraryCards(query: query, status: status)
+    }
+
+    func setReviewHistoryPage(_ page: Int) async {
+        reviewHistoryPage = min(max(page, 1), reviewHistoryPageCount)
+        await loadReviewHistory()
     }
 
     private func requestedMagicLinkToken() -> String? {
@@ -476,7 +516,10 @@ final class SessionStore: ObservableObject {
         method: String,
         body: Body?
     ) async throws -> Data {
-        var request = URLRequest(url: baseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))))
+        guard let url = URL(string: path.hasPrefix("/") ? path : "/\(path)", relativeTo: baseURL)?.absoluteURL else {
+            throw SessionStoreError.invalidResponse
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if isAuthenticated {
@@ -500,6 +543,20 @@ final class SessionStore: ObservableObject {
             throw SessionStoreError.message("Request failed.")
         }
         return data
+    }
+
+    private func pathWithQuery(_ path: String, _ queryItems: [URLQueryItem]) -> String {
+        var components = URLComponents()
+        components.path = path
+        components.queryItems = queryItems.filter { item in
+            guard let value = item.value else { return false }
+            return !value.isEmpty
+        }
+        return components.string ?? path
+    }
+
+    private func pageCount(total: Int, pageSize: Int) -> Int {
+        max(1, Int(ceil(Double(total) / Double(pageSize))))
     }
 
     private func handleRequestError(_ error: Error) {

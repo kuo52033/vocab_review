@@ -19,6 +19,16 @@ struct HistoryView: View {
                         header
                         statsGrid
                         historyCards
+                        PaginationControl(
+                            page: sessionStore.reviewHistoryPage,
+                            totalPages: sessionStore.reviewHistoryPageCount,
+                            previous: {
+                                Task { await sessionStore.setReviewHistoryPage(sessionStore.reviewHistoryPage - 1) }
+                            },
+                            next: {
+                                Task { await sessionStore.setReviewHistoryPage(sessionStore.reviewHistoryPage + 1) }
+                            }
+                        )
                     }
                     .padding()
                 }

@@ -8,8 +8,6 @@ struct LibraryView: View {
     @State private var selectedStatus = LibraryStatusFilter.all
 
     var body: some View {
-        let visibleCards = filteredCards
-
         Group {
             if sessionStore.isLoadingLibraryCards && sessionStore.libraryCards.isEmpty {
                 ZStack {
@@ -35,10 +33,10 @@ struct LibraryView: View {
                         .padding()
                     }
                     .refreshable {
-                        await sessionStore.loadLibraryCards()
+                        await loadCurrentPage()
                     }
                 }
-            } else if visibleCards.isEmpty {
+            } else if sessionStore.libraryCards.isEmpty {
                 ZStack {
                     ReadingDeskBackground()
                     ScrollView {
@@ -56,7 +54,7 @@ struct LibraryView: View {
                         .padding()
                     }
                     .refreshable {
-                        await sessionStore.loadLibraryCards()
+                        await loadCurrentPage()
                     }
                 }
             } else {
@@ -66,7 +64,7 @@ struct LibraryView: View {
                         LazyVStack(alignment: .leading, spacing: 14) {
                             filterPicker
                             statusMessages
-                            ForEach(visibleCards) { card in
+                            ForEach(sessionStore.libraryCards) { card in
                                 LibraryCardRow(
                                     card: card,
                                     isBusy: sessionStore.isCreatingVocab || sessionStore.isDeletingVocab,
@@ -74,17 +72,38 @@ struct LibraryView: View {
                                     onDelete: { deletingCard = card }
                                 )
                             }
+                            PaginationControl(
+                                page: sessionStore.libraryPage,
+                                totalPages: sessionStore.libraryPageCount,
+                                previous: {
+                                    Task { await changePage(to: sessionStore.libraryPage - 1) }
+                                },
+                                next: {
+                                    Task { await changePage(to: sessionStore.libraryPage + 1) }
+                                }
+                            )
                         }
                         .padding()
                     }
                     .refreshable {
-                        await sessionStore.loadLibraryCards()
+                        await loadCurrentPage()
                     }
                 }
             }
         }
         .navigationTitle("Library")
         .searchable(text: $searchText, prompt: "Search term or meaning")
+        .onSubmit(of: .search) {
+            Task { await resetAndLoad() }
+        }
+        .onChange(of: searchText) { _, newValue in
+            if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Task { await resetAndLoad() }
+            }
+        }
+        .onChange(of: selectedStatus) { _, _ in
+            Task { await resetAndLoad() }
+        }
         .sheet(item: $editingCard) { card in
             AddVocabView(item: card.item)
                 .environmentObject(sessionStore)
@@ -101,18 +120,6 @@ struct LibraryView: View {
             }
         } message: { card in
             Text("This removes \"\(card.item.term)\" from your library and review queue.")
-        }
-    }
-
-    private var filteredCards: [DueCard] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return sessionStore.libraryCards.filter { card in
-            selectedStatus.matches(card.state.status)
-                && (query.isEmpty
-                    || card.item.term.lowercased().contains(query)
-                    || card.item.meaning.lowercased().contains(query)
-                    || card.item.example_sentence.lowercased().contains(query)
-                    || card.item.notes.lowercased().contains(query))
         }
     }
 
@@ -153,6 +160,19 @@ struct LibraryView: View {
             Text(sessionStore.infoMessage)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private func resetAndLoad() async {
+        sessionStore.libraryPage = 1
+        await loadCurrentPage()
+    }
+
+    private func changePage(to page: Int) async {
+        await sessionStore.setLibraryPage(page, query: searchText, status: selectedStatus.queryValue)
+    }
+
+    private func loadCurrentPage() async {
+        await sessionStore.loadLibraryCards(query: searchText, status: selectedStatus.queryValue)
     }
 
 }
@@ -240,5 +260,9 @@ private enum LibraryStatusFilter: String, CaseIterable, Identifiable {
 
     func matches(_ status: String) -> Bool {
         self == .all || rawValue == status
+    }
+
+    var queryValue: String {
+        self == .all ? "" : rawValue
     }
 }

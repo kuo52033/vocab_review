@@ -20,10 +20,16 @@ struct DueResponse: Codable {
 
 struct LibraryResponse: Codable {
     let items: [DueCard]
+    let total: Int?
+    let limit: Int?
+    let offset: Int?
 }
 
 struct ReviewHistoryResponse: Codable {
     let items: [ReviewHistoryEntry]
+    let total: Int?
+    let limit: Int?
+    let offset: Int?
 }
 
 struct ReviewStatsResponse: Codable {
