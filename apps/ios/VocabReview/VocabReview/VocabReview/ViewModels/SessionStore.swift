@@ -433,13 +433,23 @@ final class SessionStore: ObservableObject {
 
     func registerNotifications() async {
         let center = UNUserNotificationCenter.current()
+        errorMessage = ""
+        infoMessage = ""
         do {
             let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
             if !granted {
                 errorMessage = "Notification permission was not granted."
+                return
             }
+            let token = try await NotificationRegistrationService.shared.requestDeviceToken()
+            let _: DeviceTokenResponse = try await sendRequest(
+                path: "/devices/apns-token",
+                method: "POST",
+                body: DeviceTokenRequest(platform: "ios", token: token)
+            )
+            infoMessage = "Notification device registered."
         } catch {
-            errorMessage = error.localizedDescription
+            handleRequestError(error)
         }
     }
 
