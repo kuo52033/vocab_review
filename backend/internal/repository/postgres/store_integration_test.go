@@ -256,6 +256,102 @@ func TestArchiveVocabForUserScopesArchiveByOwner(t *testing.T) {
 	}
 }
 
+func TestNotificationWorkerOperations(t *testing.T) {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DATABASE_URL is required for postgres integration tests")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resetDatabase(t, databaseURL)
+
+	store, err := New(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	user := domain.User{ID: "usr_notify", Email: "notify@example.com", CreatedAt: now}
+	if _, err := store.pool.Exec(ctx, `INSERT INTO users (id, email, created_at) VALUES ($1, $2, $3)`, user.ID, user.Email, user.CreatedAt); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	for _, item := range []domain.VocabItem{
+		{ID: "voc_due", UserID: user.ID, Term: "due", Kind: domain.CardKindWord, CreatedAt: now, UpdatedAt: now},
+		{ID: "voc_future", UserID: user.ID, Term: "future", Kind: domain.CardKindWord, CreatedAt: now, UpdatedAt: now},
+		{ID: "voc_sent", UserID: user.ID, Term: "sent", Kind: domain.CardKindWord, CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := store.CreateVocab(ctx, item, domain.ReviewState{
+			VocabItemID:     item.ID,
+			UserID:          user.ID,
+			Status:          domain.ReviewStatusNew,
+			EaseFactor:      2.5,
+			IntervalDays:    0,
+			RepetitionCount: 0,
+			NextDueAt:       now,
+		}, nil); err != nil {
+			t.Fatalf("create vocab %s: %v", item.ID, err)
+		}
+	}
+
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO notification_jobs (id, user_id, vocab_item_id, scheduled_at, sent_at, status, message)
+		VALUES
+			('job_due', $1, 'voc_due', $2, NULL, 'pending', 'Review due'),
+			('job_future', $1, 'voc_future', $3, NULL, 'pending', 'Review later'),
+			('job_sent', $1, 'voc_sent', $2, $2, 'sent', 'Already sent')
+	`, user.ID, now.Add(-time.Minute), now.Add(time.Hour)); err != nil {
+		t.Fatalf("insert jobs: %v", err)
+	}
+
+	if _, err := store.UpsertDeviceToken(ctx, domain.DeviceToken{
+		ID:        "dev_notify",
+		UserID:    user.ID,
+		Platform:  "ios",
+		Token:     "token-notify",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("upsert device token: %v", err)
+	}
+
+	claimed, err := store.ClaimDueNotificationJobs(ctx, now, 10)
+	if err != nil {
+		t.Fatalf("claim due jobs: %v", err)
+	}
+	if len(claimed) != 1 || claimed[0].ID != "job_due" {
+		t.Fatalf("claimed jobs: got %+v want job_due only", claimed)
+	}
+	if claimed[0].Status != "processing" {
+		t.Fatalf("claimed status: got %q want processing", claimed[0].Status)
+	}
+
+	tokens, err := store.ListDeviceTokensForUser(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("list device tokens: %v", err)
+	}
+	if len(tokens) != 1 || tokens[0].Token != "token-notify" {
+		t.Fatalf("tokens: got %+v want token-notify", tokens)
+	}
+
+	sentAt := now.Add(2 * time.Minute)
+	if err := store.MarkNotificationSent(ctx, "job_due", sentAt); err != nil {
+		t.Fatalf("mark sent: %v", err)
+	}
+
+	var status string
+	var storedSentAt time.Time
+	if err := store.pool.QueryRow(ctx, `SELECT status, sent_at FROM notification_jobs WHERE id = 'job_due'`).Scan(&status, &storedSentAt); err != nil {
+		t.Fatalf("load sent job: %v", err)
+	}
+	if status != "sent" || !storedSentAt.Equal(sentAt) {
+		t.Fatalf("sent update: got status=%s sent_at=%s want sent %s", status, storedSentAt, sentAt)
+	}
+}
+
 func TestStorePersistsPartOfSpeech(t *testing.T) {
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {

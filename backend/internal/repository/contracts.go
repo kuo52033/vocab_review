@@ -73,6 +73,11 @@ type DeviceRepository interface {
 
 type NotificationRepository interface {
 	ListNotificationJobs(ctx context.Context, userID string) ([]domain.NotificationJob, error)
+	ClaimDueNotificationJobs(ctx context.Context, now time.Time, limit int) ([]domain.NotificationJob, error)
+	ListDeviceTokensForUser(ctx context.Context, userID string) ([]domain.DeviceToken, error)
+	MarkNotificationPending(ctx context.Context, jobID string) error
+	MarkNotificationSent(ctx context.Context, jobID string, sentAt time.Time) error
+	MarkNotificationFailed(ctx context.Context, jobID string) error
 }
 
 type AppRepository interface {

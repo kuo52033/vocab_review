@@ -278,6 +278,51 @@ func (f *fakeRepository) ListNotificationJobs(_ context.Context, userID string) 
 	return jobs, nil
 }
 
+func (f *fakeRepository) ClaimDueNotificationJobs(_ context.Context, now time.Time, limit int) ([]domain.NotificationJob, error) {
+	jobs := make([]domain.NotificationJob, 0)
+	for _, job := range f.notificationJobs {
+		if job.Status == "pending" && !job.ScheduledAt.After(now) {
+			jobs = append(jobs, job)
+		}
+	}
+	if limit > 0 && len(jobs) > limit {
+		jobs = jobs[:limit]
+	}
+	return jobs, nil
+}
+
+func (f *fakeRepository) ListDeviceTokensForUser(_ context.Context, userID string) ([]domain.DeviceToken, error) {
+	tokens := make([]domain.DeviceToken, 0)
+	for _, token := range f.deviceTokens {
+		if token.UserID == userID {
+			tokens = append(tokens, token)
+		}
+	}
+	return tokens, nil
+}
+
+func (f *fakeRepository) MarkNotificationSent(_ context.Context, jobID string, sentAt time.Time) error {
+	job := f.notificationJobs[jobID]
+	job.Status = "sent"
+	job.SentAt = &sentAt
+	f.notificationJobs[jobID] = job
+	return nil
+}
+
+func (f *fakeRepository) MarkNotificationFailed(_ context.Context, jobID string) error {
+	job := f.notificationJobs[jobID]
+	job.Status = "failed"
+	f.notificationJobs[jobID] = job
+	return nil
+}
+
+func (f *fakeRepository) MarkNotificationPending(_ context.Context, jobID string) error {
+	job := f.notificationJobs[jobID]
+	job.Status = "pending"
+	f.notificationJobs[jobID] = job
+	return nil
+}
+
 func newTestApp() *App {
 	return NewApp(newFakeRepository(), stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
 }

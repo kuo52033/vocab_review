@@ -26,3 +26,26 @@ func (s *Store) UpsertDeviceToken(ctx context.Context, token domain.DeviceToken)
 	)
 	return stored, err
 }
+
+func (s *Store) ListDeviceTokensForUser(ctx context.Context, userID string) ([]domain.DeviceToken, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, user_id, platform, token, created_at, updated_at
+		FROM device_tokens
+		WHERE user_id = $1
+		ORDER BY updated_at DESC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tokens := make([]domain.DeviceToken, 0)
+	for rows.Next() {
+		var token domain.DeviceToken
+		if err := rows.Scan(&token.ID, &token.UserID, &token.Platform, &token.Token, &token.CreatedAt, &token.UpdatedAt); err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, token)
+	}
+	return tokens, rows.Err()
+}
