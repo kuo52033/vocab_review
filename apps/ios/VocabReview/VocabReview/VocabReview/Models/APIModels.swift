@@ -53,24 +53,6 @@ struct UpdateVocabResponse: Codable {
     let item: VocabItem
 }
 
-struct DeviceTokenRequest: Codable {
-    let platform: String
-    let token: String
-}
-
-struct DeviceTokenResponse: Codable {
-    let device: DeviceToken
-}
-
-struct DeviceToken: Codable {
-    let id: String
-    let user_id: String
-    let platform: String
-    let token: String
-    let created_at: String
-    let updated_at: String
-}
-
 struct DueCard: Codable, Identifiable {
     let item: VocabItem
     let state: ReviewState

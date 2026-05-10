@@ -441,13 +441,13 @@ final class SessionStore: ObservableObject {
                 errorMessage = "Notification permission was not granted."
                 return
             }
-            let token = try await NotificationRegistrationService.shared.requestDeviceToken()
-            let _: DeviceTokenResponse = try await sendRequest(
-                path: "/devices/apns-token",
-                method: "POST",
-                body: DeviceTokenRequest(platform: "ios", token: token)
-            )
-            infoMessage = "Notification device registered."
+            let cards = try await loadUpcomingNotificationCards()
+            let count = try await LocalNotificationScheduler(center: center).scheduleReviewReminders(for: cards)
+            if count == 0 {
+                infoMessage = "No upcoming reminders to schedule."
+            } else {
+                infoMessage = "Scheduled \(count) local review reminder\(count == 1 ? "" : "s")."
+            }
         } catch {
             handleRequestError(error)
         }
@@ -519,6 +519,17 @@ final class SessionStore: ObservableObject {
     ) async throws -> T {
         let data = try await rawRequest(path: path, method: method, body: Optional<String>.none)
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private func loadUpcomingNotificationCards() async throws -> [DueCard] {
+        let response: LibraryResponse = try await sendRequest(path: pathWithQuery("/vocab", [
+            URLQueryItem(name: "limit", value: "100"),
+            URLQueryItem(name: "offset", value: "0")
+        ]))
+        return response.items
+            .sorted { $0.state.nextDueAtDate < $1.state.nextDueAtDate }
+            .prefix(20)
+            .map { $0 }
     }
 
     private func rawRequest<Body: Encodable>(
