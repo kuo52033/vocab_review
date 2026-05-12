@@ -40,7 +40,29 @@ sudo usermod -aG docker "$USER"
 
 Log out and back in so the `docker` group applies.
 
-Install the AWS CLI so EC2 can log in to ECR:
+Attach an IAM role to the EC2 instance so it can pull images from ECR without storing AWS access keys on the server.
+
+Use this minimum policy on the EC2 role:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Install the AWS CLI so Docker can log in to ECR using the EC2 role credentials:
 
 ```bash
 sudo apt-get install -y unzip
@@ -49,10 +71,12 @@ unzip awscliv2.zip
 sudo ./aws/install
 ```
 
-Configure AWS credentials with permission to pull from ECR:
+Do not run `aws configure` on EC2. The AWS CLI should read temporary credentials from the EC2 instance role.
+
+Verify the role is available:
 
 ```bash
-aws configure
+aws sts get-caller-identity
 ```
 
 ## 3. Prepare ECR And GitHub Actions
@@ -121,6 +145,8 @@ make prod-migrate
 This applies `backend/migrations` to Neon.
 
 ## 6. Pull Image And Start API
+
+Log in to ECR. This command uses the EC2 instance role, not local access keys:
 
 ```bash
 aws ecr get-login-password --region ap-northeast-1 | docker login --username AWS --password-stdin 293133628661.dkr.ecr.ap-northeast-1.amazonaws.com
