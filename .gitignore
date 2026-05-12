@@ -6,6 +6,7 @@ coverage
 .vite
 backend/data
 .env
+.env.production
 *.swp
 .xcode-derived-data/
 *.xcuserstate

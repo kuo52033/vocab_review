@@ -11,23 +11,35 @@ struct RootView: View {
     var body: some View {
         NavigationStack {
             if sessionStore.isAuthenticated {
-                TabView {
-                    ReviewListView()
-                        .tabItem {
-                            Label("Review", systemImage: "rectangle.stack")
-                        }
+                ZStack(alignment: .top) {
+                    TabView {
+                        ReviewListView()
+                            .tabItem {
+                                Label("Review", systemImage: "rectangle.stack")
+                            }
 
-                    LibraryView()
-                        .tabItem {
-                            Label("Library", systemImage: "books.vertical")
-                        }
+                        LibraryView()
+                            .tabItem {
+                                Label("Library", systemImage: "books.vertical")
+                            }
 
-                    HistoryView()
-                        .tabItem {
-                            Label("History", systemImage: "clock.arrow.circlepath")
-                        }
+                        HistoryView()
+                            .tabItem {
+                                Label("History", systemImage: "clock.arrow.circlepath")
+                            }
+                    }
+                    .tint(AppTheme.sage)
+
+                    if !sessionStore.errorMessage.isEmpty || !sessionStore.infoMessage.isEmpty {
+                        authenticatedStatusBanner
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .zIndex(1)
+                    }
                 }
-                .tint(AppTheme.sage)
+                .animation(.easeInOut(duration: 0.2), value: sessionStore.errorMessage)
+                .animation(.easeInOut(duration: 0.2), value: sessionStore.infoMessage)
                 .task { await sessionStore.refreshAuthenticatedData() }
                 .toolbar {
                     ToolbarItemGroup(placement: .topBarTrailing) {
@@ -168,5 +180,40 @@ struct RootView: View {
             Text(sessionStore.infoMessage)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var authenticatedStatusBanner: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: sessionStore.errorMessage.isEmpty ? "bell.badge" : "exclamationmark.triangle")
+                .foregroundStyle(sessionStore.errorMessage.isEmpty ? AppTheme.sageDark : AppTheme.danger)
+
+            VStack(alignment: .leading, spacing: 4) {
+                if !sessionStore.errorMessage.isEmpty {
+                    Text(sessionStore.errorMessage)
+                        .foregroundStyle(AppTheme.danger)
+                }
+                if !sessionStore.infoMessage.isEmpty {
+                    Text(sessionStore.infoMessage)
+                        .foregroundStyle(AppTheme.ink)
+                }
+            }
+            .font(.callout.weight(.semibold))
+
+            Spacer()
+
+            Button("Dismiss") {
+                sessionStore.clearError()
+                sessionStore.infoMessage = ""
+            }
+            .font(.caption.weight(.semibold))
+            .buttonStyle(.bordered)
+        }
+        .padding()
+        .background(AppTheme.paper.opacity(0.95), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
+        }
+        .shadow(color: AppTheme.ink.opacity(0.08), radius: 14, x: 0, y: 8)
     }
 }

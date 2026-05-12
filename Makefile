@@ -8,7 +8,7 @@ include $(ENV_FILE)
 export
 endif
 
-.PHONY: db-up db-down db-wait migrate migrate-test backend-run notifications-run test test-integration
+.PHONY: db-up db-down db-wait migrate migrate-test backend-run notifications-run test test-integration prod-build prod-up prod-down prod-logs prod-migrate
 
 db-up:
 	docker compose up -d postgres
@@ -42,3 +42,20 @@ test:
 test-integration:
 	$(MAKE) ENV_FILE=.env.test migrate-test
 	cd backend && set -a && . ../.env.test && set +a && go test ./internal/repository/postgres -count=1
+
+prod-build:
+	docker compose -f docker-compose.prod.yml build
+
+prod-up:
+	test -f .env.production
+	docker compose -f docker-compose.prod.yml up -d
+
+prod-down:
+	docker compose -f docker-compose.prod.yml down
+
+prod-logs:
+	docker compose -f docker-compose.prod.yml logs -f
+
+prod-migrate:
+	test -f .env.production
+	set -a && . ./.env.production && set +a && test -n "$$DATABASE_URL" && cd backend && go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir migrations postgres "$$DATABASE_URL" up

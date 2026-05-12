@@ -1,0 +1,19 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env.production
+    environment:
+      ADDR: ":8080"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  tunnel:
+    image: cloudflare/cloudflared:2026.4.0
+    command: tunnel --no-autoupdate --url http://api:8080
+    depends_on:
+      - api
+    restart: unless-stopped
