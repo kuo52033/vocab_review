@@ -8,7 +8,7 @@ include $(ENV_FILE)
 export
 endif
 
-.PHONY: db-up db-down db-wait migrate migrate-test backend-run notifications-run test test-integration prod-build prod-up prod-down prod-logs prod-migrate
+.PHONY: db-up db-down db-wait migrate migrate-test backend-run notifications-run test test-integration prod-build prod-up prod-pull prod-down prod-logs prod-migrate
 
 db-up:
 	docker compose up -d postgres
@@ -49,6 +49,10 @@ prod-build:
 prod-up:
 	test -f .env.production
 	docker compose -f docker-compose.prod.yml up -d
+
+prod-pull:
+	test -f .env.production
+	docker compose -f docker-compose.prod.yml pull
 
 prod-down:
 	docker compose -f docker-compose.prod.yml down

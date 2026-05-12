@@ -1,8 +1,6 @@
 services:
   api:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    image: ${BACKEND_IMAGE}
     env_file:
       - .env.production
     environment:

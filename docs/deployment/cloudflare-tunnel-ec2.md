@@ -40,11 +40,56 @@ sudo usermod -aG docker "$USER"
 
 Log out and back in so the `docker` group applies.
 
-## 3. Copy The App
+Install the AWS CLI so EC2 can log in to ECR:
+
+```bash
+sudo apt-get install -y unzip
+curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+```
+
+Configure AWS credentials with permission to pull from ECR:
+
+```bash
+aws configure
+```
+
+## 3. Prepare ECR And GitHub Actions
+
+Create an ECR repository for the backend image:
+
+```bash
+aws ecr create-repository --repository-name vocab-review --region ap-northeast-1
+```
+
+The GitHub Actions workflow uses OIDC to assume this role:
+
+```text
+arn:aws:iam::293133628661:role/vocab-review-github-actions
+```
+
+No long-lived AWS access key is required in GitHub secrets for pushing images. The role must trust GitHub's OIDC provider and allow this repository to assume it.
+
+The workflow is configured with:
+
+```text
+AWS_REGION=ap-northeast-1
+AWS_ACCOUNT_ID=293133628661
+AWS_ECR_REPOSITORY=vocab-review
+```
+
+The GitHub Actions workflow runs tests and builds on pull requests. It pushes a Docker image to ECR when:
+
+- code is pushed to `master`, using tag `master-<short-sha>`;
+- the workflow is run manually with `docker_tag`, using the tag you typed.
+
+## 4. Copy The App
 
 ```bash
 git clone https://github.com/kuo52033/vocab_review.git
 cd vocab_review
+git switch master
 cp .env.production.example .env.production
 ```
 
@@ -57,6 +102,7 @@ nano .env.production
 Set:
 
 ```env
+BACKEND_IMAGE=293133628661.dkr.ecr.ap-northeast-1.amazonaws.com/vocab-review:master-SHORT_SHA
 DATABASE_URL=postgres://USER:PASSWORD@HOST.neon.tech/DBNAME?sslmode=require
 LOG_COLOR=false
 VOCAB_ENRICHMENT_BASE_URL=https://api.openai.com/v1
@@ -66,7 +112,7 @@ VOCAB_ENRICHMENT_MODEL=gpt-4.1-mini
 
 Do not commit `.env.production`.
 
-## 4. Run Migrations
+## 5. Run Migrations
 
 ```bash
 make prod-migrate
@@ -74,10 +120,11 @@ make prod-migrate
 
 This applies `backend/migrations` to Neon.
 
-## 5. Start API And Tunnel
+## 6. Pull Image And Start API
 
 ```bash
-make prod-build
+aws ecr get-login-password --region ap-northeast-1 | docker login --username AWS --password-stdin 293133628661.dkr.ecr.ap-northeast-1.amazonaws.com
+make prod-pull
 make prod-up
 make prod-logs
 ```
@@ -100,7 +147,7 @@ Expected:
 HTTP/2 200
 ```
 
-## 6. Connect Cloudflare Pages
+## 7. Connect Cloudflare Pages
 
 In Cloudflare Pages, set the web build environment variable:
 
@@ -130,7 +177,7 @@ Do not use plain `npx wrangler deploy` from the repository root. This is a monor
 
 Redeploy the Pages site after setting the variable.
 
-## 7. Operations
+## 8. Operations
 
 Restart production services:
 
@@ -148,11 +195,23 @@ make prod-logs
 Run migrations after pulling new backend changes:
 
 ```bash
+git switch master
 git pull
 make prod-migrate
-make prod-build
+aws ecr get-login-password --region ap-northeast-1 | docker login --username AWS --password-stdin 293133628661.dkr.ecr.ap-northeast-1.amazonaws.com
+make prod-pull
 make prod-up
 ```
+
+Deploy a specific image tag:
+
+```bash
+nano .env.production
+make prod-pull
+make prod-up
+```
+
+Set `BACKEND_IMAGE` to the exact ECR image tag you want before running `make prod-pull`.
 
 ## Limitations
 
