@@ -32,9 +32,6 @@ jobs:
           --health-timeout 5s
           --health-retries 20
 
-    env:
-      DATABASE_URL: postgres://vocab:vocab@127.0.0.1:5432/vocab_review_test?sslmode=disable
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -50,10 +47,14 @@ jobs:
         run: go test ./...
 
       - name: Run database migrations
+        env:
+          DATABASE_URL: postgres://vocab:vocab@127.0.0.1:5432/vocab_review_test?sslmode=disable
         run: go run github.com/pressly/goose/v3/cmd/goose@v3.24.3 -dir backend/migrations postgres "$DATABASE_URL" up
 
       - name: Run Postgres integration tests
         working-directory: backend
+        env:
+          DATABASE_URL: postgres://vocab:vocab@127.0.0.1:5432/vocab_review_test?sslmode=disable
         run: go test ./internal/repository/postgres -count=1
 
   frontend:
