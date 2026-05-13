@@ -239,7 +239,7 @@ func TestArchiveVocabForUserScopesArchiveByOwner(t *testing.T) {
 		t.Fatalf("create vocab: %v", err)
 	}
 
-	archivedAt := now.Add(time.Minute)
+	archivedAt := postgresTimestamp(now.Add(time.Minute))
 	if _, err := store.ArchiveVocabForUser(ctx, otherUser.ID, item.ID, archivedAt); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("archive as other user: got %v want %v", err, repository.ErrNotFound)
 	}
@@ -248,10 +248,10 @@ func TestArchiveVocabForUserScopesArchiveByOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("archive as owner: %v", err)
 	}
-	if archived.ArchivedAt == nil || !archived.ArchivedAt.Equal(archivedAt) {
+	if archived.ArchivedAt == nil || !samePostgresTimestamp(*archived.ArchivedAt, archivedAt) {
 		t.Fatalf("archived at: got %v want %s", archived.ArchivedAt, archivedAt)
 	}
-	if !archived.UpdatedAt.Equal(archivedAt) {
+	if !samePostgresTimestamp(archived.UpdatedAt, archivedAt) {
 		t.Fatalf("updated at: got %s want %s", archived.UpdatedAt, archivedAt)
 	}
 }
@@ -337,7 +337,7 @@ func TestNotificationWorkerOperations(t *testing.T) {
 		t.Fatalf("tokens: got %+v want token-notify", tokens)
 	}
 
-	sentAt := now.Add(2 * time.Minute)
+	sentAt := postgresTimestamp(now.Add(2 * time.Minute))
 	if err := store.MarkNotificationSent(ctx, "job_due", sentAt); err != nil {
 		t.Fatalf("mark sent: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestNotificationWorkerOperations(t *testing.T) {
 	if err := store.pool.QueryRow(ctx, `SELECT status, sent_at FROM notification_jobs WHERE id = 'job_due'`).Scan(&status, &storedSentAt); err != nil {
 		t.Fatalf("load sent job: %v", err)
 	}
-	if status != "sent" || !storedSentAt.Equal(sentAt) {
+	if status != "sent" || !samePostgresTimestamp(storedSentAt, sentAt) {
 		t.Fatalf("sent update: got status=%s sent_at=%s want sent %s", status, storedSentAt, sentAt)
 	}
 }
@@ -446,4 +446,12 @@ func resetDatabase(t *testing.T, databaseURL string) {
 	if err := goose.Up(db, migrationsDir); err != nil {
 		t.Fatalf("apply migrations: %v", err)
 	}
+}
+
+func postgresTimestamp(value time.Time) time.Time {
+	return value.UTC().Truncate(time.Microsecond)
+}
+
+func samePostgresTimestamp(got time.Time, want time.Time) bool {
+	return got.UTC().Equal(postgresTimestamp(want))
 }
