@@ -62,4 +62,4 @@ prod-logs:
 
 prod-migrate:
 	test -f .env.production
-	docker compose --profile tools --env-file .env.production -f docker-compose.prod.yml run --rm migrate
+	docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate

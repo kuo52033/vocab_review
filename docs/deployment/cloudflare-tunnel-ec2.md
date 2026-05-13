@@ -157,7 +157,7 @@ make prod-logs
 `make prod-migrate` runs the `migrate` service from the backend Docker image:
 
 ```bash
-docker compose --profile tools --env-file .env.production -f docker-compose.prod.yml run --rm migrate
+docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate
 ```
 
 The image contains `/app/goose` and `/app/migrations`, so the EC2 host does not need Go, goose, or the migration files.
