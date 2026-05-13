@@ -10,8 +10,16 @@ services:
       - "127.0.0.1:8080:8080"
 
   tunnel:
-    image: cloudflare/cloudflared:2026.4.0
-    command: tunnel --no-autoupdate --url http://api:8080
+    image: cloudflare/cloudflared:2026.3.0
+    command: ["cloudflared", "tunnel", "--no-autoupdate", "--url", "http://api:8080"]
     depends_on:
       - api
     restart: unless-stopped
+
+  migrate:
+    image: ${BACKEND_IMAGE}
+    env_file:
+      - .env.production
+    command: ["/app/goose", "-dir", "/app/migrations", "postgres", "${DATABASE_URL}", "up"]
+    profiles:
+      - tools

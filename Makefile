@@ -44,22 +44,22 @@ test-integration:
 	cd backend && set -a && . ../.env.test && set +a && go test ./internal/repository/postgres -count=1
 
 prod-build:
-	docker compose -f docker-compose.prod.yml build
+	docker compose --env-file .env.production -f docker-compose.prod.yml build
 
 prod-up:
 	test -f .env.production
-	docker compose -f docker-compose.prod.yml up -d
+	docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 
 prod-pull:
 	test -f .env.production
-	docker compose -f docker-compose.prod.yml pull
+	docker compose --env-file .env.production -f docker-compose.prod.yml pull
 
 prod-down:
-	docker compose -f docker-compose.prod.yml down
+	docker compose --env-file .env.production -f docker-compose.prod.yml down
 
 prod-logs:
-	docker compose -f docker-compose.prod.yml logs -f
+	docker compose --env-file .env.production -f docker-compose.prod.yml logs -f
 
 prod-migrate:
 	test -f .env.production
-	set -a && . ./.env.production && set +a && test -n "$$DATABASE_URL" && cd backend && go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir migrations postgres "$$DATABASE_URL" up
+	docker compose --profile tools --env-file .env.production -f docker-compose.prod.yml run --rm migrate

@@ -108,18 +108,24 @@ The GitHub Actions workflow runs tests and builds on pull requests. It pushes a 
 - code is pushed to `master`, using tag `master-<short-sha>`;
 - the workflow is run manually with `docker_tag`, using the tag you typed.
 
-## 4. Copy The App
+## 4. Prepare Deployment Files
 
-```bash
-git clone https://github.com/kuo52033/vocab_review.git
-cd vocab_review
-git switch master
-cp .env.production.example .env.production
+EC2 does not need the full repository. Create a small deployment directory with only:
+
+```text
+/opt/vocab-review/
+├── docker-compose.prod.yml
+└── .env.production
 ```
 
-Edit `.env.production`:
+Copy `docker-compose.prod.yml` from the repository to `/opt/vocab-review/docker-compose.prod.yml`.
+
+Create `.env.production`:
 
 ```bash
+sudo mkdir -p /opt/vocab-review
+sudo chown "$USER":"$USER" /opt/vocab-review
+cd /opt/vocab-review
 nano .env.production
 ```
 
@@ -136,24 +142,25 @@ VOCAB_ENRICHMENT_MODEL=gpt-4.1-mini
 
 Do not commit `.env.production`.
 
-## 5. Run Migrations
-
-```bash
-make prod-migrate
-```
-
-This applies `backend/migrations` to Neon.
-
-## 6. Pull Image And Start API
+## 5. Pull Image, Run Migrations, And Start API
 
 Log in to ECR. This command uses the EC2 instance role, not local access keys:
 
 ```bash
 aws ecr get-login-password --region ap-northeast-1 | docker login --username AWS --password-stdin 293133628661.dkr.ecr.ap-northeast-1.amazonaws.com
 make prod-pull
+make prod-migrate
 make prod-up
 make prod-logs
 ```
+
+`make prod-migrate` runs the `migrate` service from the backend Docker image:
+
+```bash
+docker compose --profile tools --env-file .env.production -f docker-compose.prod.yml run --rm migrate
+```
+
+The image contains `/app/goose` and `/app/migrations`, so the EC2 host does not need Go, goose, or the migration files.
 
 In the logs, find the Cloudflare quick tunnel URL:
 
@@ -173,7 +180,7 @@ Expected:
 HTTP/2 200
 ```
 
-## 7. Connect Cloudflare Pages
+## 6. Connect Cloudflare Pages
 
 In Cloudflare Pages, set the web build environment variable:
 
@@ -203,7 +210,7 @@ Do not use plain `npx wrangler deploy` from the repository root. This is a monor
 
 Redeploy the Pages site after setting the variable.
 
-## 8. Operations
+## 7. Operations
 
 Restart production services:
 
@@ -218,16 +225,20 @@ Tail logs:
 make prod-logs
 ```
 
-Run migrations after pulling new backend changes:
+Deploy a new backend image after CI pushes to ECR:
 
 ```bash
-git switch master
-git pull
-make prod-migrate
+cd /opt/vocab-review
+nano .env.production
 aws ecr get-login-password --region ap-northeast-1 | docker login --username AWS --password-stdin 293133628661.dkr.ecr.ap-northeast-1.amazonaws.com
 make prod-pull
+make prod-migrate
 make prod-up
 ```
+
+Update `BACKEND_IMAGE` in `.env.production` to the tag printed by GitHub Actions before running these commands.
+
+If `docker-compose.prod.yml` changes in the repository, copy the new file to `/opt/vocab-review/docker-compose.prod.yml` before deploying.
 
 Deploy a specific image tag:
 
@@ -238,6 +249,8 @@ make prod-up
 ```
 
 Set `BACKEND_IMAGE` to the exact ECR image tag you want before running `make prod-pull`.
+
+The Makefile production commands use `docker compose --env-file .env.production -f docker-compose.prod.yml ...` internally so `${BACKEND_IMAGE}` and `${DATABASE_URL}` are available while Compose parses the file.
 
 ## Limitations
 
