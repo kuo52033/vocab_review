@@ -40,7 +40,7 @@ type AuthResult struct {
 	RedirectURL string         `json:"redirect_url"`
 }
 
-func (a *App) RequestMagicLink(email, baseURL string) (map[string]string, error) {
+func (a *App) RequestMagicLink(ctx context.Context, email, baseURL string) (map[string]string, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if email == "" {
 		return nil, errors.New("email is required")
@@ -51,7 +51,7 @@ func (a *App) RequestMagicLink(email, baseURL string) (map[string]string, error)
 		Email:     email,
 		ExpiresAt: a.clock.Now().Add(15 * time.Minute),
 	}
-	if err := a.store.PutMagicLink(context.Background(), token); err != nil {
+	if err := a.store.PutMagicLink(ctx, token); err != nil {
 		return nil, err
 	}
 
@@ -62,7 +62,7 @@ func (a *App) RequestMagicLink(email, baseURL string) (map[string]string, error)
 	}, nil
 }
 
-func (a *App) VerifyMagicLink(token string) (AuthResult, error) {
+func (a *App) VerifyMagicLink(ctx context.Context, token string) (AuthResult, error) {
 	now := a.clock.Now()
 	newUser := domain.User{
 		ID:        newID("usr"),
@@ -73,7 +73,7 @@ func (a *App) VerifyMagicLink(token string) (AuthResult, error) {
 		CreatedAt: now,
 		ExpiresAt: now.Add(30 * 24 * time.Hour),
 	}
-	user, session, err := a.store.ConsumeMagicLink(context.Background(), token, now, newUser, newSession)
+	user, session, err := a.store.ConsumeMagicLink(ctx, token, now, newUser, newSession)
 	if errors.Is(err, repository.ErrNotFound) {
 		return AuthResult{}, errors.New("invalid token")
 	}
@@ -91,8 +91,8 @@ func (a *App) VerifyMagicLink(token string) (AuthResult, error) {
 	}, nil
 }
 
-func (a *App) Session(token string) (domain.Session, domain.User, error) {
-	session, user, ok, err := a.store.GetSessionUser(context.Background(), token)
+func (a *App) Session(ctx context.Context, token string) (domain.Session, domain.User, error) {
+	session, user, ok, err := a.store.GetSessionUser(ctx, token)
 	if err != nil {
 		return domain.Session{}, domain.User{}, err
 	}
@@ -115,7 +115,7 @@ type CreateVocabInput struct {
 	Notes           string               `json:"notes"`
 }
 
-func (a *App) CreateVocab(userID string, input CreateVocabInput) (domain.VocabItem, domain.ReviewState, error) {
+func (a *App) CreateVocab(ctx context.Context, userID string, input CreateVocabInput) (domain.VocabItem, domain.ReviewState, error) {
 	now := a.clock.Now()
 	card, err := intake.NewVocabCard(userID, intake.VocabInput{
 		Term:            input.Term,
@@ -132,7 +132,7 @@ func (a *App) CreateVocab(userID string, input CreateVocabInput) (domain.VocabIt
 	if err != nil {
 		return domain.VocabItem{}, domain.ReviewState{}, err
 	}
-	if err := a.store.CreateVocab(context.Background(), card.Item, card.State, card.NotificationJob); err != nil {
+	if err := a.store.CreateVocab(ctx, card.Item, card.State, card.NotificationJob); err != nil {
 		return domain.VocabItem{}, domain.ReviewState{}, err
 	}
 	return card.Item, card.State, nil
@@ -145,8 +145,8 @@ func (a *App) AutocompleteVocab(ctx context.Context, items []enrichment.Item) ([
 	return a.enricher.Autocomplete(ctx, items)
 }
 
-func (a *App) UpdateVocab(userID, id string, input CreateVocabInput) (domain.VocabItem, error) {
-	item, ok, err := a.store.GetVocab(context.Background(), id)
+func (a *App) UpdateVocab(ctx context.Context, userID, id string, input CreateVocabInput) (domain.VocabItem, error) {
+	item, ok, err := a.store.GetVocab(ctx, id)
 	if err != nil {
 		return domain.VocabItem{}, err
 	}
@@ -163,15 +163,15 @@ func (a *App) UpdateVocab(userID, id string, input CreateVocabInput) (domain.Voc
 	item.SourceURL = strings.TrimSpace(defaultString(input.SourceURL, item.SourceURL))
 	item.Notes = strings.TrimSpace(defaultString(input.Notes, item.Notes))
 	item.UpdatedAt = a.clock.Now()
-	if err := a.store.UpdateVocab(context.Background(), item); err != nil {
+	if err := a.store.UpdateVocab(ctx, item); err != nil {
 		return domain.VocabItem{}, err
 	}
 	return item, nil
 }
 
-func (a *App) ArchiveVocab(userID, id string) (domain.VocabItem, error) {
+func (a *App) ArchiveVocab(ctx context.Context, userID, id string) (domain.VocabItem, error) {
 	now := a.clock.Now()
-	item, err := a.store.ArchiveVocabForUser(context.Background(), userID, id, now)
+	item, err := a.store.ArchiveVocabForUser(ctx, userID, id, now)
 	if errors.Is(err, repository.ErrNotFound) {
 		return domain.VocabItem{}, errors.New("vocab not found")
 	}
@@ -214,8 +214,8 @@ type VocabPage struct {
 	Offset int              `json:"offset"`
 }
 
-func (a *App) ListVocab(userID string, input ListVocabInput) (VocabPage, error) {
-	items, total, err := a.store.ListVocabByUser(context.Background(), userID, repository.ListVocabOptions{
+func (a *App) ListVocab(ctx context.Context, userID string, input ListVocabInput) (VocabPage, error) {
+	items, total, err := a.store.ListVocabByUser(ctx, userID, repository.ListVocabOptions{
 		Pagination: repository.Pagination{Limit: input.Limit, Offset: input.Offset},
 		Query:      strings.TrimSpace(input.Query),
 		Status:     input.Status,
@@ -261,8 +261,8 @@ type ReviewStats struct {
 	ArchivedCards int `json:"archived_cards"`
 }
 
-func (a *App) DueCards(userID string) ([]DueCard, error) {
-	states, err := a.store.ListDueVocab(context.Background(), userID, a.clock.Now())
+func (a *App) DueCards(ctx context.Context, userID string) ([]DueCard, error) {
+	states, err := a.store.ListDueVocab(ctx, userID, a.clock.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -273,8 +273,8 @@ func (a *App) DueCards(userID string) ([]DueCard, error) {
 	return result, nil
 }
 
-func (a *App) GradeReview(userID, vocabID string, grade domain.ReviewGrade) (domain.ReviewState, error) {
-	state, ok, err := a.store.GetReviewState(context.Background(), vocabID)
+func (a *App) GradeReview(ctx context.Context, userID, vocabID string, grade domain.ReviewGrade) (domain.ReviewState, error) {
+	state, ok, err := a.store.GetReviewState(ctx, vocabID)
 	if err != nil {
 		return domain.ReviewState{}, err
 	}
@@ -306,14 +306,14 @@ func (a *App) GradeReview(userID, vocabID string, grade domain.ReviewGrade) (dom
 			Message:     "Time to review your vocabulary.",
 		}
 	}
-	if err := a.store.RecordReview(context.Background(), next, log, job); err != nil {
+	if err := a.store.RecordReview(ctx, next, log, job); err != nil {
 		return domain.ReviewState{}, err
 	}
 	return next, nil
 }
 
-func (a *App) ReviewHistory(userID string, input PageInput) (ReviewHistoryPage, error) {
-	entries, total, err := a.store.ListReviewHistory(context.Background(), userID, repository.Pagination{Limit: input.Limit, Offset: input.Offset})
+func (a *App) ReviewHistory(ctx context.Context, userID string, input PageInput) (ReviewHistoryPage, error) {
+	entries, total, err := a.store.ListReviewHistory(ctx, userID, repository.Pagination{Limit: input.Limit, Offset: input.Offset})
 	if err != nil {
 		return ReviewHistoryPage{}, err
 	}
@@ -324,8 +324,8 @@ func (a *App) ReviewHistory(userID string, input PageInput) (ReviewHistoryPage, 
 	return ReviewHistoryPage{Items: result, Total: total, Limit: input.Limit, Offset: input.Offset}, nil
 }
 
-func (a *App) ReviewStats(userID string) (ReviewStats, error) {
-	stats, err := a.store.GetReviewStats(context.Background(), userID, a.clock.Now())
+func (a *App) ReviewStats(ctx context.Context, userID string) (ReviewStats, error) {
+	stats, err := a.store.GetReviewStats(ctx, userID, a.clock.Now())
 	if err != nil {
 		return ReviewStats{}, err
 	}
@@ -349,7 +349,7 @@ type CaptureInput struct {
 	Notes           string `json:"notes"`
 }
 
-func (a *App) CreateCapture(userID string, input CaptureInput) (DueCard, error) {
+func (a *App) CreateCapture(ctx context.Context, userID string, input CaptureInput) (DueCard, error) {
 	now := a.clock.Now()
 	card, err := intake.NewCapturedCard(userID, intake.CaptureInput{
 		Term:            input.Term,
@@ -368,14 +368,14 @@ func (a *App) CreateCapture(userID string, input CaptureInput) (DueCard, error) 
 	if err != nil {
 		return DueCard{}, err
 	}
-	if err := a.store.CreateCapturedVocab(context.Background(), card.Item, card.State, card.Capture, card.NotificationJob); err != nil {
+	if err := a.store.CreateCapturedVocab(ctx, card.Item, card.State, card.Capture, card.NotificationJob); err != nil {
 		return DueCard{}, err
 	}
 
 	return DueCard{Item: card.Item, State: card.State}, nil
 }
 
-func (a *App) RegisterDevice(userID, platform, token string) (domain.DeviceToken, error) {
+func (a *App) RegisterDevice(ctx context.Context, userID, platform, token string) (domain.DeviceToken, error) {
 	if strings.TrimSpace(platform) == "" || strings.TrimSpace(token) == "" {
 		return domain.DeviceToken{}, errors.New("platform and token are required")
 	}
@@ -388,19 +388,15 @@ func (a *App) RegisterDevice(userID, platform, token string) (domain.DeviceToken
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	return a.store.UpsertDeviceToken(context.Background(), device)
+	return a.store.UpsertDeviceToken(ctx, device)
 }
 
-func (a *App) ListNotificationJobs(userID string) []domain.NotificationJob {
-	jobs, err := a.store.ListNotificationJobs(context.Background(), userID)
-	if err != nil {
-		return nil
-	}
-	return jobs
+func (a *App) ListNotificationJobs(ctx context.Context, userID string) ([]domain.NotificationJob, error) {
+	return a.store.ListNotificationJobs(ctx, userID)
 }
 
-func (a *App) HealthCheck() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+func (a *App) HealthCheck(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	return a.store.HealthCheck(ctx)
 }

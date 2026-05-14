@@ -16,7 +16,7 @@ func (s *Server) handleMagicLink(w http.ResponseWriter, r *http.Request) {
 	if req.BaseURL == "" {
 		req.BaseURL = "http://localhost:8080"
 	}
-	result, err := s.app.RequestMagicLink(req.Email, req.BaseURL)
+	result, err := s.app.RequestMagicLink(r.Context(), req.Email, req.BaseURL)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -32,7 +32,7 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := s.app.VerifyMagicLink(req.Token)
+	result, err := s.app.VerifyMagicLink(r.Context(), req.Token)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

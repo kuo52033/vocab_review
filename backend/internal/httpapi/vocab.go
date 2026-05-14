@@ -16,7 +16,7 @@ func (s *Server) handleListVocab(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := s.app.ListVocab(userIDFromContext(r.Context()), service.ListVocabInput{
+	result, err := s.app.ListVocab(r.Context(), userIDFromContext(r.Context()), service.ListVocabInput{
 		Limit:  page.Limit,
 		Offset: page.Offset,
 		Query:  r.URL.Query().Get("q"),
@@ -35,7 +35,7 @@ func (s *Server) handleCreateVocab(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	item, state, err := s.app.CreateVocab(userIDFromContext(r.Context()), req)
+	item, state, err := s.app.CreateVocab(r.Context(), userIDFromContext(r.Context()), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -81,7 +81,7 @@ func (s *Server) handleUpdateVocab(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	item, err := s.app.UpdateVocab(userIDFromContext(r.Context()), id, req)
+	item, err := s.app.UpdateVocab(r.Context(), userIDFromContext(r.Context()), id, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -91,7 +91,7 @@ func (s *Server) handleUpdateVocab(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteVocab(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/vocab/")
-	item, err := s.app.ArchiveVocab(userIDFromContext(r.Context()), id)
+	item, err := s.app.ArchiveVocab(r.Context(), userIDFromContext(r.Context()), id)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

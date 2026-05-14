@@ -12,7 +12,7 @@ func (s *Server) handleCapture(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := s.app.CreateCapture(userIDFromContext(r.Context()), req)
+	result, err := s.app.CreateCapture(r.Context(), userIDFromContext(r.Context()), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -29,7 +29,7 @@ func (s *Server) handleDeviceToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	device, err := s.app.RegisterDevice(userIDFromContext(r.Context()), req.Platform, req.Token)
+	device, err := s.app.RegisterDevice(r.Context(), userIDFromContext(r.Context()), req.Platform, req.Token)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -38,5 +38,10 @@ func (s *Server) handleDeviceToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleNotificationJobs(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"items": s.app.ListNotificationJobs(userIDFromContext(r.Context()))})
+	jobs, err := s.app.ListNotificationJobs(r.Context(), userIDFromContext(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": jobs})
 }

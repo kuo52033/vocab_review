@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Server) handleDueCards(w http.ResponseWriter, r *http.Request) {
-	items, err := s.app.DueCards(userIDFromContext(r.Context()))
+	items, err := s.app.DueCards(r.Context(), userIDFromContext(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -23,7 +23,7 @@ func (s *Server) handleReviewHistory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := s.app.ReviewHistory(userIDFromContext(r.Context()), service.PageInput{Limit: page.Limit, Offset: page.Offset})
+	result, err := s.app.ReviewHistory(r.Context(), userIDFromContext(r.Context()), service.PageInput{Limit: page.Limit, Offset: page.Offset})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -32,7 +32,7 @@ func (s *Server) handleReviewHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReviewStats(w http.ResponseWriter, r *http.Request) {
-	stats, err := s.app.ReviewStats(userIDFromContext(r.Context()))
+	stats, err := s.app.ReviewStats(r.Context(), userIDFromContext(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -54,7 +54,7 @@ func (s *Server) handleGradeReview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	state, err := s.app.GradeReview(userIDFromContext(r.Context()), vocabID, req.Grade)
+	state, err := s.app.GradeReview(r.Context(), userIDFromContext(r.Context()), vocabID, req.Grade)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

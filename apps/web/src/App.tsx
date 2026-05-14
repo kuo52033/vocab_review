@@ -538,6 +538,9 @@ export function App() {
       await refresh();
       setPendingNextDue(response.state.next_due_at);
       setError("");
+      if (option.isCorrect) {
+        completeOrAdvanceQuiz(reviewed, correct, wrong, response.state.next_due_at);
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -547,12 +550,16 @@ export function App() {
 
   function advanceQuizCard() {
     const reviewed = sessionIndex + 1;
+    completeOrAdvanceQuiz(reviewed, sessionCorrectCount, sessionWrongCount, pendingNextDue);
+  }
+
+  function completeOrAdvanceQuiz(reviewed: number, correct: number, wrong: number, lastNextDue: string) {
     if (reviewed >= sessionDeck.length) {
       setSessionSummary({
         reviewed,
-        correct: sessionCorrectCount,
-        wrong: sessionWrongCount,
-        lastNextDue: pendingNextDue
+        correct,
+        wrong,
+        lastNextDue
       });
       endReviewSession();
       return;
@@ -603,20 +610,20 @@ export function App() {
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-heading">
+      <header className="topbar">
+        <div className="brand-block">
           <p className="eyebrow">Vocab Review</p>
-          <div className="sidebar-utilities">
-            <button type="button" className="icon-button sidebar-add" onClick={() => setActiveSection("add")} aria-label="Add card">
+          <div className="topbar-utilities">
+            <button type="button" className="icon-button topbar-add" onClick={() => setActiveSection("add")} aria-label="Add card">
               +
             </button>
-            <button type="button" className="icon-button sidebar-refresh" onClick={refresh} disabled={isRefreshing} aria-label="Refresh data">
+            <button type="button" className="icon-button topbar-refresh" onClick={refresh} disabled={isRefreshing} aria-label="Refresh data">
               ↻
             </button>
           </div>
         </div>
 
-        <nav className="sidebar-nav" aria-label="Workspace sections">
+        <nav className="top-nav" aria-label="Workspace sections">
           {[
             ["review", "Start Review", `${stats.due_now} due`],
             ["library", "Active cards", `${stats.active_cards} cards`]
@@ -633,7 +640,7 @@ export function App() {
           ))}
         </nav>
 
-        <div className="sidebar-stats">
+        <div className="topbar-stats">
           <article>
             <strong>{stats.due_now}</strong>
             <span>Due now</span>
@@ -651,7 +658,7 @@ export function App() {
             <span>7 day reviews</span>
           </article>
         </div>
-      </aside>
+      </header>
 
       <section className="workspace">
         {activeSection === "review" ? (
@@ -704,17 +711,6 @@ export function App() {
                       </button>
                     );
                   })}
-                </div>
-                <div className="quiz-feedback" aria-live="polite">
-                  {selectedOptionID ? (
-                    currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? (
-                      <span className="correct-text">Correct. This card will move further out.</span>
-                    ) : (
-                      <span className="wrong-text">Not this one. The card will return sooner.</span>
-                    )
-                  ) : (
-                    <span>Correct answers use the existing easy grade. Wrong answers use again.</span>
-                  )}
                 </div>
                 {selectedOptionID ? (
                   <button type="button" className="next-card-button" onClick={advanceQuizCard} disabled={isGrading}>
