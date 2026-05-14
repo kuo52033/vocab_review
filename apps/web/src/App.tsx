@@ -111,6 +111,10 @@ function formatDate(value: string) {
 }
 
 function parseImportLine(line: string): ParsedImportCard {
+  if (line.includes("|")) {
+    const [term = "", meaning = "", example_sentence = "", part_of_speech = ""] = line.split("|").map((part) => part.trim());
+    return { term, meaning, example_sentence, part_of_speech };
+  }
   const separators = [" - ", "\t", ": ", "："];
   for (const separator of separators) {
     const index = line.indexOf(separator);
@@ -224,6 +228,23 @@ function mergeAutocompleteResults(cards: ParsedImportCard[], results: Autocomple
       error: result.error || undefined
     };
   });
+}
+
+function formatBulkImportCards(cards: ParsedImportCard[]) {
+  return cards
+    .map((card) => {
+      const fields = [
+        card.term,
+        card.meaning,
+        card.example_sentence,
+        card.part_of_speech
+      ].map((value) => value.trim());
+      while (fields.length > 1 && fields[fields.length - 1] === "") {
+        fields.pop();
+      }
+      return fields.join(" | ");
+    })
+    .join("\n");
 }
 
 export function App() {
@@ -412,7 +433,11 @@ export function App() {
       }));
       const response = await autocompleteVocab(items);
       if (bulkTextRef.current !== inputSnapshot) return;
-      setEnrichedCards(mergeAutocompleteResults(cards, response.items));
+      const mergedCards = mergeAutocompleteResults(cards, response.items);
+      const mergedText = formatBulkImportCards(mergedCards);
+      bulkTextRef.current = mergedText;
+      setBulkText(mergedText);
+      setEnrichedCards(mergedCards);
     } catch (err) {
       if (bulkTextRef.current !== inputSnapshot) return;
       setEnrichmentError(`${(err as Error).message}. Manual import still works with the details currently shown.`);
