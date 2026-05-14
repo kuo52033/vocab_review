@@ -107,7 +107,6 @@ func (a *App) Session(token string) (domain.Session, domain.User, error) {
 
 type CreateVocabInput struct {
 	Term            string               `json:"term"`
-	Kind            domain.CardKind      `json:"kind"`
 	Meaning         string               `json:"meaning"`
 	ExampleSentence string               `json:"example_sentence"`
 	PartOfSpeech    *domain.PartOfSpeech `json:"part_of_speech"`
@@ -120,7 +119,6 @@ func (a *App) CreateVocab(userID string, input CreateVocabInput) (domain.VocabIt
 	now := a.clock.Now()
 	card, err := intake.NewVocabCard(userID, intake.VocabInput{
 		Term:            input.Term,
-		Kind:            input.Kind,
 		Meaning:         input.Meaning,
 		ExampleSentence: input.ExampleSentence,
 		PartOfSpeech:    partOfSpeechValue(input.PartOfSpeech),
@@ -156,9 +154,6 @@ func (a *App) UpdateVocab(userID, id string, input CreateVocabInput) (domain.Voc
 		return domain.VocabItem{}, errors.New("vocab not found")
 	}
 	item.Term = strings.TrimSpace(defaultString(input.Term, item.Term))
-	if input.Kind != "" {
-		item.Kind = input.Kind
-	}
 	item.Meaning = strings.TrimSpace(defaultString(input.Meaning, item.Meaning))
 	item.ExampleSentence = strings.TrimSpace(defaultString(input.ExampleSentence, item.ExampleSentence))
 	if input.PartOfSpeech != nil {

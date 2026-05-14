@@ -368,7 +368,7 @@ function Popup() {
           <div className="capture-heading">
             <div>
               <h2>Quick capture</h2>
-              <p className="small">Only the word or phrase is required.</p>
+              <p className="small">Only the word is required.</p>
             </div>
             <button type="button" className="text-button" onClick={handleSignOut}>
               Sign out
@@ -376,7 +376,7 @@ function Popup() {
           </div>
           <form onSubmit={handleSubmit}>
             <label>
-              Word or phrase
+              Word
               <input ref={termInputRef} value={draft.term} onChange={(event) => setDraft({ ...draft, term: event.target.value })} />
             </label>
             <details className="optional-fields">

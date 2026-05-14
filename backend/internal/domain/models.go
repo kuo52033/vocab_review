@@ -2,13 +2,6 @@ package domain
 
 import "time"
 
-type CardKind string
-
-const (
-	CardKindWord   CardKind = "word"
-	CardKindPhrase CardKind = "phrase"
-)
-
 type PartOfSpeech string
 
 const (
@@ -68,7 +61,6 @@ type VocabItem struct {
 	ID              string       `json:"id"`
 	UserID          string       `json:"user_id"`
 	Term            string       `json:"term"`
-	Kind            CardKind     `json:"kind"`
 	Meaning         string       `json:"meaning"`
 	ExampleSentence string       `json:"example_sentence"`
 	PartOfSpeech    PartOfSpeech `json:"part_of_speech"`

@@ -12,7 +12,6 @@ func TestNewVocabCardBuildsInitialDueCard(t *testing.T) {
 
 	card, err := NewVocabCard("usr_1", VocabInput{
 		Term:            "  serendipity  ",
-		Kind:            "",
 		Meaning:         "  happy accident  ",
 		ExampleSentence: "  That was serendipity.  ",
 		PartOfSpeech:    domain.PartOfSpeechNoun,
@@ -27,7 +26,7 @@ func TestNewVocabCardBuildsInitialDueCard(t *testing.T) {
 	if card.Item.ID != "voc_1" || card.Item.UserID != "usr_1" {
 		t.Fatalf("unexpected item identity: %+v", card.Item)
 	}
-	if card.Item.Term != "serendipity" || card.Item.Kind != domain.CardKindWord || card.Item.Meaning != "happy accident" {
+	if card.Item.Term != "serendipity" || card.Item.Meaning != "happy accident" {
 		t.Fatalf("unexpected normalized item: %+v", card.Item)
 	}
 	if card.Item.ExampleSentence != "That was serendipity." || card.Item.SourceText != "source text" || card.Item.SourceURL != "https://example.com" || card.Item.Notes != "note" {
@@ -79,7 +78,7 @@ func TestNewCapturedCardBuildsCaptureSource(t *testing.T) {
 		t.Fatalf("new captured card: %v", err)
 	}
 
-	if card.Item.Kind != domain.CardKindPhrase || card.Item.SourceText != "selected text" || card.Item.SourceURL != "https://example.com/page" {
+	if card.Item.SourceText != "selected text" || card.Item.SourceURL != "https://example.com/page" {
 		t.Fatalf("unexpected captured item: %+v", card.Item)
 	}
 	if card.Item.PartOfSpeech != domain.PartOfSpeechPhrase {
