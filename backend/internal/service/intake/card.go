@@ -22,7 +22,6 @@ type IDs struct {
 
 type VocabInput struct {
 	Term            string
-	Kind            domain.CardKind
 	Meaning         string
 	ExampleSentence string
 	PartOfSpeech    domain.PartOfSpeech
@@ -58,16 +57,10 @@ func NewVocabCard(userID string, input VocabInput, ids IDs, now time.Time) (Card
 	if term == "" {
 		return Card{}, errors.New("term is required")
 	}
-	kind := input.Kind
-	if kind == "" {
-		kind = domain.CardKindWord
-	}
-
 	item := domain.VocabItem{
 		ID:              ids.VocabItemID,
 		UserID:          userID,
 		Term:            term,
-		Kind:            kind,
 		Meaning:         strings.TrimSpace(input.Meaning),
 		ExampleSentence: strings.TrimSpace(input.ExampleSentence),
 		PartOfSpeech:    input.PartOfSpeech,
@@ -89,7 +82,6 @@ func NewVocabCard(userID string, input VocabInput, ids IDs, now time.Time) (Card
 func NewCapturedCard(userID string, input CaptureInput, ids IDs, now time.Time) (CapturedCard, error) {
 	card, err := NewVocabCard(userID, VocabInput{
 		Term:            input.Term,
-		Kind:            domain.CardKindPhrase,
 		Meaning:         input.Meaning,
 		ExampleSentence: input.ExampleSentence,
 		PartOfSpeech:    input.PartOfSpeech,

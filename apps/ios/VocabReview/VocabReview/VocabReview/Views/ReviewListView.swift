@@ -2,125 +2,59 @@ import SwiftUI
 
 struct ReviewListView: View {
     @EnvironmentObject private var sessionStore: SessionStore
-    @State private var isAnswerRevealed = false
-    @State private var sessionDeck: [DueCard] = []
+    @State private var sessionDeck: [QuizCard] = []
     @State private var sessionIndex = 0
-    @State private var sessionAgainCount = 0
+    @State private var selectedOptionID = ""
+    @State private var correctCount = 0
+    @State private var wrongCount = 0
+    @State private var pendingNextDue = ""
     @State private var sessionSummary: ReviewSessionSummary?
-    @State private var editingCard: DueCard?
-    @State private var deletingCard: DueCard?
+    @State private var isStartingReview = false
 
-    private var currentSessionCard: DueCard? {
+    private let sessionLimit = 12
+
+    private var currentQuizCard: QuizCard? {
         guard sessionDeck.indices.contains(sessionIndex) else { return nil }
         return sessionDeck[sessionIndex]
     }
 
     private var isSessionActive: Bool {
-        currentSessionCard != nil
+        currentQuizCard != nil
     }
 
     var body: some View {
-        Group {
-            if sessionStore.isLoadingDueCards && sessionStore.dueCards.isEmpty {
-                ZStack {
-                    ReadingDeskBackground()
-                    ProgressView("Loading due cards...")
-                        .padding()
-                        .readingCard()
-                }
-            } else if currentSessionCard != nil || !sessionStore.dueCards.isEmpty {
-                ZStack {
-                    ReadingDeskBackground()
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 20) {
-                            statusMessages
-                            if let summary = sessionSummary, !isSessionActive {
-                                sessionSummaryCard(summary)
-                            }
-                            progressHeader(totalDue: isSessionActive ? sessionDeck.count : sessionStore.dueCards.count)
-                            if let card = currentSessionCard {
-                                sessionCard(card)
-                            } else {
-                                startSessionCard()
-                                dueCardsList
-                            }
-                        }
-                        .padding()
-                    }
-                    .refreshable {
-                        await sessionStore.loadDueCards()
-                    }
-                }
-            } else {
-                ZStack {
-                    ReadingDeskBackground()
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 20) {
-                            statusMessages
-                            if let summary = sessionSummary {
-                                sessionSummaryCard(summary)
-                            }
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("All caught up")
-                                    .readingTitle()
-                                Text("You do not have any cards due right now.")
-                                    .readingMuted()
-                            }
-                            .readingCard()
+        ZStack {
+            ReadingDeskBackground()
 
-                            if sessionStore.isLoadingDueCards {
-                                ProgressView("Refreshing...")
-                                    .padding()
-                                    .readingCard()
-                            } else {
-                                Button("Refresh") {
-                                    Task { await sessionStore.loadDueCards() }
-                                }
-                                .buttonStyle(.borderedProminent)
-                            }
-                        }
-                        .padding()
-                    }
-                    .refreshable {
-                        await sessionStore.loadDueCards()
-                    }
-                }
-            }
-        }
-        .navigationTitle("Due Review")
-        .sheet(item: $editingCard) { card in
-            AddVocabView(item: card.item)
-                .environmentObject(sessionStore)
-        }
-        .alert("Delete card?", isPresented: deleteConfirmationPresented, presenting: deletingCard) { card in
-            Button("Delete", role: .destructive) {
-                Task {
-                    _ = await sessionStore.deleteVocab(cardID: card.item.id)
-                    deletingCard = nil
-                }
-            }
-            Button("Cancel", role: .cancel) {
-                deletingCard = nil
-            }
-        } message: { card in
-            Text("This removes \"\(card.item.term)\" from your review queue.")
-        }
-        .onChange(of: sessionStore.currentCard?.id) { _, _ in
-            if !isSessionActive {
-                isAnswerRevealed = false
-            }
-        }
-    }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    statusMessages
 
-    private var deleteConfirmationPresented: Binding<Bool> {
-        Binding(
-            get: { deletingCard != nil },
-            set: { isPresented in
-                if !isPresented {
-                    deletingCard = nil
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Start Review")
+                            .readingTitle()
+                        Text("Answer one card at a time. Each session uses up to \(sessionLimit) due words.")
+                            .readingMuted()
+                    }
+
+                    if let card = currentQuizCard {
+                        quizCard(card)
+                    } else {
+                        startReviewCard
+                    }
+
+                    if let summary = sessionSummary {
+                        sessionSummaryCard(summary)
+                    }
                 }
+                .padding()
             }
-        )
+            .refreshable {
+                await sessionStore.loadDueCards()
+                await sessionStore.loadReviewStats()
+            }
+        }
+        .navigationTitle("Start Review")
     }
 
     @ViewBuilder
@@ -128,52 +62,81 @@ struct ReviewListView: View {
         if !sessionStore.errorMessage.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text(sessionStore.errorMessage)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(AppTheme.danger)
                 Button("Dismiss") {
                     sessionStore.clearError()
                 }
                 .buttonStyle(.bordered)
             }
+            .readingCard()
         }
     }
 
-    private func progressHeader(totalDue: Int) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(isSessionActive ? "Card \(sessionIndex + 1) of \(totalDue)" : "Card 1 of \(totalDue)")
-                .font(.headline)
-                .foregroundStyle(AppTheme.sageDark)
-            Text(totalDue == 1 ? "1 card due now" : "\(totalDue) cards due now")
-                .readingMuted()
-        }
-        .readingCard()
-    }
+    private var startReviewCard: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text("Quiz Mode")
+                    .font(.caption.weight(.bold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(AppTheme.sageDark)
+                Spacer()
+                Text("\(sessionStore.reviewStats.due_now) due now")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppTheme.clay)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(AppTheme.clay.opacity(0.12), in: Capsule())
+            }
 
-    private func startSessionCard() -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Focused session")
-                .font(.headline)
-                .foregroundStyle(AppTheme.sageDark)
-            Text("Review one card at a time. Reveal the answer, grade it, then move to the next card.")
-                .readingMuted()
-            Button("Start session") {
-                startSession()
+            VStack(alignment: .leading, spacing: 6) {
+                Text(sessionStore.reviewStats.due_now == 0 ? "Clear desk." : "Ready when you are.")
+                    .font(.system(.largeTitle, design: .serif, weight: .semibold))
+                    .foregroundStyle(AppTheme.ink)
+                Text(sessionStore.reviewStats.due_now == 0 ? "No due cards right now." : "A short multiple-choice sprint is waiting.")
+                    .readingMuted()
+            }
+
+            Button {
+                Task { await startReviewSession() }
+            } label: {
+                if isStartingReview {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Text(sessionStore.reviewStats.due_now == 0 ? "All caught up" : "Start Review")
+                        .frame(maxWidth: .infinity)
+                }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(sessionStore.dueCards.isEmpty || sessionStore.isLoadingDueCards)
+            .disabled(sessionStore.dueCards.isEmpty || isStartingReview)
         }
-        .readingCard()
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [AppTheme.paper.opacity(0.96), AppTheme.linen.opacity(0.78)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
+        }
+        .shadow(color: AppTheme.ink.opacity(0.1), radius: 24, x: 0, y: 14)
     }
 
-    private func sessionCard(_ card: DueCard) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
+    private func quizCard(_ quizCard: QuizCard) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("Session in progress")
+                Text("Card \(sessionIndex + 1) of \(sessionDeck.count)")
                     .font(.caption.weight(.bold))
                     .textCase(.uppercase)
                     .foregroundStyle(AppTheme.sageDark)
                 Spacer()
                 Button("End") {
-                    endSession()
+                    endReviewSession()
                 }
                 .buttonStyle(.bordered)
                 .disabled(sessionStore.isGrading)
@@ -182,164 +145,257 @@ struct ReviewListView: View {
             ProgressView(value: Double(sessionIndex), total: Double(max(sessionDeck.count, 1)))
                 .tint(AppTheme.clay)
 
-            reviewCardContent(card)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Word")
+                    .font(.caption.weight(.bold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(AppTheme.sageDark)
+                Text(quizCard.card.item.term)
+                    .font(.system(size: 46, weight: .semibold, design: .serif))
+                    .foregroundStyle(AppTheme.ink)
+                Text("Choose the correct meaning.")
+                    .readingMuted()
+            }
+
+            VStack(spacing: 10) {
+                ForEach(Array(quizCard.options.enumerated()), id: \.element.id) { index, option in
+                    answerOptionButton(option, index: index)
+                }
+            }
+
+            quizFeedback(for: quizCard)
+
+            if !selectedOptionID.isEmpty {
+                Button {
+                    advanceQuizCard()
+                } label: {
+                    Text(sessionIndex + 1 >= sessionDeck.count ? "Show summary" : "Next word")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(sessionStore.isGrading)
+            }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(
-                colors: [AppTheme.paper.opacity(0.96), AppTheme.linen.opacity(0.84)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 30, style: .continuous)
-        )
+        .background(AppTheme.paper.opacity(0.94), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .stroke(AppTheme.sage.opacity(0.18), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
         }
-        .shadow(color: AppTheme.ink.opacity(0.1), radius: 26, x: 0, y: 16)
+        .shadow(color: AppTheme.ink.opacity(0.1), radius: 24, x: 0, y: 14)
+    }
+
+    private func answerOptionButton(_ option: QuizOption, index: Int) -> some View {
+        let isSelected = selectedOptionID == option.id
+        let showCorrect = !selectedOptionID.isEmpty && option.isCorrect
+        let showWrong = isSelected && !option.isCorrect
+
+        return Button {
+            Task { await selectAnswer(option) }
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Text(String(UnicodeScalar(65 + index)!))
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppTheme.paper)
+                    .frame(width: 28, height: 28)
+                    .background(optionBadgeColor(showCorrect: showCorrect, showWrong: showWrong), in: Circle())
+                Text(option.text)
+                    .multilineTextAlignment(.leading)
+                    .foregroundStyle(AppTheme.ink)
+                Spacer()
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(optionBackground(showCorrect: showCorrect, showWrong: showWrong), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(optionBorder(showCorrect: showCorrect, showWrong: showWrong), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(!selectedOptionID.isEmpty || sessionStore.isGrading)
+    }
+
+    private func quizFeedback(for quizCard: QuizCard) -> some View {
+        Group {
+            if selectedOptionID.isEmpty {
+                Text("Correct answers use easy. Wrong answers use again.")
+                    .readingMuted()
+            } else if quizCard.options.first(where: { $0.id == selectedOptionID })?.isCorrect == true {
+                Text("Correct. This card will move further out.")
+                    .foregroundStyle(AppTheme.sageDark)
+            } else {
+                Text("Not this one. The card will return sooner.")
+                    .foregroundStyle(AppTheme.danger)
+            }
+        }
+        .font(.callout.weight(.semibold))
     }
 
     private func sessionSummaryCard(_ summary: ReviewSessionSummary) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Session complete")
-                .font(.headline)
-                .foregroundStyle(AppTheme.sageDark)
-            Text("Reviewed \(summary.reviewed) \(summary.reviewed == 1 ? "card" : "cards"). \(summary.again) marked again.")
-                .readingMuted()
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Review complete.")
+                    .font(.headline)
+                    .foregroundStyle(AppTheme.sageDark)
+                Text("\(summary.correct) correct, \(summary.wrong) wrong.")
+                    .readingMuted()
+                if let lastNextDue = summary.lastNextDue {
+                    Text("Last card returns \(formattedDate(lastNextDue)).")
+                        .font(.caption)
+                        .readingMuted()
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("\(summary.accuracy)%")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(AppTheme.sageDark)
+                Text("accuracy")
+                    .font(.caption)
+                    .readingMuted()
+            }
         }
         .readingCard()
     }
 
-    private func reviewCard(_ card: DueCard) -> some View {
-        reviewCardContent(card)
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppTheme.paper.opacity(0.9), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
-            }
-            .shadow(color: AppTheme.ink.opacity(0.1), radius: 26, x: 0, y: 16)
+    private func optionBackground(showCorrect: Bool, showWrong: Bool) -> Color {
+        if showCorrect { return AppTheme.sage.opacity(0.18) }
+        if showWrong { return AppTheme.danger.opacity(0.12) }
+        return AppTheme.paper.opacity(0.82)
     }
 
-    private var dueCardsList: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            ForEach(sessionStore.dueCards) { card in
-                reviewCard(card)
-            }
-        }
+    private func optionBorder(showCorrect: Bool, showWrong: Bool) -> Color {
+        if showCorrect { return AppTheme.sage.opacity(0.45) }
+        if showWrong { return AppTheme.danger.opacity(0.45) }
+        return AppTheme.ink.opacity(0.08)
     }
 
-    private func reviewCardContent(_ card: DueCard) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(card.item.term)
-                    .font(.system(.largeTitle, design: .serif, weight: .semibold))
-                    .foregroundStyle(AppTheme.ink)
-                if isAnswerRevealed {
-                    Text(card.item.meaning.isEmpty ? "Meaning not added yet." : card.item.meaning)
-                        .font(.title3)
-                    if !card.item.example_sentence.isEmpty {
-                        Text(card.item.example_sentence)
-                            .foregroundStyle(.secondary)
-                    }
-                    if !card.item.notes.isEmpty {
-                        Text(card.item.notes)
-                            .padding(.top, 4)
-                    }
-                } else {
-                    Text("Recall the meaning before revealing the answer.")
-                        .readingMuted()
-                }
-            }
-
-            if isAnswerRevealed {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Button("Edit") {
-                            editingCard = card
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(sessionStore.isGrading || sessionStore.isDeletingVocab)
-
-                        Button("Delete", role: .destructive) {
-                            deletingCard = card
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(sessionStore.isGrading || sessionStore.isDeletingVocab)
-                    }
-
-                    if sessionStore.isDeletingVocab {
-                        ProgressView("Deleting card...")
-                    }
-
-                    if sessionStore.isGrading {
-                        ProgressView("Submitting grade...")
-                    }
-
-                    HStack {
-                        ForEach(["again", "hard", "good", "easy"], id: \.self) { grade in
-                            Button(grade.capitalized) {
-                                Task {
-                                    if isSessionActive {
-                                        await gradeSessionCard(card, grade: grade)
-                                    } else {
-                                        await sessionStore.grade(cardID: card.item.id, grade: grade)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(sessionStore.isGrading || sessionStore.isLoadingDueCards)
-                        }
-                    }
-                }
-            } else {
-                Button("Show answer") {
-                    isAnswerRevealed = true
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(sessionStore.isGrading || sessionStore.isLoadingDueCards)
-            }
-        }
+    private func optionBadgeColor(showCorrect: Bool, showWrong: Bool) -> Color {
+        if showCorrect { return AppTheme.sage }
+        if showWrong { return AppTheme.danger }
+        return AppTheme.muted
     }
 
-    private func startSession() {
+    private func startReviewSession() async {
         guard !sessionStore.dueCards.isEmpty else { return }
-        sessionDeck = sessionStore.dueCards
+        isStartingReview = true
+        defer { isStartingReview = false }
+
+        let candidates = await sessionStore.loadReviewOptionCards()
+        let deck = buildQuizDeck(
+            dueCards: sessionStore.dueCards,
+            candidates: candidates,
+            limit: sessionLimit
+        )
+
+        guard !deck.isEmpty else {
+            sessionStore.errorMessage = "Start Review needs at least one due card with a meaning and one other active card with a meaning."
+            return
+        }
+
+        sessionDeck = deck
         sessionIndex = 0
-        sessionAgainCount = 0
+        selectedOptionID = ""
+        correctCount = 0
+        wrongCount = 0
+        pendingNextDue = ""
         sessionSummary = nil
-        isAnswerRevealed = false
+        sessionStore.clearError()
     }
 
-    private func endSession() {
+    private func selectAnswer(_ option: QuizOption) async {
+        guard let currentQuizCard, selectedOptionID.isEmpty else { return }
+        selectedOptionID = option.id
+        let grade = option.isCorrect ? "easy" : "again"
+        guard let nextDue = await sessionStore.gradeAndReturnNextDue(cardID: currentQuizCard.card.item.id, grade: grade) else {
+            selectedOptionID = ""
+            return
+        }
+        correctCount += option.isCorrect ? 1 : 0
+        wrongCount += option.isCorrect ? 0 : 1
+        pendingNextDue = nextDue
+        if option.isCorrect {
+            advanceQuizCard()
+        }
+    }
+
+    private func advanceQuizCard() {
+        let reviewed = sessionIndex + 1
+        if reviewed >= sessionDeck.count {
+            sessionSummary = ReviewSessionSummary(
+                reviewed: reviewed,
+                correct: correctCount,
+                wrong: wrongCount,
+                lastNextDue: pendingNextDue.isEmpty ? nil : pendingNextDue
+            )
+            endReviewSession()
+            return
+        }
+
+        sessionIndex = reviewed
+        selectedOptionID = ""
+        pendingNextDue = ""
+    }
+
+    private func endReviewSession() {
         sessionDeck = []
         sessionIndex = 0
-        sessionAgainCount = 0
-        isAnswerRevealed = false
+        selectedOptionID = ""
+        pendingNextDue = ""
     }
 
-    private func gradeSessionCard(_ card: DueCard, grade: String) async {
-        await sessionStore.grade(cardID: card.item.id, grade: grade)
-        guard sessionStore.errorMessage.isEmpty else { return }
-
-        let reviewed = sessionIndex + 1
-        let again = sessionAgainCount + (grade == "again" ? 1 : 0)
-        sessionAgainCount = again
-
-        if reviewed >= sessionDeck.count {
-            sessionSummary = ReviewSessionSummary(reviewed: reviewed, again: again)
-            endSession()
-        } else {
-            sessionIndex = reviewed
-            isAnswerRevealed = false
+    private func formattedDate(_ value: String) -> String {
+        guard let date = ISO8601DateFormatter.vocabReview.date(from: value) else {
+            return value
         }
+        return date.formatted(date: .abbreviated, time: .shortened)
     }
+}
+
+private struct QuizCard {
+    let card: DueCard
+    let options: [QuizOption]
+}
+
+private struct QuizOption: Identifiable {
+    let id: String
+    let text: String
+    let isCorrect: Bool
 }
 
 private struct ReviewSessionSummary {
     let reviewed: Int
-    let again: Int
+    let correct: Int
+    let wrong: Int
+    let lastNextDue: String?
+
+    var accuracy: Int {
+        Int((Double(correct) / Double(max(reviewed, 1)) * 100).rounded())
+    }
+}
+
+private func buildQuizDeck(dueCards: [DueCard], candidates: [DueCard], limit: Int) -> [QuizCard] {
+    let cardsWithAnswers = dueCards.filter { !$0.item.meaning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    let candidateAnswers = candidates
+        .filter { !$0.item.meaning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .map { (id: $0.item.id, text: $0.item.meaning.trimmingCharacters(in: .whitespacesAndNewlines)) }
+
+    return cardsWithAnswers.shuffled()
+        .prefix(limit)
+        .compactMap { card in
+            let correctText = card.item.meaning.trimmingCharacters(in: .whitespacesAndNewlines)
+            let distractors = candidateAnswers
+                .filter { $0.id != card.item.id && $0.text != correctText }
+                .shuffled()
+                .prefix(3)
+
+            let options = ([QuizOption(id: "\(card.item.id)-correct", text: correctText, isCorrect: true)] + distractors.map {
+                QuizOption(id: "\(card.item.id)-\($0.id)", text: $0.text, isCorrect: false)
+            }).shuffled()
+
+            guard options.count >= 2 else { return nil }
+            return QuizCard(card: card, options: options)
+        }
 }

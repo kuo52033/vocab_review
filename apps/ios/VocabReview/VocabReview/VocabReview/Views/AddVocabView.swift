@@ -9,7 +9,6 @@ struct AddVocabView: View {
     @State private var meaning = ""
     @State private var exampleSentence = ""
     @State private var notes = ""
-    @State private var detailsExpanded = false
     @State private var lastSavedTerm = ""
 
     private enum Field {
@@ -39,42 +38,65 @@ struct AddVocabView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 12) {
-                            TextField("Term", text: $term)
+                            Text("Word")
+                                .font(.caption.weight(.bold))
+                                .textCase(.uppercase)
+                                .foregroundStyle(AppTheme.sageDark)
+                            TextField("e.g. meticulous", text: $term)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .textFieldStyle(.roundedBorder)
                                 .focused($focusedField, equals: .term)
-                            DisclosureGroup("Meaning, example, and notes", isExpanded: $detailsExpanded) {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    TextField("Meaning", text: $meaning, axis: .vertical)
-                                        .lineLimit(2...4)
-                                        .textFieldStyle(.roundedBorder)
-                                    TextField("Example sentence", text: $exampleSentence, axis: .vertical)
-                                        .lineLimit(2...4)
-                                        .textFieldStyle(.roundedBorder)
-                                    TextField("Notes", text: $notes, axis: .vertical)
+
+                            HStack(alignment: .top, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Meaning")
+                                        .font(.caption.weight(.bold))
+                                        .textCase(.uppercase)
+                                        .foregroundStyle(AppTheme.sageDark)
+                                    TextField("Short definition", text: $meaning, axis: .vertical)
                                         .lineLimit(2...4)
                                         .textFieldStyle(.roundedBorder)
                                 }
-                                .padding(.top, 8)
-                            }
-                            .tint(AppTheme.sage)
 
-                            if existingItem == nil {
-                                Button {
-                                    Task { await saveAndAddAnother() }
-                                } label: {
-                                    if sessionStore.isCreatingVocab {
-                                        ProgressView()
-                                            .frame(maxWidth: .infinity)
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Example sentence")
+                                        .font(.caption.weight(.bold))
+                                        .textCase(.uppercase)
+                                        .foregroundStyle(AppTheme.sageDark)
+                                    TextField("Use it in context", text: $exampleSentence, axis: .vertical)
+                                        .lineLimit(2...4)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                            }
+
+                            Text("Notes")
+                                .font(.caption.weight(.bold))
+                                .textCase(.uppercase)
+                                .foregroundStyle(AppTheme.sageDark)
+                            TextField("Memory hint or source", text: $notes, axis: .vertical)
+                                .lineLimit(2...4)
+                                .textFieldStyle(.roundedBorder)
+
+                            Button {
+                                Task {
+                                    if existingItem == nil {
+                                        await saveAndAddAnother()
                                     } else {
-                                        Text("Save + Add Another")
-                                            .frame(maxWidth: .infinity)
+                                        await saveAndClose()
                                     }
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(sessionStore.isCreatingVocab || trimmedTerm.isEmpty)
+                            } label: {
+                                if sessionStore.isCreatingVocab {
+                                    ProgressView()
+                                        .frame(maxWidth: .infinity)
+                                } else {
+                                    Text("Save")
+                                        .frame(maxWidth: .infinity)
+                                }
                             }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(sessionStore.isCreatingVocab || trimmedTerm.isEmpty)
                         }
                         .readingCard()
 
@@ -102,18 +124,6 @@ struct AddVocabView: View {
                     .disabled(sessionStore.isCreatingVocab)
                 }
 
-                ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        Task { await saveAndClose() }
-                    } label: {
-                        if sessionStore.isCreatingVocab {
-                            ProgressView()
-                        } else {
-                            Text("Save")
-                        }
-                    }
-                    .disabled(sessionStore.isCreatingVocab || trimmedTerm.isEmpty)
-                }
             }
             .task {
                 focusedField = .term
@@ -162,7 +172,6 @@ struct AddVocabView: View {
         meaning = ""
         exampleSentence = ""
         notes = ""
-        detailsExpanded = false
         focusedField = .term
     }
 }

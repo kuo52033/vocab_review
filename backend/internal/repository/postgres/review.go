@@ -14,7 +14,7 @@ import (
 func (s *Store) ListDueVocab(ctx context.Context, userID string, now time.Time) ([]repository.VocabWithState, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT
-			v.id, v.user_id, v.term, v.kind, v.meaning, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes, v.created_at, v.updated_at, v.archived_at,
+			v.id, v.user_id, v.term, v.meaning, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes, v.created_at, v.updated_at, v.archived_at,
 			r.vocab_item_id, r.user_id, r.status, r.ease_factor, r.interval_days, r.repetition_count, r.last_reviewed_at, r.next_due_at, r.consecutive_again
 		FROM review_states r
 		JOIN vocab_items v ON v.id = r.vocab_item_id
@@ -85,7 +85,7 @@ func (s *Store) ListReviewHistory(ctx context.Context, userID string, pagination
 	rows, err := s.pool.Query(ctx, `
 		SELECT
 			l.id, l.user_id, l.vocab_item_id, l.grade, l.reviewed_at,
-			v.id, v.user_id, v.term, v.kind, v.meaning, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes, v.created_at, v.updated_at, v.archived_at,
+			v.id, v.user_id, v.term, v.meaning, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes, v.created_at, v.updated_at, v.archived_at,
 			r.vocab_item_id, r.user_id, r.status, r.ease_factor, r.interval_days, r.repetition_count, r.last_reviewed_at, r.next_due_at, r.consecutive_again
 		FROM review_logs l
 		JOIN vocab_items v ON v.id = l.vocab_item_id
@@ -112,7 +112,6 @@ func (s *Store) ListReviewHistory(ctx context.Context, userID string, pagination
 			&entry.Item.ID,
 			&entry.Item.UserID,
 			&entry.Item.Term,
-			&entry.Item.Kind,
 			&entry.Item.Meaning,
 			&entry.Item.ExampleSentence,
 			&entry.Item.PartOfSpeech,

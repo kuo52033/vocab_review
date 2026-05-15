@@ -12,7 +12,6 @@ export interface ReviewState {
 export interface VocabItem {
   id: string;
   term: string;
-  kind: "word" | "phrase";
   meaning: string;
   example_sentence: string;
   part_of_speech: string;
@@ -36,20 +35,6 @@ export interface AutocompleteResult extends AutocompleteItem {
 }
 
 export interface VocabWithState {
-  item: VocabItem;
-  state: ReviewState;
-}
-
-export interface ReviewLog {
-  id: string;
-  user_id: string;
-  vocab_item_id: string;
-  grade: ReviewGrade;
-  reviewed_at: string;
-}
-
-export interface ReviewHistoryEntry {
-  log: ReviewLog;
   item: VocabItem;
   state: ReviewState;
 }
@@ -160,10 +145,6 @@ export async function deleteVocab(vocabID: string) {
 
 export async function listDue() {
   return request<{ items: VocabWithState[] }>("/reviews/due");
-}
-
-export async function listReviewHistory(params?: PageParams) {
-  return request<PageResponse<ReviewHistoryEntry>>(withQuery("/reviews/history", params));
 }
 
 export async function getReviewStats() {

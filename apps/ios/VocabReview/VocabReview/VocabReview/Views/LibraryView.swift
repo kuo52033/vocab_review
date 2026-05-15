@@ -5,7 +5,6 @@ struct LibraryView: View {
     @State private var editingCard: DueCard?
     @State private var deletingCard: DueCard?
     @State private var searchText = ""
-    @State private var selectedStatus = LibraryStatusFilter.all
 
     var body: some View {
         Group {
@@ -36,33 +35,11 @@ struct LibraryView: View {
                         await loadCurrentPage()
                     }
                 }
-            } else if sessionStore.libraryCards.isEmpty {
-                ZStack {
-                    ReadingDeskBackground()
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            filterPicker
-                            statusMessages
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("No matching cards")
-                                    .readingTitle()
-                                Text("Try a different search or status filter.")
-                                    .readingMuted()
-                            }
-                            .readingCard()
-                        }
-                        .padding()
-                    }
-                    .refreshable {
-                        await loadCurrentPage()
-                    }
-                }
             } else {
                 ZStack {
                     ReadingDeskBackground()
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 14) {
-                            filterPicker
                             statusMessages
                             ForEach(sessionStore.libraryCards) { card in
                                 LibraryCardRow(
@@ -101,9 +78,6 @@ struct LibraryView: View {
                 Task { await resetAndLoad() }
             }
         }
-        .onChange(of: selectedStatus) { _, _ in
-            Task { await resetAndLoad() }
-        }
         .sheet(item: $editingCard) { card in
             AddVocabView(item: card.item)
                 .environmentObject(sessionStore)
@@ -134,16 +108,6 @@ struct LibraryView: View {
         )
     }
 
-    private var filterPicker: some View {
-        Picker("Status", selection: $selectedStatus) {
-            ForEach(LibraryStatusFilter.allCases) { filter in
-                Text(filter.title).tag(filter)
-            }
-        }
-        .pickerStyle(.segmented)
-        .tint(AppTheme.sage)
-    }
-
     @ViewBuilder
     private var statusMessages: some View {
         if !sessionStore.errorMessage.isEmpty {
@@ -168,11 +132,11 @@ struct LibraryView: View {
     }
 
     private func changePage(to page: Int) async {
-        await sessionStore.setLibraryPage(page, query: searchText, status: selectedStatus.queryValue)
+        await sessionStore.setLibraryPage(page, query: searchText)
     }
 
     private func loadCurrentPage() async {
-        await sessionStore.loadLibraryCards(query: searchText, status: selectedStatus.queryValue)
+        await sessionStore.loadLibraryCards(query: searchText)
     }
 
 }
@@ -182,51 +146,90 @@ private struct LibraryCardRow: View {
     let isBusy: Bool
     let onEdit: () -> Void
     let onDelete: () -> Void
+    @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(card.item.term)
-                    .readingTerm()
-                Spacer()
-                Text(card.state.status)
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .foregroundStyle(AppTheme.sageDark)
-                    .background(AppTheme.sage.opacity(0.12), in: Capsule())
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(AppTheme.muted)
+                        Text(card.item.term)
+                            .font(.system(.title3, design: .default, weight: .medium))
+                            .foregroundStyle(AppTheme.sageDark)
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                        .frame(width: 34, height: 34)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isBusy)
+                .accessibilityLabel("Edit \(card.item.term)")
+
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "xmark")
+                        .frame(width: 34, height: 34)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isBusy)
+                .accessibilityLabel("Delete \(card.item.term)")
             }
+            .padding()
 
-            Text(card.item.meaning.isEmpty ? "Meaning not added yet." : card.item.meaning)
-                .foregroundStyle(.primary)
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(card.item.meaning.isEmpty ? "Meaning not added yet." : card.item.meaning)
+                            .foregroundStyle(AppTheme.ink)
+                        Spacer()
+                        if !card.item.part_of_speech.isEmpty {
+                            Text(card.item.part_of_speech.replacingOccurrences(of: "_", with: " "))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(AppTheme.sageDark)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(AppTheme.sage.opacity(0.12), in: Capsule())
+                        }
+                    }
 
-            if !card.item.example_sentence.isEmpty {
-                Text(card.item.example_sentence)
-                    .readingMuted()
-            }
+                    if !card.item.example_sentence.isEmpty {
+                        Text(card.item.example_sentence)
+                            .font(.callout)
+                            .readingMuted()
+                    }
 
-            if !card.item.notes.isEmpty {
-                Text("Notes: \(card.item.notes)")
-                    .font(.callout)
-                    .readingMuted()
-            }
+                    if !card.item.notes.isEmpty {
+                        Text("Notes: \(card.item.notes)")
+                            .font(.callout)
+                            .readingMuted()
+                    }
 
-            Text("Next due: \(formattedDate(card.state.next_due_at))")
-                .font(.caption)
-                .readingMuted()
-
-            HStack {
-                Button("Edit", action: onEdit)
-                    .buttonStyle(.bordered)
-                    .disabled(isBusy)
-
-                Button("Delete", role: .destructive, action: onDelete)
-                    .buttonStyle(.bordered)
-                    .disabled(isBusy)
+                    Text("Next due: \(formattedDate(card.state.next_due_at))")
+                        .font(.caption)
+                        .readingMuted()
+                }
+                .padding([.horizontal, .bottom])
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .readingCard()
+        .background(AppTheme.paper.opacity(0.88), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
+        }
+        .shadow(color: AppTheme.ink.opacity(0.06), radius: 14, x: 0, y: 8)
     }
 
     private func formattedDate(_ value: String) -> String {
@@ -234,35 +237,5 @@ private struct LibraryCardRow: View {
             return value
         }
         return date.formatted(date: .abbreviated, time: .shortened)
-    }
-}
-
-private enum LibraryStatusFilter: String, CaseIterable, Identifiable {
-    case all
-    case new
-    case learning
-    case review
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .all:
-            return "All"
-        case .new:
-            return "New"
-        case .learning:
-            return "Learning"
-        case .review:
-            return "Review"
-        }
-    }
-
-    func matches(_ status: String) -> Bool {
-        self == .all || rawValue == status
-    }
-
-    var queryValue: String {
-        self == .all ? "" : rawValue
     }
 }

@@ -67,7 +67,6 @@ func TestStoreLifecycle(t *testing.T) {
 		ID:              "voc_test",
 		UserID:          user.ID,
 		Term:            "serendipity",
-		Kind:            domain.CardKindWord,
 		Meaning:         "a happy accident",
 		ExampleSentence: "Finding this test passing was serendipity.",
 		SourceText:      "serendipity",
@@ -220,7 +219,6 @@ func TestArchiveVocabForUserScopesArchiveByOwner(t *testing.T) {
 		ID:              "voc_archive",
 		UserID:          user.ID,
 		Term:            "archive",
-		Kind:            domain.CardKindWord,
 		Meaning:         "store away",
 		ExampleSentence: "Archive this card.",
 		CreatedAt:       now,
@@ -280,9 +278,9 @@ func TestNotificationWorkerOperations(t *testing.T) {
 	}
 
 	for _, item := range []domain.VocabItem{
-		{ID: "voc_due", UserID: user.ID, Term: "due", Kind: domain.CardKindWord, CreatedAt: now, UpdatedAt: now},
-		{ID: "voc_future", UserID: user.ID, Term: "future", Kind: domain.CardKindWord, CreatedAt: now, UpdatedAt: now},
-		{ID: "voc_sent", UserID: user.ID, Term: "sent", Kind: domain.CardKindWord, CreatedAt: now, UpdatedAt: now},
+		{ID: "voc_due", UserID: user.ID, Term: "due", CreatedAt: now, UpdatedAt: now},
+		{ID: "voc_future", UserID: user.ID, Term: "future", CreatedAt: now, UpdatedAt: now},
+		{ID: "voc_sent", UserID: user.ID, Term: "sent", CreatedAt: now, UpdatedAt: now},
 	} {
 		if err := store.CreateVocab(ctx, item, domain.ReviewState{
 			VocabItemID:     item.ID,
@@ -379,7 +377,6 @@ func TestStorePersistsPartOfSpeech(t *testing.T) {
 		ID:              "voc_pos",
 		UserID:          user.ID,
 		Term:            "serendipity",
-		Kind:            domain.CardKindWord,
 		Meaning:         "happy accident",
 		ExampleSentence: "It was serendipity.",
 		PartOfSpeech:    domain.PartOfSpeechNoun,

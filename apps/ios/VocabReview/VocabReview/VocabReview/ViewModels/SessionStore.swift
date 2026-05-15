@@ -177,7 +177,6 @@ final class SessionStore: ObservableObject {
     func refreshAuthenticatedData() async {
         await loadDueCards()
         await loadLibraryCards()
-        await loadReviewHistory()
         await loadReviewStats()
     }
 
@@ -199,6 +198,45 @@ final class SessionStore: ObservableObject {
         }
 
         isGrading = false
+    }
+
+    func gradeAndReturnNextDue(cardID: String, grade: String) async -> String? {
+        guard isAuthenticated else { return nil }
+
+        isGrading = true
+        errorMessage = ""
+
+        do {
+            let response: ReviewStateResponse = try await sendRequest(
+                path: "/reviews/\(cardID)/grade",
+                method: "POST",
+                body: GradeRequest(grade: grade)
+            )
+            await loadDueCards()
+            await loadLibraryCards()
+            await loadReviewStats()
+            isGrading = false
+            return response.state.next_due_at
+        } catch {
+            handleRequestError(error)
+            isGrading = false
+            return nil
+        }
+    }
+
+    func loadReviewOptionCards() async -> [DueCard] {
+        guard isAuthenticated else { return [] }
+
+        do {
+            let response: LibraryResponse = try await sendRequest(path: pathWithQuery("/vocab", [
+                URLQueryItem(name: "limit", value: "100"),
+                URLQueryItem(name: "offset", value: "0")
+            ]))
+            return response.items
+        } catch {
+            handleRequestError(error)
+            return []
+        }
     }
 
     func createVocab(
@@ -236,7 +274,6 @@ final class SessionStore: ObservableObject {
                 method: "POST",
                 body: CreateVocabRequest(
                     term: trimmedTerm,
-                    kind: "word",
                     meaning: draft.meaning.trimmingCharacters(in: .whitespacesAndNewlines),
                     example_sentence: draft.exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
                     part_of_speech: draft.partOfSpeech.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -288,7 +325,6 @@ final class SessionStore: ObservableObject {
                     method: "POST",
                     body: CreateVocabRequest(
                         term: draft.term,
-                        kind: "word",
                         meaning: draft.meaning,
                         example_sentence: draft.exampleSentence,
                         part_of_speech: draft.partOfSpeech,
@@ -338,7 +374,6 @@ final class SessionStore: ObservableObject {
                 method: "PATCH",
                 body: CreateVocabRequest(
                     term: trimmedTerm,
-                    kind: "word",
                     meaning: meaning.trimmingCharacters(in: .whitespacesAndNewlines),
                     example_sentence: exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
                     part_of_speech: "",

@@ -90,6 +90,9 @@ struct BulkImportView: View {
             }
             .onChange(of: rawText) { _, newValue in
                 parsedCards = parseBulkInput(newValue)
+                if let enrichedCards, formatBulkInput(enrichedCards) == newValue {
+                    return
+                }
                 enrichedCards = nil
             }
         }
@@ -217,6 +220,9 @@ struct BulkImportView: View {
     private func autocompleteCards() async {
         guard let cards = await sessionStore.autocompleteVocabCards(sharedCards + parsedCards) else { return }
         enrichedCards = cards
+        rawText = formatBulkInput(cards.filter { sharedCard in
+            !sharedCards.contains { $0.term == sharedCard.term && $0.notes == sharedCard.notes }
+        })
     }
 
     private func sourceNote(for capture: SharedQueuedCapture) -> String {
@@ -235,6 +241,19 @@ struct BulkImportView: View {
     }
 
     private func parseLine(_ line: String) -> VocabDraftInput {
+        if line.contains("|") {
+            let parts = line.split(separator: "|", omittingEmptySubsequences: false).map {
+                String($0).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            return VocabDraftInput(
+                term: parts.indices.contains(0) ? parts[0] : "",
+                meaning: parts.indices.contains(1) ? parts[1] : "",
+                exampleSentence: parts.indices.contains(2) ? parts[2] : "",
+                partOfSpeech: parts.indices.contains(3) ? parts[3] : "",
+                notes: ""
+            )
+        }
+
         let separators = [" - ", "\t", ": ", "："]
         for separator in separators {
             guard let range = line.range(of: separator) else { continue }
@@ -243,5 +262,22 @@ struct BulkImportView: View {
             return VocabDraftInput(term: term, meaning: meaning, exampleSentence: "", notes: "")
         }
         return VocabDraftInput(term: line, meaning: "", exampleSentence: "", notes: "")
+    }
+
+    private func formatBulkInput(_ cards: [VocabDraftInput]) -> String {
+        cards
+            .map { card in
+                var fields = [
+                    card.term,
+                    card.meaning,
+                    card.exampleSentence,
+                    card.partOfSpeech
+                ].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                while fields.count > 1 && fields.last == "" {
+                    fields.removeLast()
+                }
+                return fields.joined(separator: " | ")
+            }
+            .joined(separator: "\n")
     }
 }

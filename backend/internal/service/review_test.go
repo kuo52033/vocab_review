@@ -29,6 +29,7 @@ type fakeRepository struct {
 	captures         map[string]domain.CaptureSource
 	deviceTokens     map[string]domain.DeviceToken
 	notificationJobs map[string]domain.NotificationJob
+	seenContextValue any
 }
 
 func newFakeRepository() *fakeRepository {
@@ -90,7 +91,8 @@ func (f *fakeRepository) GetSessionUser(_ context.Context, token string) (domain
 	return session, user, true, nil
 }
 
-func (f *fakeRepository) CreateVocab(_ context.Context, item domain.VocabItem, state domain.ReviewState, job *domain.NotificationJob) error {
+func (f *fakeRepository) CreateVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, job *domain.NotificationJob) error {
+	f.seenContextValue = ctx.Value(testContextKey{})
 	f.vocab[item.ID] = item
 	f.reviewStates[state.VocabItemID] = state
 	if job != nil {
@@ -99,8 +101,8 @@ func (f *fakeRepository) CreateVocab(_ context.Context, item domain.VocabItem, s
 	return nil
 }
 
-func (f *fakeRepository) CreateCapturedVocab(_ context.Context, item domain.VocabItem, state domain.ReviewState, capture domain.CaptureSource, job *domain.NotificationJob) error {
-	if err := f.CreateVocab(context.Background(), item, state, job); err != nil {
+func (f *fakeRepository) CreateCapturedVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, capture domain.CaptureSource, job *domain.NotificationJob) error {
+	if err := f.CreateVocab(ctx, item, state, job); err != nil {
 		return err
 	}
 	f.captures[capture.ID] = capture
@@ -327,6 +329,8 @@ func newTestApp() *App {
 	return NewApp(newFakeRepository(), stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
 }
 
+type testContextKey struct{}
+
 type fakeEnricher struct {
 	ctx         context.Context
 	items       []enrichment.Item
@@ -388,17 +392,30 @@ func TestAutocompleteVocabPassesCallerContext(t *testing.T) {
 	}
 }
 
+func TestCreateVocabPassesCallerContextToRepository(t *testing.T) {
+	repo := newFakeRepository()
+	app := NewApp(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
+	ctx := context.WithValue(context.Background(), testContextKey{}, "request-context")
+
+	if _, _, err := app.CreateVocab(ctx, "usr_test", CreateVocabInput{Term: "serendipity"}); err != nil {
+		t.Fatalf("create vocab: %v", err)
+	}
+	if repo.seenContextValue != "request-context" {
+		t.Fatalf("repository context value: got %#v want request-context", repo.seenContextValue)
+	}
+}
+
 func TestReviewScheduling(t *testing.T) {
 	app := newTestApp()
-	link, err := app.RequestMagicLink("test@example.com", "http://localhost:8080")
+	link, err := app.RequestMagicLink(context.Background(), "test@example.com", "http://localhost:8080")
 	if err != nil {
 		t.Fatalf("request link: %v", err)
 	}
-	auth, err := app.VerifyMagicLink(link["token"])
+	auth, err := app.VerifyMagicLink(context.Background(), link["token"])
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	item, _, err := app.CreateVocab(auth.User.ID, CreateVocabInput{
+	item, _, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
 		Term:    "serendipity",
 		Meaning: "a happy accident",
 	})
@@ -406,7 +423,7 @@ func TestReviewScheduling(t *testing.T) {
 		t.Fatalf("create vocab: %v", err)
 	}
 
-	state, err := app.GradeReview(auth.User.ID, item.ID, domain.ReviewGradeGood)
+	state, err := app.GradeReview(context.Background(), auth.User.ID, item.ID, domain.ReviewGradeGood)
 	if err != nil {
 		t.Fatalf("good review: %v", err)
 	}
@@ -414,7 +431,7 @@ func TestReviewScheduling(t *testing.T) {
 		t.Fatalf("expected interval 1, got %d", state.IntervalDays)
 	}
 
-	state, err = app.GradeReview(auth.User.ID, item.ID, domain.ReviewGradeEasy)
+	state, err = app.GradeReview(context.Background(), auth.User.ID, item.ID, domain.ReviewGradeEasy)
 	if err != nil {
 		t.Fatalf("easy review: %v", err)
 	}
@@ -426,26 +443,26 @@ func TestReviewScheduling(t *testing.T) {
 func TestReviewHistoryReturnsRecentReviewedCards(t *testing.T) {
 	repo := newFakeRepository()
 	app := NewApp(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
-	link, err := app.RequestMagicLink("test@example.com", "http://localhost:8080")
+	link, err := app.RequestMagicLink(context.Background(), "test@example.com", "http://localhost:8080")
 	if err != nil {
 		t.Fatalf("request link: %v", err)
 	}
-	auth, err := app.VerifyMagicLink(link["token"])
+	auth, err := app.VerifyMagicLink(context.Background(), link["token"])
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	item, _, err := app.CreateVocab(auth.User.ID, CreateVocabInput{
+	item, _, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
 		Term:    "serendipity",
 		Meaning: "a happy accident",
 	})
 	if err != nil {
 		t.Fatalf("create vocab: %v", err)
 	}
-	if _, err := app.GradeReview(auth.User.ID, item.ID, domain.ReviewGradeGood); err != nil {
+	if _, err := app.GradeReview(context.Background(), auth.User.ID, item.ID, domain.ReviewGradeGood); err != nil {
 		t.Fatalf("grade review: %v", err)
 	}
 
-	history, err := app.ReviewHistory(auth.User.ID, PageInput{})
+	history, err := app.ReviewHistory(context.Background(), auth.User.ID, PageInput{})
 	if err != nil {
 		t.Fatalf("review history: %v", err)
 	}
@@ -460,36 +477,36 @@ func TestReviewHistoryReturnsRecentReviewedCards(t *testing.T) {
 func TestReviewStatsCountsProgressAndCards(t *testing.T) {
 	repo := newFakeRepository()
 	app := NewApp(repo, stubClock{now: time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)})
-	link, err := app.RequestMagicLink("test@example.com", "http://localhost:8080")
+	link, err := app.RequestMagicLink(context.Background(), "test@example.com", "http://localhost:8080")
 	if err != nil {
 		t.Fatalf("request link: %v", err)
 	}
-	auth, err := app.VerifyMagicLink(link["token"])
+	auth, err := app.VerifyMagicLink(context.Background(), link["token"])
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	item, _, err := app.CreateVocab(auth.User.ID, CreateVocabInput{
+	item, _, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
 		Term:    "serendipity",
 		Meaning: "a happy accident",
 	})
 	if err != nil {
 		t.Fatalf("create vocab: %v", err)
 	}
-	if _, err := app.GradeReview(auth.User.ID, item.ID, domain.ReviewGradeGood); err != nil {
+	if _, err := app.GradeReview(context.Background(), auth.User.ID, item.ID, domain.ReviewGradeGood); err != nil {
 		t.Fatalf("grade review: %v", err)
 	}
-	archived, _, err := app.CreateVocab(auth.User.ID, CreateVocabInput{
+	archived, _, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
 		Term:    "ephemeral",
 		Meaning: "lasting briefly",
 	})
 	if err != nil {
 		t.Fatalf("create archived vocab: %v", err)
 	}
-	if _, err := app.ArchiveVocab(auth.User.ID, archived.ID); err != nil {
+	if _, err := app.ArchiveVocab(context.Background(), auth.User.ID, archived.ID); err != nil {
 		t.Fatalf("archive vocab: %v", err)
 	}
 
-	stats, err := app.ReviewStats(auth.User.ID)
+	stats, err := app.ReviewStats(context.Background(), auth.User.ID)
 	if err != nil {
 		t.Fatalf("review stats: %v", err)
 	}
@@ -501,15 +518,15 @@ func TestReviewStatsCountsProgressAndCards(t *testing.T) {
 func TestArchiveVocabRemovesCardFromDueReview(t *testing.T) {
 	repo := newFakeRepository()
 	app := NewApp(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
-	link, err := app.RequestMagicLink("test@example.com", "http://localhost:8080")
+	link, err := app.RequestMagicLink(context.Background(), "test@example.com", "http://localhost:8080")
 	if err != nil {
 		t.Fatalf("request link: %v", err)
 	}
-	auth, err := app.VerifyMagicLink(link["token"])
+	auth, err := app.VerifyMagicLink(context.Background(), link["token"])
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	item, _, err := app.CreateVocab(auth.User.ID, CreateVocabInput{
+	item, _, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
 		Term:    "ephemeral",
 		Meaning: "lasting briefly",
 	})
@@ -517,7 +534,7 @@ func TestArchiveVocabRemovesCardFromDueReview(t *testing.T) {
 		t.Fatalf("create vocab: %v", err)
 	}
 
-	due, err := app.DueCards(auth.User.ID)
+	due, err := app.DueCards(context.Background(), auth.User.ID)
 	if err != nil {
 		t.Fatalf("due cards: %v", err)
 	}
@@ -525,7 +542,7 @@ func TestArchiveVocabRemovesCardFromDueReview(t *testing.T) {
 		t.Fatalf("expected one due card before archive, got %d", len(due))
 	}
 
-	archived, err := app.ArchiveVocab(auth.User.ID, item.ID)
+	archived, err := app.ArchiveVocab(context.Background(), auth.User.ID, item.ID)
 	if err != nil {
 		t.Fatalf("archive vocab: %v", err)
 	}
@@ -533,7 +550,7 @@ func TestArchiveVocabRemovesCardFromDueReview(t *testing.T) {
 		t.Fatal("expected archived timestamp")
 	}
 
-	listed, err := app.ListVocab(auth.User.ID, ListVocabInput{})
+	listed, err := app.ListVocab(context.Background(), auth.User.ID, ListVocabInput{})
 	if err != nil {
 		t.Fatalf("list vocab after archive: %v", err)
 	}
@@ -541,7 +558,7 @@ func TestArchiveVocabRemovesCardFromDueReview(t *testing.T) {
 		t.Fatalf("expected archived card removed from library, got %d", len(listed.Items))
 	}
 
-	due, err = app.DueCards(auth.User.ID)
+	due, err = app.DueCards(context.Background(), auth.User.ID)
 	if err != nil {
 		t.Fatalf("due cards after archive: %v", err)
 	}
@@ -552,17 +569,17 @@ func TestArchiveVocabRemovesCardFromDueReview(t *testing.T) {
 
 func TestUpdateVocabClearsPartOfSpeech(t *testing.T) {
 	app := newTestApp()
-	link, err := app.RequestMagicLink("test@example.com", "http://localhost:8080")
+	link, err := app.RequestMagicLink(context.Background(), "test@example.com", "http://localhost:8080")
 	if err != nil {
 		t.Fatalf("request link: %v", err)
 	}
-	auth, err := app.VerifyMagicLink(link["token"])
+	auth, err := app.VerifyMagicLink(context.Background(), link["token"])
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
 
 	noun := domain.PartOfSpeechNoun
-	item, _, err := app.CreateVocab(auth.User.ID, CreateVocabInput{
+	item, _, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
 		Term:         "serendipity",
 		Meaning:      "a happy accident",
 		PartOfSpeech: &noun,
@@ -575,7 +592,7 @@ func TestUpdateVocabClearsPartOfSpeech(t *testing.T) {
 	}
 
 	unspecified := domain.PartOfSpeechUnspecified
-	updated, err := app.UpdateVocab(auth.User.ID, item.ID, CreateVocabInput{
+	updated, err := app.UpdateVocab(context.Background(), auth.User.ID, item.ID, CreateVocabInput{
 		PartOfSpeech: &unspecified,
 	})
 	if err != nil {

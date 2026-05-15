@@ -81,7 +81,7 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, "missing bearer token")
 			return
 		}
-		_, user, err := s.app.Session(token)
+		_, user, err := s.app.Session(r.Context(), token)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, err.Error())
 			return

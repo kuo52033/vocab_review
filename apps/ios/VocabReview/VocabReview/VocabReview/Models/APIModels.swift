@@ -80,7 +80,6 @@ struct VocabItem: Codable {
     let id: String
     let user_id: String
     let term: String
-    let kind: String
     let meaning: String
     let example_sentence: String
     let part_of_speech: String
@@ -116,7 +115,6 @@ struct VerifyRequest: Codable {
 
 struct CreateVocabRequest: Codable {
     let term: String
-    let kind: String
     let meaning: String
     let example_sentence: String
     let part_of_speech: String

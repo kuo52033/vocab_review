@@ -9,11 +9,9 @@ import {
   gradeReview,
   listDue,
   listNotificationJobs,
-  listReviewHistory,
   listVocab,
   requestMagicLink,
   ReviewGrade,
-  ReviewHistoryEntry,
   ReviewStats,
   setToken,
   updateVocab,
@@ -24,7 +22,6 @@ import {
 
 type CardDraft = {
   term: string;
-  kind: "word" | "phrase";
   meaning: string;
   example_sentence: string;
   notes: string;
@@ -36,12 +33,21 @@ type AuthState = {
   token: string;
 };
 
-type StatusFilter = "all" | "new" | "learning" | "review";
-type ActiveSection = "review" | "add" | "history" | "library";
+type ActiveSection = "review" | "add" | "library";
 type SessionSummary = {
   reviewed: number;
-  again: number;
+  correct: number;
+  wrong: number;
   lastNextDue?: string;
+};
+type QuizOption = {
+  id: string;
+  text: string;
+  isCorrect: boolean;
+};
+type QuizCard = {
+  card: VocabWithState;
+  options: QuizOption[];
 };
 type ParsedImportCard = {
   term: string;
@@ -70,7 +76,6 @@ const allowedPartsOfSpeech = new Set([
 
 const emptyForm: CardDraft = {
   term: "",
-  kind: "word",
   meaning: "",
   example_sentence: "",
   notes: ""
@@ -84,14 +89,12 @@ const emptyStats: ReviewStats = {
   archived_cards: 0
 };
 
-const duePageSize = 10;
-const historyPageSize = 21;
+const reviewSessionSize = 12;
 const libraryPageSize = 10;
 
 function draftFromItem(item: VocabItem): CardDraft {
   return {
     term: item.term,
-    kind: item.kind,
     meaning: item.meaning,
     example_sentence: item.example_sentence,
     notes: item.notes
@@ -108,6 +111,10 @@ function formatDate(value: string) {
 }
 
 function parseImportLine(line: string): ParsedImportCard {
+  if (line.includes("|")) {
+    const [term = "", meaning = "", example_sentence = "", part_of_speech = ""] = line.split("|").map((part) => part.trim());
+    return { term, meaning, example_sentence, part_of_speech };
+  }
   const separators = [" - ", "\t", ": ", "："];
   for (const separator of separators) {
     const index = line.indexOf(separator);
@@ -138,6 +145,43 @@ function pageCount(totalItems: number, pageSize: number) {
 function pageItems<T>(items: T[], page: number, pageSize: number) {
   const start = (page - 1) * pageSize;
   return items.slice(start, start + pageSize);
+}
+
+function shuffleItems<T>(items: T[]) {
+  return [...items].sort(() => Math.random() - 0.5);
+}
+
+function answerText(item: VocabItem) {
+  return item.meaning.trim();
+}
+
+function buildQuizDeck(dueCards: VocabWithState[], candidates: VocabWithState[], limit: number): QuizCard[] {
+  const cardsWithAnswers = dueCards.filter(({ item }) => answerText(item));
+  const candidateAnswers = candidates
+    .filter(({ item }) => answerText(item))
+    .map(({ item }) => ({ id: item.id, text: answerText(item) }));
+
+  return shuffleItems(cardsWithAnswers)
+    .slice(0, limit)
+    .map((card) => {
+      const correctText = answerText(card.item);
+      const distractors = shuffleItems(
+        candidateAnswers.filter((candidate) => candidate.id !== card.item.id && candidate.text !== correctText)
+      ).slice(0, 3);
+
+      return {
+        card,
+        options: shuffleItems([
+          { id: `${card.item.id}-correct`, text: correctText, isCorrect: true },
+          ...distractors.map((distractor) => ({
+            id: `${card.item.id}-${distractor.id}`,
+            text: distractor.text,
+            isCorrect: false
+          }))
+        ])
+      };
+    })
+    .filter((quizCard) => quizCard.options.length >= 2);
 }
 
 type PaginationProps = {
@@ -186,15 +230,30 @@ function mergeAutocompleteResults(cards: ParsedImportCard[], results: Autocomple
   });
 }
 
+function formatBulkImportCards(cards: ParsedImportCard[]) {
+  return cards
+    .map((card) => {
+      const fields = [
+        card.term,
+        card.meaning,
+        card.example_sentence,
+        card.part_of_speech
+      ].map((value) => value.trim());
+      while (fields.length > 1 && fields[fields.length - 1] === "") {
+        fields.pop();
+      }
+      return fields.join(" | ");
+    })
+    .join("\n");
+}
+
 export function App() {
   const termInputRef = useRef<HTMLInputElement>(null);
   const bulkTextRef = useRef("");
   const [auth, setAuth] = useState<AuthState>({ email: "", token: localStorage.getItem("session_token") ?? "" });
   const [vocab, setVocab] = useState<VocabWithState[]>([]);
   const [due, setDue] = useState<VocabWithState[]>([]);
-  const [history, setHistory] = useState<ReviewHistoryEntry[]>([]);
   const [vocabTotal, setVocabTotal] = useState(0);
-  const [historyTotal, setHistoryTotal] = useState(0);
   const [stats, setStats] = useState<ReviewStats>(emptyStats);
   const [jobs, setJobs] = useState<Array<{ id: string; vocab_item_id: string; status: string; scheduled_at: string }>>([]);
   const [form, setForm] = useState(emptyForm);
@@ -205,20 +264,19 @@ export function App() {
   const [editingID, setEditingID] = useState("");
   const [editDraft, setEditDraft] = useState<CardDraft>(emptyForm);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [activeSection, setActiveSection] = useState<ActiveSection>("review");
-  const [duePage, setDuePage] = useState(1);
-  const [historyPage, setHistoryPage] = useState(1);
   const [libraryPage, setLibraryPage] = useState(1);
-  const [selectedHistory, setSelectedHistory] = useState<ReviewHistoryEntry | null>(null);
-  const [sessionDeck, setSessionDeck] = useState<VocabWithState[]>([]);
+  const [sessionDeck, setSessionDeck] = useState<QuizCard[]>([]);
   const [sessionIndex, setSessionIndex] = useState(0);
-  const [sessionAgainCount, setSessionAgainCount] = useState(0);
+  const [sessionCorrectCount, setSessionCorrectCount] = useState(0);
+  const [sessionWrongCount, setSessionWrongCount] = useState(0);
   const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
-  const [isAnswerRevealed, setIsAnswerRevealed] = useState(false);
+  const [selectedOptionID, setSelectedOptionID] = useState("");
+  const [pendingNextDue, setPendingNextDue] = useState("");
   const [lastCreatedTerm, setLastCreatedTerm] = useState("");
   const [lastImportCount, setLastImportCount] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isStartingReview, setIsStartingReview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
   const [error, setError] = useState("");
@@ -239,15 +297,7 @@ export function App() {
   useEffect(() => {
     if (!auth.token) return;
     refresh();
-  }, [auth.token, historyPage, libraryPage, query, statusFilter]);
-
-  useEffect(() => {
-    setDuePage((current) => Math.min(current, pageCount(due.length, duePageSize)));
-  }, [due.length]);
-
-  useEffect(() => {
-    setHistoryPage((current) => Math.min(current, pageCount(historyTotal, historyPageSize)));
-  }, [historyTotal]);
+  }, [auth.token, libraryPage, query]);
 
   const normalizedQuery = query.trim().toLowerCase();
   const visibleVocab = [...vocab]
@@ -257,13 +307,9 @@ export function App() {
     setLibraryPage((current) => Math.min(current, pageCount(vocabTotal, libraryPageSize)));
   }, [vocabTotal]);
 
-  const currentSessionCard = sessionDeck[sessionIndex];
-  const sessionActive = Boolean(currentSessionCard);
+  const currentQuizCard = sessionDeck[sessionIndex];
+  const sessionActive = Boolean(currentQuizCard);
   const sessionProgress = sessionDeck.length > 0 ? Math.round((sessionIndex / sessionDeck.length) * 100) : 0;
-  const duePageCount = pageCount(due.length, duePageSize);
-  const visibleDue = pageItems(due, duePage, duePageSize);
-  const historyPageCount = pageCount(historyTotal, historyPageSize);
-  const visibleHistory = history;
   const libraryPageCount = pageCount(vocabTotal, libraryPageSize);
   const paginatedVocab = visibleVocab;
   const rawImportCards = parseBulkImport(bulkText);
@@ -272,23 +318,19 @@ export function App() {
   async function refresh() {
     setIsRefreshing(true);
     try {
-      const [vocabResponse, dueResponse, historyResponse, statsResponse, jobsResponse] = await Promise.all([
+      const [vocabResponse, dueResponse, statsResponse, jobsResponse] = await Promise.all([
         listVocab({
           limit: libraryPageSize,
           offset: (libraryPage - 1) * libraryPageSize,
-          q: normalizedQuery,
-          status: statusFilter === "all" ? "" : statusFilter
+          q: normalizedQuery
         }),
         listDue(),
-        listReviewHistory({ limit: historyPageSize, offset: (historyPage - 1) * historyPageSize }),
         getReviewStats(),
         listNotificationJobs()
       ]);
       setVocab(vocabResponse.items);
       setDue(dueResponse.items);
-      setHistory(historyResponse.items);
       setVocabTotal(vocabResponse.total);
-      setHistoryTotal(historyResponse.total);
       setStats(statsResponse.stats);
       setJobs(jobsResponse.items);
       setError("");
@@ -326,8 +368,6 @@ export function App() {
 
   async function handleCreateVocab(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
-    const nextAction = submitter?.name === "save-review" ? "review" : "add";
     setIsSaving(true);
     try {
       const response = await createVocab(form);
@@ -337,11 +377,7 @@ export function App() {
       setLastCreatedTerm(response.item.term);
       setLastImportCount(0);
       setError("");
-      if (nextAction === "review") {
-        setActiveSection("review");
-      } else {
-        requestAnimationFrame(() => termInputRef.current?.focus());
-      }
+      requestAnimationFrame(() => termInputRef.current?.focus());
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -359,7 +395,6 @@ export function App() {
       for (const card of parsedImportCards) {
         const response = await createVocab({
           term: card.term,
-          kind: "word",
           meaning: card.meaning,
           example_sentence: card.example_sentence,
           part_of_speech: card.part_of_speech,
@@ -398,7 +433,11 @@ export function App() {
       }));
       const response = await autocompleteVocab(items);
       if (bulkTextRef.current !== inputSnapshot) return;
-      setEnrichedCards(mergeAutocompleteResults(cards, response.items));
+      const mergedCards = mergeAutocompleteResults(cards, response.items);
+      const mergedText = formatBulkImportCards(mergedCards);
+      bulkTextRef.current = mergedText;
+      setBulkText(mergedText);
+      setEnrichedCards(mergedCards);
     } catch (err) {
       if (bulkTextRef.current !== inputSnapshot) return;
       setEnrichmentError(`${(err as Error).message}. Manual import still works with the details currently shown.`);
@@ -451,40 +490,57 @@ export function App() {
     }
   }
 
-  function startReviewSession() {
+  async function startReviewSession() {
     if (due.length === 0) return;
-    setSessionDeck(due);
-    setSessionIndex(0);
-    setSessionAgainCount(0);
-    setSessionSummary(null);
-    setIsAnswerRevealed(false);
-    setError("");
+    setIsStartingReview(true);
+    try {
+      const vocabResponse = await listVocab({ limit: 100, offset: 0 });
+      const deck = buildQuizDeck(due, vocabResponse.items, reviewSessionSize);
+      if (deck.length === 0) {
+        setError("Start Review needs at least one due card with a meaning and one other active card with a meaning.");
+        return;
+      }
+      setSessionDeck(deck);
+      setSessionIndex(0);
+      setSessionCorrectCount(0);
+      setSessionWrongCount(0);
+      setSessionSummary(null);
+      setSelectedOptionID("");
+      setError("");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setIsStartingReview(false);
+    }
   }
 
   function endReviewSession() {
     setSessionDeck([]);
     setSessionIndex(0);
-    setSessionAgainCount(0);
-    setIsAnswerRevealed(false);
+    setSessionCorrectCount(0);
+    setSessionWrongCount(0);
+    setSelectedOptionID("");
+    setPendingNextDue("");
   }
 
-  async function handleSessionGrade(grade: ReviewGrade) {
-    if (!currentSessionCard) return;
+  async function handleQuizAnswer(option: QuizOption) {
+    if (!currentQuizCard || selectedOptionID) return;
+    setSelectedOptionID(option.id);
     setIsGrading(true);
     try {
-      const response = await gradeReview(currentSessionCard.item.id, grade);
+      const grade: ReviewGrade = option.isCorrect ? "easy" : "again";
+      const response = await gradeReview(currentQuizCard.card.item.id, grade);
       const reviewed = sessionIndex + 1;
-      const again = sessionAgainCount + (grade === "again" ? 1 : 0);
-      setSessionAgainCount(again);
+      const correct = sessionCorrectCount + (option.isCorrect ? 1 : 0);
+      const wrong = sessionWrongCount + (option.isCorrect ? 0 : 1);
+      setSessionCorrectCount(correct);
+      setSessionWrongCount(wrong);
       await refresh();
-      if (reviewed >= sessionDeck.length) {
-        setSessionSummary({ reviewed, again, lastNextDue: response.state.next_due_at });
-        endReviewSession();
-      } else {
-        setSessionIndex(reviewed);
-        setIsAnswerRevealed(false);
-      }
+      setPendingNextDue(response.state.next_due_at);
       setError("");
+      if (option.isCorrect) {
+        completeOrAdvanceQuiz(reviewed, correct, wrong, response.state.next_due_at);
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -492,13 +548,30 @@ export function App() {
     }
   }
 
+  function advanceQuizCard() {
+    const reviewed = sessionIndex + 1;
+    completeOrAdvanceQuiz(reviewed, sessionCorrectCount, sessionWrongCount, pendingNextDue);
+  }
+
+  function completeOrAdvanceQuiz(reviewed: number, correct: number, wrong: number, lastNextDue: string) {
+    if (reviewed >= sessionDeck.length) {
+      setSessionSummary({
+        reviewed,
+        correct,
+        wrong,
+        lastNextDue
+      });
+      endReviewSession();
+      return;
+    }
+    setSessionIndex(reviewed);
+    setSelectedOptionID("");
+    setPendingNextDue("");
+  }
+
   function startEditing(item: VocabItem) {
     setEditingID(item.id);
     setEditDraft(draftFromItem(item));
-  }
-
-  function toggleHistoryDetail(entry: ReviewHistoryEntry) {
-    setSelectedHistory((current) => (current?.log.id === entry.log.id ? null : entry));
   }
 
   function handleBulkTextChange(value: string) {
@@ -537,17 +610,22 @@ export function App() {
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div>
+      <header className="topbar">
+        <div className="brand-block">
           <p className="eyebrow">Vocab Review</p>
-          <h1>A quiet desk for keeping words alive.</h1>
+          <div className="topbar-utilities">
+            <button type="button" className="icon-button topbar-add" onClick={() => setActiveSection("add")} aria-label="Add card">
+              +
+            </button>
+            <button type="button" className="icon-button topbar-refresh" onClick={refresh} disabled={isRefreshing} aria-label="Refresh data">
+              ↻
+            </button>
+          </div>
         </div>
 
-        <nav className="sidebar-nav" aria-label="Workspace sections">
+        <nav className="top-nav" aria-label="Workspace sections">
           {[
-            ["review", "Due review", `${stats.due_now} due`],
-            ["add", "Add card", "Capture"],
-            ["history", "Recent reviews", `${historyTotal} logs`],
+            ["review", "Start Review", `${stats.due_now} due`],
             ["library", "Active cards", `${stats.active_cards} cards`]
           ].map(([section, label, detail]) => (
             <button
@@ -562,7 +640,7 @@ export function App() {
           ))}
         </nav>
 
-        <div className="sidebar-stats">
+        <div className="topbar-stats">
           <article>
             <strong>{stats.due_now}</strong>
             <span>Due now</span>
@@ -579,16 +657,8 @@ export function App() {
             <strong>{stats.reviewed_7_days}</strong>
             <span>7 day reviews</span>
           </article>
-          <article>
-            <strong>{stats.archived_cards}</strong>
-            <span>Archived</span>
-          </article>
         </div>
-
-        <button type="button" className="ghost-button" onClick={refresh} disabled={isRefreshing}>
-          {isRefreshing ? "Refreshing..." : "Refresh data"}
-        </button>
-      </aside>
+      </header>
 
       <section className="workspace">
         {activeSection === "review" ? (
@@ -596,11 +666,9 @@ export function App() {
             <div className="section-heading">
               <div>
                 <p className="eyebrow">Today</p>
-                <h2>Due now</h2>
+                <h2>Start Review</h2>
+                <small>Answer one card at a time. Each session uses up to {reviewSessionSize} due words.</small>
               </div>
-              <button type="button" className="compact-button" onClick={startReviewSession} disabled={due.length === 0 || sessionActive}>
-                {sessionActive ? "Session running" : "Start session"}
-              </button>
             </div>
             {sessionActive ? (
               <article className="session-card">
@@ -616,64 +684,68 @@ export function App() {
                   <span style={{ width: `${sessionProgress}%` }} />
                 </div>
                 <div className="session-prompt">
-                  <p className="eyebrow">{currentSessionCard.item.kind}</p>
-                  <h3>{currentSessionCard.item.term}</h3>
-                  {currentSessionCard.item.example_sentence ? <small>{currentSessionCard.item.example_sentence}</small> : null}
+                  <p className="eyebrow">Word</p>
+                  <h3>{currentQuizCard.card.item.term}</h3>
+                  <small>Choose the correct meaning.</small>
                 </div>
-                {isAnswerRevealed ? (
-                  <div className="answer-panel">
-                    <strong>Answer</strong>
-                    <p>{currentSessionCard.item.meaning || "Meaning not added yet."}</p>
-                    {currentSessionCard.item.notes ? <small className="notes">Notes: {currentSessionCard.item.notes}</small> : null}
-                  </div>
-                ) : (
-                  <button type="button" className="reveal-button" onClick={() => setIsAnswerRevealed(true)}>
-                    Reveal answer
+                <div className="answer-options" aria-label="Meaning choices">
+                  {currentQuizCard.options.map((option, index) => {
+                    const isSelected = selectedOptionID === option.id;
+                    const showCorrect = Boolean(selectedOptionID) && option.isCorrect;
+                    const showWrong = isSelected && !option.isCorrect;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={[
+                          "answer-option",
+                          isSelected ? "selected" : "",
+                          showCorrect ? "correct" : "",
+                          showWrong ? "wrong" : ""
+                        ].filter(Boolean).join(" ")}
+                        onClick={() => handleQuizAnswer(option)}
+                        disabled={Boolean(selectedOptionID) || isGrading}
+                      >
+                        <span>{String.fromCharCode(65 + index)}</span>
+                        <strong>{option.text}</strong>
+                      </button>
+                    );
+                  })}
+                </div>
+                {selectedOptionID ? (
+                  <button type="button" className="next-card-button" onClick={advanceQuizCard} disabled={isGrading}>
+                    {sessionIndex + 1 >= sessionDeck.length ? "Show summary" : "Next word"}
                   </button>
-                )}
-                <div className="grade-row session-grades">
-                  {(["again", "hard", "good", "easy"] as const).map((grade) => (
-                    <button key={grade} type="button" onClick={() => handleSessionGrade(grade)} disabled={!isAnswerRevealed || isGrading}>
-                      {isGrading ? "Saving..." : grade}
-                    </button>
-                  ))}
-                </div>
-              </article>
-            ) : null}
-            {sessionSummary ? (
-              <div className="session-summary">
-                <strong>Session complete.</strong>
-                <span>
-                  Reviewed {sessionSummary.reviewed} card{sessionSummary.reviewed === 1 ? "" : "s"} with {sessionSummary.again} marked again.
-                </span>
-                {sessionSummary.lastNextDue ? <span>Last card returns {formatDate(sessionSummary.lastNextDue)}.</span> : null}
-              </div>
-            ) : null}
-            {!sessionActive ? (
-              <div className="review-list">
-                {visibleDue.map(({ item, state }) => (
-                  <article className="review-card" key={item.id}>
-                    <div>
-                      <p className="term">{item.term}</p>
-                      <p>{item.meaning || "Meaning not added yet."}</p>
-                      <small>Next due: {formatDate(state.next_due_at)}</small>
-                    </div>
-                    <div className="grade-row">
-                      {(["again", "hard", "good", "easy"] as const).map((grade) => (
-                        <button key={grade} type="button" onClick={() => handleGrade(item.id, grade)} disabled={isGrading}>
-                          {isGrading ? "Saving..." : grade}
-                        </button>
-                      ))}
-                    </div>
-                  </article>
-                ))}
-                {due.length === 0 ? (
-                  <div className="empty-state">
-                    <strong>All caught up.</strong>
-                    <span>No cards are due right now.</span>
-                  </div>
                 ) : null}
-                <Pagination label="Due review" page={duePage} totalPages={duePageCount} onPageChange={setDuePage} />
+              </article>
+            ) : (
+              <div className="review-start-card">
+                <span className="due-pill">{stats.due_now} due now</span>
+                <div className="review-card-copy">
+                  <p className="eyebrow">Quiz mode</p>
+                  <h3>{stats.due_now === 0 ? "Clear desk." : "Ready when you are."}</h3>
+                  <span>{stats.due_now === 0 ? "No due cards right now." : "A short multiple-choice sprint is waiting."}</span>
+                </div>
+                <div className="review-card-action">
+                  <button type="button" onClick={startReviewSession} disabled={due.length === 0 || isStartingReview}>
+                    {stats.due_now === 0 ? "All caught up" : isStartingReview ? "Preparing..." : "Start Review"}
+                  </button>
+                </div>
+              </div>
+            )}
+            {sessionSummary ? (
+              <div className="session-summary quiz-summary">
+                <div>
+                  <strong>Review complete.</strong>
+                  <span>
+                    {sessionSummary.correct} correct, {sessionSummary.wrong} wrong.
+                  </span>
+                </div>
+                <div>
+                  <strong>{Math.round((sessionSummary.correct / Math.max(1, sessionSummary.reviewed)) * 100)}%</strong>
+                  <span>accuracy</span>
+                </div>
+                {sessionSummary.lastNextDue ? <span>Last card returns {formatDate(sessionSummary.lastNextDue)}.</span> : null}
               </div>
             ) : null}
           </section>
@@ -681,55 +753,66 @@ export function App() {
 
         {activeSection === "add" ? (
           <section className="panel quick-add">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Capture</p>
-                <h2>Quick add</h2>
-                <small>Only the word or phrase is required. Add meaning later if you are moving fast.</small>
+            <form className="capture-card stack" onSubmit={handleCreateVocab}>
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Capture</p>
+                  <h2>Quick add</h2>
+                  <small>Add one card fast. Only the word is required.</small>
+                </div>
               </div>
-            </div>
-            <form className="stack" onSubmit={handleCreateVocab}>
-              <div className="quick-capture-line">
-                <input
-                  ref={termInputRef}
-                  value={form.term}
-                  placeholder="Word or phrase"
-                  onChange={(event) => setForm({ ...form, term: event.target.value })}
-                />
-                <select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as "word" | "phrase" })}>
-                  <option value="word">Word</option>
-                  <option value="phrase">Phrase</option>
-                </select>
+              <label className="field-label">
+                <span>Word</span>
+                <div className="quick-capture-line">
+                  <input
+                    ref={termInputRef}
+                    value={form.term}
+                    placeholder="e.g. meticulous"
+                    onChange={(event) => setForm({ ...form, term: event.target.value })}
+                  />
+                </div>
+              </label>
+              <div className="optional-grid">
+                <label className="field-label">
+                  <span>Meaning</span>
+                  <textarea value={form.meaning} placeholder="Short definition" onChange={(event) => setForm({ ...form, meaning: event.target.value })} />
+                </label>
+                <label className="field-label">
+                  <span>Example sentence</span>
+                  <textarea
+                    value={form.example_sentence}
+                    placeholder="Use it in context"
+                    onChange={(event) => setForm({ ...form, example_sentence: event.target.value })}
+                  />
+                </label>
+                <label className="field-label">
+                  <span>Notes</span>
+                  <textarea value={form.notes} placeholder="Memory hint or source" onChange={(event) => setForm({ ...form, notes: event.target.value })} />
+                </label>
               </div>
-              <details className="optional-fields">
-                <summary>Meaning, example, and notes</summary>
-                <textarea value={form.meaning} placeholder="Meaning" onChange={(event) => setForm({ ...form, meaning: event.target.value })} />
-                <textarea
-                  value={form.example_sentence}
-                  placeholder="Example sentence"
-                  onChange={(event) => setForm({ ...form, example_sentence: event.target.value })}
-                />
-                <textarea value={form.notes} placeholder="Notes" onChange={(event) => setForm({ ...form, notes: event.target.value })} />
-              </details>
               <div className="action-row quick-actions">
-                <button type="submit" name="save-add" disabled={isSaving || !form.term.trim()}>
-                  {isSaving ? "Saving..." : "Save + add another"}
-                </button>
-                <button type="submit" name="save-review" className="ghost-button" disabled={isSaving || !form.term.trim()}>
-                  Save + review
+                <button type="submit" disabled={isSaving || !form.term.trim()}>
+                  {isSaving ? "Saving..." : "Save"}
                 </button>
               </div>
               {lastCreatedTerm ? <p className="save-confirmation">Saved "{lastCreatedTerm}". Ready for the next one.</p> : null}
             </form>
 
-            <form className="bulk-import" onSubmit={handleBulkImport}>
+            <form className="capture-card bulk-import" onSubmit={handleBulkImport}>
               <div className="section-heading import-heading">
                 <div>
                   <p className="eyebrow">Batch capture</p>
                   <h2>Bulk import</h2>
-                  <small>Paste one card per line. Use "term - meaning", "term: meaning", or just the term.</small>
                 </div>
-                <span className="import-count">{parsedImportCards.length} cards</span>
+                <button
+                  type="button"
+                  className="ghost-button compact-button ai-button"
+                  disabled={isEnriching || rawImportCards.length === 0}
+                  onClick={handleAutocompleteBulk}
+                >
+                  <span className="gpt-mark" aria-hidden="true">✦</span>
+                  {isEnriching ? "Working..." : "GPT Auto-complete"}
+                </button>
               </div>
               <textarea
                 className="bulk-textarea"
@@ -737,11 +820,9 @@ export function App() {
                 placeholder={"abandon - to leave behind\nmeticulous: very careful\nmake up"}
                 onChange={(event) => handleBulkTextChange(event.target.value)}
               />
-              <div className="import-preview">
-                {parsedImportCards.length === 0 ? (
-                  <span className="muted">Parsed cards will appear here before import.</span>
-                ) : (
-                  parsedImportCards.slice(0, 8).map((card, index) => (
+              {parsedImportCards.length > 0 ? (
+                <div className="import-preview">
+                  {parsedImportCards.slice(0, 8).map((card, index) => (
                     <article key={`${card.term}-${index}`} className="import-preview-card">
                       <strong>{card.term}</strong>
                       {card.part_of_speech ? <span className="pos-pill">{card.part_of_speech}</span> : null}
@@ -749,17 +830,14 @@ export function App() {
                       {card.example_sentence ? <span>{card.example_sentence}</span> : null}
                       {card.error ? <span className="form-error">{card.error}</span> : null}
                     </article>
-                  ))
-                )}
-                {parsedImportCards.length > 8 ? <span className="muted">+ {parsedImportCards.length - 8} more</span> : null}
-              </div>
+                  ))}
+                  {parsedImportCards.length > 8 ? <span className="muted">+ {parsedImportCards.length - 8} more</span> : null}
+                </div>
+              ) : null}
               {enrichmentError ? <p className="form-error">{enrichmentError}</p> : null}
               <div className="action-row bulk-actions">
-                <button type="button" className="ghost-button" disabled={isEnriching || rawImportCards.length === 0} onClick={handleAutocompleteBulk}>
-                  {isEnriching ? "Auto-completing..." : "Auto-complete missing details"}
-                </button>
                 <button type="submit" disabled={isSaving || parsedImportCards.length === 0}>
-                  {isSaving ? "Importing..." : `Import ${parsedImportCards.length || ""} cards`}
+                  {isSaving ? "Saving..." : "Save"}
                 </button>
               </div>
               {lastImportCount ? (
@@ -768,72 +846,6 @@ export function App() {
                 </p>
               ) : null}
             </form>
-          </section>
-        ) : null}
-
-        {activeSection === "history" ? (
-          <section className="panel history-panel">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Progress</p>
-                <h2>Recent reviews</h2>
-              </div>
-            </div>
-            <div className="history-grid">
-              {visibleHistory.map((entry) => (
-                <button
-                  className={selectedHistory?.log.id === entry.log.id ? "history-card selected" : "history-card"}
-                  key={entry.log.id}
-                  type="button"
-                  onClick={() => toggleHistoryDetail(entry)}
-                >
-                  {entry.item.archived_at ? <span className="archive-corner">Archived</span> : null}
-                  <span className="history-word">{entry.item.term}</span>
-                  <span className="history-status">{entry.state.status}</span>
-                  <span className="history-preview">{entry.item.meaning || "Meaning not added yet."}</span>
-                </button>
-              ))}
-            </div>
-            <Pagination
-              label="Recent reviews"
-              page={historyPage}
-              totalPages={historyPageCount}
-              onPageChange={(page) => {
-                setSelectedHistory(null);
-                setHistoryPage(page);
-              }}
-            />
-            {history.length === 0 ? (
-              <div className="empty-state">
-                <strong>No reviews yet.</strong>
-                <span>Review a due card and it will appear here.</span>
-              </div>
-            ) : null}
-            {selectedHistory ? (
-              <div className="modal-backdrop" role="presentation" onClick={() => setSelectedHistory(null)}>
-                <article className="history-detail modal-card" role="dialog" aria-modal="true" aria-labelledby="history-detail-title" onClick={(event) => event.stopPropagation()}>
-                  <div className="section-heading">
-                    <div>
-                      <p className="eyebrow">Full info</p>
-                      <h2 id="history-detail-title">{selectedHistory.item.term}</h2>
-                    </div>
-                    <button type="button" className="ghost-button compact-button" onClick={() => setSelectedHistory(null)}>
-                      Close
-                    </button>
-                  </div>
-                  <p>{selectedHistory.item.meaning || "Meaning not added yet."}</p>
-                  {selectedHistory.item.example_sentence ? <small>{selectedHistory.item.example_sentence}</small> : null}
-                  {selectedHistory.item.notes ? <small className="notes">Notes: {selectedHistory.item.notes}</small> : null}
-                  <div className="meta modal-meta">
-                    <span>Grade: {selectedHistory.log.grade}</span>
-                    <span>Status: {selectedHistory.state.status}</span>
-                    <span>Reviewed {formatDate(selectedHistory.log.reviewed_at)}</span>
-                    <span>Next due {formatDate(selectedHistory.state.next_due_at)}</span>
-                    {selectedHistory.item.archived_at ? <span className="archived-badge">Archived</span> : null}
-                  </div>
-                </article>
-              </div>
-            ) : null}
           </section>
         ) : null}
 
@@ -856,21 +868,6 @@ export function App() {
                   setLibraryPage(1);
                 }}
               />
-              <div className="filter-chips" aria-label="Filter cards by status">
-                {(["all", "new", "learning", "review"] as const).map((status) => (
-                  <button
-                    key={status}
-                    type="button"
-                    className={statusFilter === status ? "chip active" : "chip"}
-                    onClick={() => {
-                      setStatusFilter(status);
-                      setLibraryPage(1);
-                    }}
-                  >
-                    {status}
-                  </button>
-                ))}
-              </div>
             </div>
 
             <div className="library">
@@ -878,50 +875,56 @@ export function App() {
                 <article className={editingID === item.id ? "library-card editing" : "library-card"} key={item.id}>
                   {editingID === item.id ? (
                     <form className="edit-form" onSubmit={handleSaveEdit}>
-                      <div className="edit-grid">
+                      <label className="field-label">
+                        <span>Word</span>
                         <input value={editDraft.term} onChange={(event) => setEditDraft({ ...editDraft, term: event.target.value })} />
-                        <select
-                          value={editDraft.kind}
-                          onChange={(event) => setEditDraft({ ...editDraft, kind: event.target.value as "word" | "phrase" })}
-                        >
-                          <option value="word">Word</option>
-                          <option value="phrase">Phrase</option>
-                        </select>
-                      </div>
-                      <textarea value={editDraft.meaning} onChange={(event) => setEditDraft({ ...editDraft, meaning: event.target.value })} />
-                      <textarea
-                        value={editDraft.example_sentence}
-                        onChange={(event) => setEditDraft({ ...editDraft, example_sentence: event.target.value })}
-                      />
-                      <textarea value={editDraft.notes} onChange={(event) => setEditDraft({ ...editDraft, notes: event.target.value })} />
+                      </label>
+                      <label className="field-label">
+                        <span>Meaning</span>
+                        <textarea value={editDraft.meaning} onChange={(event) => setEditDraft({ ...editDraft, meaning: event.target.value })} />
+                      </label>
+                      <label className="field-label">
+                        <span>Example sentence</span>
+                        <textarea
+                          value={editDraft.example_sentence}
+                          onChange={(event) => setEditDraft({ ...editDraft, example_sentence: event.target.value })}
+                        />
+                      </label>
+                      <label className="field-label">
+                        <span>Notes</span>
+                        <textarea value={editDraft.notes} onChange={(event) => setEditDraft({ ...editDraft, notes: event.target.value })} />
+                      </label>
                       <div className="action-row">
                         <button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save changes"}</button>
                         <button type="button" className="ghost-button" onClick={() => setEditingID("")}>Cancel</button>
                       </div>
                     </form>
                   ) : (
-                    <>
-                      <div className="card-copy">
-                        <div>
-                          <p className="term">{item.term}</p>
-                          <p>{item.meaning || "Meaning not added yet."}</p>
-                          {item.example_sentence ? <small>{item.example_sentence}</small> : null}
-                          {item.notes ? <small className="notes">Notes: {item.notes}</small> : null}
-                        </div>
-                        <div className="meta">
-                          <span>{item.kind}</span>
-                          <span>{state.status}</span>
-                          <span>{state.interval_days}d interval</span>
-                          <span>Created {formatDate(item.created_at)}</span>
-                        </div>
+                    <details className="library-disclosure">
+                      <summary>
+                        <span className="library-word">{item.term}</span>
+                        <span className="library-actions">
+                          <button type="button" className="icon-button ghost-button" aria-label={`Edit ${item.term}`} onClick={(event) => {
+                            event.preventDefault();
+                            startEditing(item);
+                          }}>
+                            ✎
+                          </button>
+                          <button type="button" className="icon-button danger-button" aria-label={`Archive ${item.term}`} disabled={isSaving} onClick={(event) => {
+                            event.preventDefault();
+                            handleArchive(item.id);
+                          }}>
+                            ×
+                          </button>
+                        </span>
+                      </summary>
+                      <div className="library-details">
+                        <span className="part-of-speech-badge">{item.part_of_speech || "part of speech not set"}</span>
+                        <p>{item.meaning || "Meaning not added yet."}</p>
+                        {item.example_sentence ? <small>{item.example_sentence}</small> : null}
+                        {item.notes ? <small className="notes">Notes: {item.notes}</small> : null}
                       </div>
-                      <div className="action-row">
-                        <button type="button" className="ghost-button" onClick={() => startEditing(item)}>Edit</button>
-                        <button type="button" className="danger-button" onClick={() => handleArchive(item.id)} disabled={isSaving}>
-                          Archive
-                        </button>
-                      </div>
-                    </>
+                    </details>
                   )}
                 </article>
               ))}
@@ -931,7 +934,7 @@ export function App() {
             {vocabTotal === 0 ? (
               <div className="empty-state spacious">
                 <strong>{stats.active_cards === 0 ? "No cards yet." : "No matching cards."}</strong>
-                <span>{stats.active_cards === 0 ? "Add your first word above." : "Try another search or status filter."}</span>
+                <span>{stats.active_cards === 0 ? "Add your first word above." : "Try another search."}</span>
               </div>
             ) : null}
           </section>
