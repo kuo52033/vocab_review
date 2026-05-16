@@ -2,6 +2,8 @@
 
 This guide deploys the Go API on an EC2 instance, connects it to managed Postgres, and exposes it at `https://api.vocabreview.uk` through Caddy. The web app should stay on Cloudflare Pages at `vocabreview.uk` or `www.vocabreview.uk`.
 
+For repeat deploys, use [Production Deployment Checklist](production-checklist.md).
+
 ## Architecture
 
 ```text
@@ -35,6 +37,15 @@ TTL: Auto
 ```
 
 Start with DNS-only while Caddy gets its first certificate. After `https://api.vocabreview.uk/healthz` works, you can enable the Cloudflare proxy and set SSL/TLS mode to **Full (strict)**.
+
+To enable Cloudflare proxy after HTTPS works:
+
+1. Go to Cloudflare DNS.
+2. Change the `api` record from **DNS only** to **Proxied**.
+3. Go to **SSL/TLS** and set encryption mode to **Full (strict)**.
+4. Recheck `https://api.vocabreview.uk/healthz`.
+
+Do not use **Flexible** SSL mode. Flexible makes Cloudflare connect to EC2 over plain HTTP and can cause redirect loops or weaker transport security.
 
 ## 3. Prepare EC2
 
@@ -246,4 +257,5 @@ If `docker-compose.prod.yml`, `Caddyfile`, or `Makefile` changes, copy the updat
 
 - `api.vocabreview.uk` starts DNS-only for simpler certificate setup.
 - After HTTPS works, Cloudflare proxy is optional. If enabled, use **Full (strict)** SSL/TLS mode.
+- After proxy is enabled, Cloudflare hides the EC2 public IP from normal DNS lookups, but the EC2 security group still controls who can connect to ports `80` and `443`.
 - The notification worker is built into the image but not started in this first production Compose file.

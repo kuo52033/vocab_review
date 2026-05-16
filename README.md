@@ -56,3 +56,4 @@ Open `apps/ios/VocabReview` in Xcode and run on an iPhone simulator or device.
 
 - The backend now requires PostgreSQL and fails fast if `DATABASE_URL` is missing or the schema has not been migrated.
 - Run `make test` for the backend unit suite and `make test-integration` for the Postgres repository integration test path.
+- Production deployment lives in `docs/deployment/ec2-caddy-domain.md`, with a repeat-deploy checklist in `docs/deployment/production-checklist.md`.
