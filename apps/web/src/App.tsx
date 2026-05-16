@@ -609,67 +609,42 @@ export function App() {
   }
 
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <div className="brand-block">
-          <p className="eyebrow">Vocab Review</p>
-          <div className="topbar-utilities">
-            <button type="button" className="icon-button topbar-add" onClick={() => setActiveSection("add")} aria-label="Add card">
-              +
-            </button>
-            <button type="button" className="icon-button topbar-refresh" onClick={refresh} disabled={isRefreshing} aria-label="Refresh data">
-              ↻
-            </button>
-          </div>
-        </div>
+    <main className={`app-shell mode-${activeSection}`}>
+      <div className="tokyo-sky" aria-hidden="true">
+        <span className="skyline tower" />
+        <span className="skyline block-a" />
+        <span className="skyline block-b" />
+        <span className="skyline block-c" />
+        <span className="neon-orb orb-cyan" />
+        <span className="neon-orb orb-rose" />
+      </div>
+      {activeSection !== "library" ? (
+        <header className="app-header">
+          <button type="button" className="brand-button" onClick={() => setActiveSection("review")} aria-label="Go to review dashboard">
+            <span className="brand-mark" aria-hidden="true">✦</span>
+            <span>VocabReview</span>
+          </button>
 
-        <nav className="top-nav" aria-label="Workspace sections">
-          {[
-            ["review", "Start Review", `${stats.due_now} due`],
-            ["library", "Active cards", `${stats.active_cards} cards`]
-          ].map(([section, label, detail]) => (
+          <nav className="header-actions" aria-label="Primary actions">
             <button
-              key={section}
               type="button"
-              className={activeSection === section ? "nav-item active" : "nav-item"}
-              onClick={() => setActiveSection(section as ActiveSection)}
+              className="outline-action"
+              onClick={() => setActiveSection("library")}
             >
-              <span>{label}</span>
-              <small>{detail}</small>
+              <span aria-hidden="true">▦</span>
+              Manage Cards
             </button>
-          ))}
-        </nav>
+            <button type="button" className="primary-action" onClick={() => setActiveSection("add")}>
+              <span aria-hidden="true">+</span>
+              Quick Add
+            </button>
+          </nav>
+        </header>
+      ) : null}
 
-        <div className="topbar-stats">
-          <article>
-            <strong>{stats.due_now}</strong>
-            <span>Due now</span>
-          </article>
-          <article>
-            <strong>{stats.reviewed_today}</strong>
-            <span>Reviewed today</span>
-          </article>
-          <article>
-            <strong>{stats.active_cards}</strong>
-            <span>Active cards</span>
-          </article>
-          <article>
-            <strong>{stats.reviewed_7_days}</strong>
-            <span>7 day reviews</span>
-          </article>
-        </div>
-      </header>
-
-      <section className="workspace">
+      <section className="workspace page-viewport">
         {activeSection === "review" ? (
-          <section className="panel due-panel">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Today</p>
-                <h2>Start Review</h2>
-                <small>Answer one card at a time. Each session uses up to {reviewSessionSize} due words.</small>
-              </div>
-            </div>
+          <section className="review-dashboard page-panel">
             {sessionActive ? (
               <article className="session-card">
                 <div className="session-topline">
@@ -719,17 +694,33 @@ export function App() {
                 ) : null}
               </article>
             ) : (
-              <div className="review-start-card">
-                <span className="due-pill">{stats.due_now} due now</span>
-                <div className="review-card-copy">
-                  <p className="eyebrow">Quiz mode</p>
-                  <h3>{stats.due_now === 0 ? "Clear desk." : "Ready when you are."}</h3>
-                  <span>{stats.due_now === 0 ? "No due cards right now." : "A short multiple-choice sprint is waiting."}</span>
-                </div>
-                <div className="review-card-action">
-                  <button type="button" onClick={startReviewSession} disabled={due.length === 0 || isStartingReview}>
+              <div className="home-layout">
+                <article className="review-start-card">
+                  <div className="review-icon" aria-hidden="true" />
+                  <div className="review-card-copy">
+                    <h1>{stats.due_now === 0 ? "Clear desk." : "Ready when you are."}</h1>
+                    <span>
+                      {stats.due_now === 0 ? "No cards ready to review" : `${stats.due_now} card${stats.due_now === 1 ? "" : "s"} ready to review`}
+                    </span>
+                  </div>
+                  <button type="button" className="start-review-button" onClick={startReviewSession} disabled={due.length === 0 || isStartingReview}>
                     {stats.due_now === 0 ? "All caught up" : isStartingReview ? "Preparing..." : "Start Review"}
                   </button>
+                </article>
+
+                <div className="home-stats" aria-label="Review stats">
+                  <article>
+                    <strong>{stats.active_cards}</strong>
+                    <span>Total Cards</span>
+                  </article>
+                  <article>
+                    <strong>{stats.reviewed_today}</strong>
+                    <span>Reviewed</span>
+                  </article>
+                  <article>
+                    <strong>{stats.reviewed_7_days}</strong>
+                    <span>7 day reviews</span>
+                  </article>
                 </div>
               </div>
             )}
@@ -752,7 +743,7 @@ export function App() {
         ) : null}
 
         {activeSection === "add" ? (
-          <section className="panel quick-add">
+          <section className="panel quick-add page-panel">
             <form className="capture-card stack" onSubmit={handleCreateVocab}>
               <div className="section-heading">
                 <div>
@@ -850,19 +841,20 @@ export function App() {
         ) : null}
 
         {activeSection === "library" ? (
-          <section className="panel library-panel">
-            <div className="library-toolbar">
-              <div>
-                <p className="eyebrow">Library</p>
-                <h2>Manage active cards</h2>
-              </div>
+          <section className="library-panel page-panel">
+            <div className="manage-header">
+              <button type="button" className="back-button" onClick={() => setActiveSection("review")} aria-label="Back to review dashboard">
+                ←
+              </button>
+              <span className="brand-mark small-mark" aria-hidden="true">✦</span>
+              <h1>Manage Cards</h1>
             </div>
 
             <div className="filters">
               <input
                 className="search-input"
                 value={query}
-                placeholder="Search term, meaning, example, notes..."
+                placeholder="Search cards..."
                 onChange={(event) => {
                   setQuery(event.target.value);
                   setLibraryPage(1);
@@ -900,31 +892,22 @@ export function App() {
                       </div>
                     </form>
                   ) : (
-                    <details className="library-disclosure">
-                      <summary>
-                        <span className="library-word">{item.term}</span>
-                        <span className="library-actions">
-                          <button type="button" className="icon-button ghost-button" aria-label={`Edit ${item.term}`} onClick={(event) => {
-                            event.preventDefault();
-                            startEditing(item);
-                          }}>
-                            ✎
-                          </button>
-                          <button type="button" className="icon-button danger-button" aria-label={`Archive ${item.term}`} disabled={isSaving} onClick={(event) => {
-                            event.preventDefault();
-                            handleArchive(item.id);
-                          }}>
-                            ×
-                          </button>
-                        </span>
-                      </summary>
-                      <div className="library-details">
-                        <span className="part-of-speech-badge">{item.part_of_speech || "part of speech not set"}</span>
+                    <div className="library-row">
+                      <div className="library-copy">
+                        <h2>{item.term}</h2>
                         <p>{item.meaning || "Meaning not added yet."}</p>
                         {item.example_sentence ? <small>{item.example_sentence}</small> : null}
                         {item.notes ? <small className="notes">Notes: {item.notes}</small> : null}
                       </div>
-                    </details>
+                      <span className="library-actions">
+                        <button type="button" className="icon-button ghost-button" aria-label={`Edit ${item.term}`} onClick={() => startEditing(item)}>
+                          ✎
+                        </button>
+                        <button type="button" className="icon-button danger-button" aria-label={`Archive ${item.term}`} disabled={isSaving} onClick={() => handleArchive(item.id)}>
+                          ×
+                        </button>
+                      </span>
+                    </div>
                   )}
                 </article>
               ))}
