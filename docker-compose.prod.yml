@@ -6,12 +6,18 @@ services:
     environment:
       ADDR: ":8080"
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8080:8080"
+    expose:
+      - "8080"
 
-  tunnel:
-    image: cloudflare/cloudflared:2026.3.0
-    command: ["tunnel", "--url", "http://api:8080"]
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       - api
     restart: unless-stopped
@@ -21,3 +27,7 @@ services:
     env_file:
       - .env.production
     command: ["/app/goose", "-dir", "/app/migrations", "postgres", "${DATABASE_URL}", "up"]
+
+volumes:
+  caddy_data:
+  caddy_config:
