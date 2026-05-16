@@ -894,7 +894,10 @@ export function App() {
                   ) : (
                     <div className="library-row">
                       <div className="library-copy">
-                        <h2>{item.term}</h2>
+                        <div className="library-title-line">
+                          <h2>{item.term}</h2>
+                          <span className="part-of-speech-chip">{item.part_of_speech ? item.part_of_speech.replace(/_/g, " ") : "No part of speech"}</span>
+                        </div>
                         <p>{item.meaning || "Meaning not added yet."}</p>
                         {item.example_sentence ? <small>{item.example_sentence}</small> : null}
                         {item.notes ? <small className="notes">Notes: {item.notes}</small> : null}

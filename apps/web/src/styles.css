@@ -1200,6 +1200,14 @@ button:disabled {
   min-width: 0;
 }
 
+.library-title-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .library-copy h2,
 .library-word,
 .term {
@@ -1210,6 +1218,20 @@ button:disabled {
   font-weight: 900;
   letter-spacing: -0.035em;
   line-height: 1.05;
+}
+
+.part-of-speech-chip {
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid rgba(255, 208, 138, 0.26);
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: var(--amber);
+  background: rgba(255, 208, 138, 0.08);
+  font-size: 0.74rem;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: inset 0 0 14px rgba(255, 208, 138, 0.04);
 }
 
 .library-copy p {
