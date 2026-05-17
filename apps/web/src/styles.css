@@ -1,29 +1,29 @@
 :root {
-  color-scheme: dark;
-  --void: #090815;
-  --night: #101225;
-  --night-2: #181a35;
-  --panel: rgba(18, 21, 43, 0.84);
-  --panel-strong: rgba(27, 30, 58, 0.92);
-  --card: rgba(20, 25, 50, 0.9);
-  --card-soft: rgba(28, 34, 64, 0.82);
-  --ink: #f7e9d1;
-  --ink-dark: #171724;
-  --muted: #c5bed0;
-  --muted-dark: #8c8291;
-  --line: rgba(132, 218, 226, 0.2);
-  --line-warm: rgba(255, 177, 104, 0.28);
-  --cyan: #7ddbe7;
-  --cyan-soft: rgba(125, 219, 231, 0.12);
-  --pink: #f07aac;
-  --pink-soft: rgba(240, 122, 172, 0.13);
-  --amber: #ffd08a;
-  --amber-soft: rgba(255, 208, 138, 0.16);
-  --mint: #a7f2c8;
-  --danger: #ff8d98;
-  --success: #8bf0b4;
-  --shadow-neon: 0 0 18px rgba(125, 219, 231, 0.12), 0 24px 74px rgba(0, 0, 0, 0.34);
-  --shadow-warm: 0 0 24px rgba(240, 122, 172, 0.12), 0 24px 74px rgba(0, 0, 0, 0.32);
+  color-scheme: light;
+  --void: #fff5e4;
+  --night: #ffe3e1;
+  --night-2: #ffd1d1;
+  --panel: rgba(255, 245, 228, 0.86);
+  --panel-strong: rgba(255, 227, 225, 0.94);
+  --card: rgba(255, 245, 228, 0.92);
+  --card-soft: rgba(255, 227, 225, 0.84);
+  --ink: #432528;
+  --ink-dark: #fffaf0;
+  --muted: #76575a;
+  --muted-dark: #9b7577;
+  --line: rgba(255, 148, 148, 0.28);
+  --line-warm: rgba(255, 148, 148, 0.34);
+  --cyan: #ffd1d1;
+  --cyan-soft: rgba(255, 209, 209, 0.46);
+  --pink: #ff9494;
+  --pink-soft: rgba(255, 148, 148, 0.2);
+  --amber: #a64c52;
+  --amber-soft: rgba(255, 227, 225, 0.72);
+  --mint: #ffe3e1;
+  --danger: #c6424b;
+  --success: #8d5a35;
+  --shadow-neon: 0 16px 46px rgba(128, 70, 72, 0.14), 0 2px 10px rgba(255, 148, 148, 0.18);
+  --shadow-warm: 0 18px 54px rgba(128, 70, 72, 0.16), 0 2px 12px rgba(255, 209, 209, 0.24);
   --font-display: "Arial Rounded MT Bold", "SF Pro Rounded", "Avenir Next", sans-serif;
   --font-body: "Arial Rounded MT Bold", "SF Pro Rounded", "Avenir Next", sans-serif;
   --font-ui: "Arial Rounded MT Bold", "SF Pro Rounded", "Avenir Next", sans-serif;
@@ -45,10 +45,9 @@ body {
   margin: 0;
   color: var(--ink);
   background:
-    radial-gradient(circle at 12% 4%, rgba(240, 122, 172, 0.16), transparent 30%),
-    radial-gradient(circle at 82% 0%, rgba(125, 219, 231, 0.18), transparent 32%),
-    radial-gradient(circle at 50% 78%, rgba(255, 208, 138, 0.12), transparent 36%),
-    linear-gradient(180deg, #090815 0%, #111329 48%, #090814 100%);
+    linear-gradient(120deg, rgba(255, 227, 225, 0.72), transparent 42%),
+    linear-gradient(280deg, rgba(255, 209, 209, 0.62), transparent 36%),
+    linear-gradient(180deg, #fff5e4 0%, #ffe3e1 52%, #fff5e4 100%);
 }
 
 body::before,
@@ -1871,4 +1870,292 @@ a {
     scroll-behavior: auto !important;
     transition: none !important;
   }
+}
+
+/* Warm light theme pass */
+body::before {
+  opacity: 0.26;
+  background-image:
+    linear-gradient(rgba(255, 148, 148, 0.18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 148, 148, 0.12) 1px, transparent 1px);
+}
+
+body::after {
+  opacity: 0.22;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 10px, rgba(255, 255, 255, 0.42) 11px, transparent 12px),
+    linear-gradient(90deg, transparent, rgba(255, 209, 209, 0.48), transparent);
+  mix-blend-mode: soft-light;
+}
+
+.tokyo-sky {
+  opacity: 0.18;
+}
+
+.tokyo-sky::before {
+  background:
+    linear-gradient(90deg, transparent 0 2%, rgba(255, 148, 148, 0.16) 2% 2.4%, transparent 2.4% 5%),
+    linear-gradient(to top, rgba(255, 245, 228, 0.9), rgba(255, 227, 225, 0.12));
+}
+
+.skyline {
+  background: linear-gradient(180deg, #ffd1d1, #ffe3e1);
+  box-shadow: inset 0 1px 0 rgba(255, 148, 148, 0.24), 0 14px 40px rgba(128, 70, 72, 0.08);
+}
+
+.orb-cyan,
+.orb-rose {
+  display: none;
+}
+
+.panel,
+.topbar,
+.auth {
+  border-color: var(--line);
+  background:
+    linear-gradient(135deg, rgba(255, 245, 228, 0.92), rgba(255, 227, 225, 0.8)),
+    radial-gradient(circle at 100% 0%, rgba(255, 148, 148, 0.16), transparent 38%),
+    radial-gradient(circle at 0% 100%, rgba(255, 209, 209, 0.2), transparent 36%);
+  box-shadow: var(--shadow-warm);
+  backdrop-filter: blur(18px) saturate(1.04);
+}
+
+.topbar::before {
+  background:
+    linear-gradient(90deg, rgba(255, 209, 209, 0.28), transparent 28%, transparent 72%, rgba(255, 148, 148, 0.14)),
+    repeating-linear-gradient(90deg, transparent 0 28px, rgba(128, 70, 72, 0.035) 29px, transparent 30px);
+}
+
+.brand-subtitle {
+  border-left-color: rgba(166, 76, 82, 0.28);
+}
+
+.top-nav,
+.topbar-stats article,
+.meta span,
+.pagination span,
+.due-pill,
+.part-of-speech-badge,
+.pos-pill {
+  border-color: rgba(255, 148, 148, 0.3);
+  background: rgba(255, 245, 228, 0.7);
+  box-shadow: inset 0 0 18px rgba(255, 148, 148, 0.08);
+}
+
+.nav-item.active,
+button,
+.topbar-add,
+.primary-action,
+.start-review-button,
+.brand-mark,
+.answer-option span,
+.gpt-mark {
+  color: var(--ink);
+  background: linear-gradient(135deg, #ffe3e1, #ff9494);
+  box-shadow: 0 12px 28px rgba(255, 148, 148, 0.22);
+}
+
+.nav-item:hover:not(.active),
+.outline-action.active,
+.outline-action:hover:not(:disabled) {
+  border-color: rgba(255, 148, 148, 0.42);
+  background: rgba(255, 209, 209, 0.42);
+}
+
+.section-stage {
+  border-color: rgba(255, 148, 148, 0.24);
+  background:
+    linear-gradient(105deg, rgba(255, 245, 228, 0.9), rgba(255, 227, 225, 0.7) 52%, rgba(255, 209, 209, 0.54)),
+    radial-gradient(circle at 78% 18%, rgba(255, 148, 148, 0.18), transparent 32%),
+    radial-gradient(circle at 12% 84%, rgba(255, 209, 209, 0.28), transparent 34%);
+  box-shadow: var(--shadow-warm);
+}
+
+.section-stage::before,
+.panel::before {
+  opacity: 0.38;
+  background:
+    linear-gradient(120deg, transparent 0 48%, rgba(255, 255, 255, 0.46) 52%, transparent 58%),
+    repeating-linear-gradient(90deg, rgba(255, 148, 148, 0.08) 0 1px, transparent 1px 54px);
+}
+
+.section-hero h1,
+.session-prompt h3,
+.review-card-copy h3,
+.review-card-copy h1 {
+  text-shadow: 0 8px 26px rgba(255, 148, 148, 0.2);
+}
+
+.section-strip span,
+.part-of-speech-chip,
+.meta span,
+.pagination span,
+.due-pill {
+  border-color: rgba(166, 76, 82, 0.22);
+  color: var(--amber);
+  background: rgba(255, 227, 225, 0.58);
+}
+
+input,
+select,
+textarea,
+.library-panel .search-input {
+  border-color: rgba(166, 76, 82, 0.22);
+  color: var(--ink);
+  background: rgba(255, 250, 240, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.58), 0 10px 28px rgba(128, 70, 72, 0.06);
+}
+
+input::placeholder,
+textarea::placeholder,
+.library-panel .search-input::placeholder {
+  color: rgba(118, 87, 90, 0.58);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--pink);
+  box-shadow: 0 0 0 4px rgba(255, 148, 148, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.68);
+}
+
+button:hover:not(:disabled) {
+  box-shadow: 0 16px 34px rgba(255, 148, 148, 0.28);
+}
+
+.ghost-button,
+.chip,
+.library-actions .icon-button,
+.back-button,
+.outline-action {
+  border-color: rgba(166, 76, 82, 0.22);
+  color: var(--ink);
+  background: rgba(255, 245, 228, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.56), 0 10px 24px rgba(128, 70, 72, 0.07);
+}
+
+.danger-button,
+.topbar-refresh,
+.next-card-button {
+  color: var(--ink-dark);
+  background: linear-gradient(135deg, #ff9494, #a64c52);
+  box-shadow: 0 14px 32px rgba(198, 66, 75, 0.2);
+}
+
+.review-start-card,
+.session-card,
+.session-summary,
+.library-card,
+.capture-card,
+.callout,
+.empty-state,
+.import-preview-card,
+.home-stats article {
+  border-color: rgba(255, 148, 148, 0.24);
+  color: var(--ink);
+  background:
+    linear-gradient(135deg, rgba(255, 245, 228, 0.94), rgba(255, 227, 225, 0.82)),
+    radial-gradient(circle at 92% 12%, rgba(255, 148, 148, 0.15), transparent 34%),
+    radial-gradient(circle at 4% 100%, rgba(255, 209, 209, 0.28), transparent 34%);
+  box-shadow: var(--shadow-warm);
+}
+
+.review-start-card:hover,
+.library-card:hover,
+.capture-card:hover {
+  border-color: rgba(255, 148, 148, 0.4);
+  box-shadow: 0 20px 54px rgba(128, 70, 72, 0.16);
+}
+
+.review-start-card::after,
+.session-card::before {
+  border-color: rgba(166, 76, 82, 0.14);
+}
+
+.review-start-card::before {
+  opacity: 0.24;
+}
+
+.session-progress {
+  background: rgba(255, 209, 209, 0.58);
+}
+
+.session-progress span {
+  background: linear-gradient(90deg, #ffd1d1, #ff9494, #ffe3e1);
+  box-shadow: 0 0 18px rgba(255, 148, 148, 0.34);
+}
+
+.answer-option {
+  border-color: rgba(166, 76, 82, 0.2);
+  color: var(--ink);
+  background:
+    linear-gradient(135deg, rgba(255, 250, 240, 0.92), rgba(255, 227, 225, 0.76)),
+    radial-gradient(circle at 100% 0%, rgba(255, 148, 148, 0.1), transparent 42%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+.answer-option.selected {
+  border-color: rgba(166, 76, 82, 0.58);
+}
+
+.answer-option.correct {
+  border-color: rgba(141, 90, 53, 0.58);
+  background:
+    linear-gradient(135deg, rgba(255, 245, 228, 0.96), rgba(255, 227, 225, 0.86)),
+    radial-gradient(circle at 100% 0%, rgba(141, 90, 53, 0.14), transparent 44%);
+  box-shadow: 0 14px 30px rgba(141, 90, 53, 0.12);
+}
+
+.answer-option.wrong {
+  border-color: rgba(198, 66, 75, 0.5);
+  background:
+    linear-gradient(135deg, rgba(255, 227, 225, 0.94), rgba(255, 209, 209, 0.84)),
+    radial-gradient(circle at 100% 0%, rgba(198, 66, 75, 0.16), transparent 44%);
+  box-shadow: 0 14px 30px rgba(198, 66, 75, 0.12);
+}
+
+.session-summary {
+  background: rgba(255, 245, 228, 0.82);
+}
+
+.save-confirmation {
+  border-color: rgba(141, 90, 53, 0.24);
+  color: #70451f;
+  background: rgba(255, 245, 228, 0.72);
+}
+
+.ai-button {
+  color: var(--ink);
+  background: rgba(255, 209, 209, 0.54);
+}
+
+.library-card.editing {
+  background: var(--panel-strong);
+}
+
+.library-copy p,
+.library-copy small {
+  color: var(--muted);
+}
+
+a {
+  color: #a64c52;
+}
+
+.floating-error {
+  border-color: rgba(198, 66, 75, 0.3);
+  color: #fff5e4;
+  background: rgba(166, 76, 82, 0.92);
+  box-shadow: 0 16px 40px rgba(198, 66, 75, 0.24);
+}
+
+.review-icon {
+  color: var(--ink);
+  background: linear-gradient(135deg, #ffd1d1, #ff9494);
+  box-shadow: 0 18px 42px rgba(255, 148, 148, 0.24);
+}
+
+.review-icon::before,
+.review-icon::after {
+  border-color: var(--ink);
 }
