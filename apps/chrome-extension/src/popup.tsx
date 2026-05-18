@@ -120,13 +120,13 @@ function Popup() {
         const migratedQueue = [newQueuedCapture(stored.draftSelection, stored.draftPageTitle || "", stored.draftPageURL || "")];
         await chrome.storage.local.set({ [QUEUE_KEY]: migratedQueue });
         await chrome.action.setBadgeText({ text: "1" });
-        await chrome.action.setBadgeBackgroundColor({ color: "#657b5f" });
+        await chrome.action.setBadgeBackgroundColor({ color: "#ff9494" });
         setQueuedCaptures(migratedQueue);
       } else {
         setQueuedCaptures(storedQueue);
         await chrome.action.setBadgeText({ text: storedQueue.length ? String(Math.min(storedQueue.length, 99)) : "" });
         if (storedQueue.length) {
-          await chrome.action.setBadgeBackgroundColor({ color: "#657b5f" });
+          await chrome.action.setBadgeBackgroundColor({ color: "#ff9494" });
         }
       }
     });

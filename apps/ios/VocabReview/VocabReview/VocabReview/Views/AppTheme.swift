@@ -1,40 +1,46 @@
 import SwiftUI
 
 enum AppTheme {
-    static let linen = Color(red: 0.94, green: 0.89, blue: 0.81)
-    static let paper = Color(red: 1.0, green: 0.97, blue: 0.91)
-    static let ink = Color(red: 0.15, green: 0.14, blue: 0.11)
-    static let muted = Color(red: 0.44, green: 0.41, blue: 0.37)
-    static let sage = Color(red: 0.40, green: 0.48, blue: 0.37)
-    static let sageDark = Color(red: 0.25, green: 0.33, blue: 0.24)
-    static let clay = Color(red: 0.73, green: 0.39, blue: 0.25)
-    static let danger = Color(red: 0.62, green: 0.26, blue: 0.21)
+    static let linen = Color(red: 1.0, green: 0.89, blue: 0.88)
+    static let paper = Color(red: 1.0, green: 0.96, blue: 0.89)
+    static let blush = Color(red: 1.0, green: 0.82, blue: 0.82)
+    static let coral = Color(red: 1.0, green: 0.58, blue: 0.58)
+    static let ink = Color(red: 0.26, green: 0.15, blue: 0.16)
+    static let muted = Color(red: 0.46, green: 0.34, blue: 0.35)
+    static let sage = coral
+    static let sageDark = Color(red: 0.65, green: 0.30, blue: 0.32)
+    static let clay = coral
+    static let danger = Color(red: 0.78, green: 0.26, blue: 0.29)
 }
 
 struct ReadingDeskBackground: View {
     var body: some View {
         LinearGradient(
             colors: [
-                Color(red: 0.97, green: 0.93, blue: 0.86),
+                AppTheme.paper,
                 AppTheme.linen,
-                Color(red: 0.93, green: 0.90, blue: 0.84)
+                AppTheme.paper
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
         .overlay(alignment: .topLeading) {
-            Circle()
-                .fill(AppTheme.clay.opacity(0.16))
-                .frame(width: 260, height: 260)
-                .blur(radius: 18)
-                .offset(x: -100, y: -90)
+            LinearGradient(
+                colors: [AppTheme.linen.opacity(0.72), .clear],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .frame(width: 280, height: 220)
+            .offset(x: -60, y: -40)
         }
         .overlay(alignment: .topTrailing) {
-            Circle()
-                .fill(AppTheme.sage.opacity(0.14))
-                .frame(width: 230, height: 230)
-                .blur(radius: 20)
-                .offset(x: 90, y: -70)
+            LinearGradient(
+                colors: [AppTheme.blush.opacity(0.62), .clear],
+                startPoint: .topTrailing,
+                endPoint: .bottomLeading
+            )
+            .frame(width: 260, height: 220)
+            .offset(x: 60, y: -36)
         }
         .ignoresSafeArea()
     }
@@ -47,9 +53,9 @@ struct ReadingCard: ViewModifier {
             .background(AppTheme.paper.opacity(0.88), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
+                    .stroke(AppTheme.coral.opacity(0.18), lineWidth: 1)
             }
-            .shadow(color: AppTheme.ink.opacity(0.08), radius: 22, x: 0, y: 12)
+            .shadow(color: AppTheme.sageDark.opacity(0.12), radius: 22, x: 0, y: 12)
     }
 }
 

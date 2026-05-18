@@ -39,8 +39,10 @@ struct ReviewListView: View {
 
                     if let card = currentQuizCard {
                         quizCard(card)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                     } else {
                         startReviewCard
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
 
                     if let summary = sessionSummary {
@@ -55,6 +57,8 @@ struct ReviewListView: View {
             }
         }
         .navigationTitle("Start Review")
+        .animation(.easeOut(duration: 0.28), value: isSessionActive)
+        .animation(.easeOut(duration: 0.28), value: sessionIndex)
     }
 
     @ViewBuilder
@@ -151,17 +155,22 @@ struct ReviewListView: View {
                     .textCase(.uppercase)
                     .foregroundStyle(AppTheme.sageDark)
                 Text(quizCard.card.item.term)
-                    .font(.system(size: 46, weight: .semibold, design: .serif))
+                    .font(.system(size: 46, weight: .regular, design: .rounded))
                     .foregroundStyle(AppTheme.ink)
+                    .tracking(0)
                 Text("Choose the correct meaning.")
                     .readingMuted()
             }
+            .id("prompt-\(quizCard.card.item.id)")
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
 
             VStack(spacing: 10) {
                 ForEach(Array(quizCard.options.enumerated()), id: \.element.id) { index, option in
                     answerOptionButton(option, index: index)
                 }
             }
+            .id("options-\(quizCard.card.item.id)")
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
 
             quizFeedback(for: quizCard)
 
@@ -181,9 +190,9 @@ struct ReviewListView: View {
         .background(AppTheme.paper.opacity(0.94), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
+                .stroke(AppTheme.coral.opacity(0.18), lineWidth: 1)
         }
-        .shadow(color: AppTheme.ink.opacity(0.1), radius: 24, x: 0, y: 14)
+        .shadow(color: AppTheme.sageDark.opacity(0.12), radius: 24, x: 0, y: 14)
     }
 
     private func answerOptionButton(_ option: QuizOption, index: Int) -> some View {
@@ -197,7 +206,7 @@ struct ReviewListView: View {
             HStack(alignment: .top, spacing: 12) {
                 Text(String(UnicodeScalar(65 + index)!))
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(AppTheme.paper)
+                    .foregroundStyle(AppTheme.ink)
                     .frame(width: 28, height: 28)
                     .background(optionBadgeColor(showCorrect: showCorrect, showWrong: showWrong), in: Circle())
                 Text(option.text)
@@ -215,6 +224,8 @@ struct ReviewListView: View {
         }
         .buttonStyle(.plain)
         .disabled(!selectedOptionID.isEmpty || sessionStore.isGrading)
+        .scaleEffect(isSelected ? 0.985 : 1)
+        .animation(.easeOut(duration: 0.16), value: selectedOptionID)
     }
 
     private func quizFeedback(for quizCard: QuizCard) -> some View {
@@ -261,21 +272,21 @@ struct ReviewListView: View {
     }
 
     private func optionBackground(showCorrect: Bool, showWrong: Bool) -> Color {
-        if showCorrect { return AppTheme.sage.opacity(0.18) }
+        if showCorrect { return AppTheme.blush.opacity(0.42) }
         if showWrong { return AppTheme.danger.opacity(0.12) }
         return AppTheme.paper.opacity(0.82)
     }
 
     private func optionBorder(showCorrect: Bool, showWrong: Bool) -> Color {
-        if showCorrect { return AppTheme.sage.opacity(0.45) }
+        if showCorrect { return AppTheme.sageDark.opacity(0.35) }
         if showWrong { return AppTheme.danger.opacity(0.45) }
-        return AppTheme.ink.opacity(0.08)
+        return AppTheme.coral.opacity(0.18)
     }
 
     private func optionBadgeColor(showCorrect: Bool, showWrong: Bool) -> Color {
-        if showCorrect { return AppTheme.sage }
+        if showCorrect { return AppTheme.coral }
         if showWrong { return AppTheme.danger }
-        return AppTheme.muted
+        return AppTheme.blush
     }
 
     private func startReviewSession() async {
@@ -295,13 +306,15 @@ struct ReviewListView: View {
             return
         }
 
-        sessionDeck = deck
-        sessionIndex = 0
-        selectedOptionID = ""
-        correctCount = 0
-        wrongCount = 0
-        pendingNextDue = ""
-        sessionSummary = nil
+        withAnimation(.easeOut(duration: 0.28)) {
+            sessionDeck = deck
+            sessionIndex = 0
+            selectedOptionID = ""
+            correctCount = 0
+            wrongCount = 0
+            pendingNextDue = ""
+            sessionSummary = nil
+        }
         sessionStore.clearError()
     }
 
@@ -334,16 +347,20 @@ struct ReviewListView: View {
             return
         }
 
-        sessionIndex = reviewed
-        selectedOptionID = ""
-        pendingNextDue = ""
+        withAnimation(.easeOut(duration: 0.24)) {
+            sessionIndex = reviewed
+            selectedOptionID = ""
+            pendingNextDue = ""
+        }
     }
 
     private func endReviewSession() {
-        sessionDeck = []
-        sessionIndex = 0
-        selectedOptionID = ""
-        pendingNextDue = ""
+        withAnimation(.easeOut(duration: 0.24)) {
+            sessionDeck = []
+            sessionIndex = 0
+            selectedOptionID = ""
+            pendingNextDue = ""
+        }
     }
 
     private func formattedDate(_ value: String) -> String {
