@@ -658,12 +658,12 @@ export function App() {
                 <div className="session-progress" aria-label={`${sessionProgress}% complete`}>
                   <span style={{ width: `${sessionProgress}%` }} />
                 </div>
-                <div className="session-prompt">
+                <div className="session-prompt" key={`prompt-${currentQuizCard.card.item.id}`}>
                   <p className="eyebrow">Word</p>
                   <h3>{currentQuizCard.card.item.term}</h3>
                   <small>Choose the correct meaning.</small>
                 </div>
-                <div className="answer-options" aria-label="Meaning choices">
+                <div className="answer-options" aria-label="Meaning choices" key={`options-${currentQuizCard.card.item.id}`}>
                   {currentQuizCard.options.map((option, index) => {
                     const isSelected = selectedOptionID === option.id;
                     const showCorrect = Boolean(selectedOptionID) && option.isCorrect;
@@ -862,7 +862,7 @@ export function App() {
               />
             </div>
 
-            <div className="library">
+            <div className="library" key={`library-${libraryPage}-${query}`}>
               {paginatedVocab.map(({ item, state }) => (
                 <article className={editingID === item.id ? "library-card editing" : "library-card"} key={item.id}>
                   {editingID === item.id ? (

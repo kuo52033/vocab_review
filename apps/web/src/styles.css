@@ -24,6 +24,8 @@
   --success: #8d5a35;
   --shadow-neon: 0 16px 46px rgba(128, 70, 72, 0.14), 0 2px 10px rgba(255, 148, 148, 0.18);
   --shadow-warm: 0 18px 54px rgba(128, 70, 72, 0.16), 0 2px 12px rgba(255, 209, 209, 0.24);
+  --ease-polished: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-press: cubic-bezier(0.34, 1.56, 0.64, 1);
   --font-display: "Arial Rounded MT Bold", "SF Pro Rounded", "Avenir Next", sans-serif;
   --font-body: "Arial Rounded MT Bold", "SF Pro Rounded", "Avenir Next", sans-serif;
   --font-ui: "Arial Rounded MT Bold", "SF Pro Rounded", "Avenir Next", sans-serif;
@@ -213,7 +215,7 @@ button {
 .topbar,
 .section-stage,
 .page-panel {
-  animation: surface-in 520ms cubic-bezier(0.19, 1, 0.22, 1) both;
+  animation: surface-in 560ms var(--ease-polished) both;
 }
 
 .section-stage {
@@ -589,6 +591,8 @@ textarea {
 }
 
 button {
+  position: relative;
+  overflow: hidden;
   width: 100%;
   border: 0;
   border-radius: 18px;
@@ -596,13 +600,36 @@ button {
   color: #08101a;
   background: linear-gradient(135deg, var(--mint), var(--cyan));
   box-shadow: 0 0 14px rgba(125, 219, 231, 0.2), 0 12px 34px rgba(0, 0, 0, 0.2);
-  transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease, background 150ms ease;
+  transition: transform 180ms var(--ease-polished), box-shadow 180ms var(--ease-polished), filter 180ms ease, background 180ms ease;
+  transform: translateZ(0);
+}
+
+button::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  opacity: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.58), transparent 54%);
+  transform: scale(0.72);
+  transition: opacity 260ms ease, transform 260ms var(--ease-polished);
 }
 
 button:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 0 22px rgba(125, 219, 231, 0.28), 0 16px 44px rgba(0, 0, 0, 0.26);
   filter: saturate(1.12);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0) scale(0.985);
+  transition-duration: 90ms;
+}
+
+button:active:not(:disabled)::after {
+  opacity: 0.34;
+  transform: scale(1);
+  transition-duration: 90ms;
 }
 
 button:disabled {
@@ -679,7 +706,7 @@ button:disabled {
 .capture-card,
 .library-card {
   transform-origin: 50% 12%;
-  animation: card-rise 560ms cubic-bezier(0.19, 1, 0.22, 1) both;
+  animation: card-rise 560ms var(--ease-polished) both;
 }
 
 .capture-card:nth-child(2),
@@ -852,6 +879,7 @@ button:disabled {
   align-content: center;
   gap: 10px;
   text-align: center;
+  animation: content-shift 360ms var(--ease-polished) both;
 }
 
 .session-prompt .eyebrow {
@@ -861,6 +889,9 @@ button:disabled {
 
 .session-prompt h3 {
   color: var(--ink);
+  font-size: clamp(2.7rem, 6.2vw, 5.05rem);
+  font-weight: 700;
+  letter-spacing: 0;
   text-shadow: 0 0 24px rgba(125, 219, 231, 0.14);
 }
 
@@ -868,6 +899,7 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+  animation: content-shift 420ms var(--ease-polished) both;
 }
 
 .answer-option {
@@ -886,6 +918,10 @@ button:disabled {
     radial-gradient(circle at 100% 0%, rgba(125, 219, 231, 0.08), transparent 42%);
   box-shadow: inset 0 0 0 1px rgba(255, 208, 138, 0.05);
   transform-origin: center;
+}
+
+.answer-option:hover:not(:disabled) {
+  transform: translateY(-2px);
 }
 
 .answer-option span {
@@ -909,7 +945,7 @@ button:disabled {
 
 .answer-option.selected {
   border-color: rgba(255, 200, 87, 0.72);
-  animation: answer-pop 260ms ease both;
+  animation: answer-pop 300ms var(--ease-press) both;
 }
 
 .answer-option.correct {
@@ -1164,6 +1200,7 @@ button:disabled {
 .library {
   display: grid;
   gap: 13px;
+  animation: content-shift 360ms var(--ease-polished) both;
 }
 
 .library-card {
@@ -1527,12 +1564,12 @@ a {
 @keyframes surface-in {
   from {
     opacity: 0;
-    transform: translateY(18px) rotateX(2deg);
+    transform: translateY(18px) scale(0.985);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0) rotateX(0);
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -1545,6 +1582,18 @@ a {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes content-shift {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -1593,7 +1642,7 @@ a {
   width: min(100%, 1156px);
   margin: 0 auto;
   padding: 5px 0;
-  animation: surface-in 420ms cubic-bezier(0.19, 1, 0.22, 1) both;
+  animation: surface-in 420ms var(--ease-polished) both;
 }
 
 .brand-button,
@@ -1824,7 +1873,7 @@ a {
 
 .quick-add.page-panel,
 .library-panel.page-panel {
-  animation: surface-in 420ms cubic-bezier(0.19, 1, 0.22, 1) both;
+  animation: surface-in 440ms var(--ease-polished) both;
 }
 
 @media (max-width: 760px) {
