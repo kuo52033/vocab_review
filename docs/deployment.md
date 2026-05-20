@@ -26,7 +26,7 @@ Create these GitHub Actions values before enabling deployment:
 - Variable `EC2_INSTANCE_ID`: target EC2 instance ID.
 - Variable `DEPLOY_DIR`: target directory on EC2, normally `/opt/vocab-review`.
 
-The deployment workflow runs on pushes to `main`.
+The deployment workflow runs on pushes to `master`.
 
 ## EC2 Requirements
 
@@ -94,13 +94,13 @@ Caddy serves `api.vocabreview.uk` and reverse-proxies traffic to the backend API
 
 ## Deploy Flow
 
-On push to `main`, `.github/workflows/deploy.yml`:
+On push to `master`, `.github/workflows/ci.yml`:
 
 1. Checks out the repository in GitHub Actions.
 2. Assumes the AWS role through GitHub OIDC.
 3. Logs in to ECR.
 4. Builds `backend/Dockerfile`.
-5. Tags the image as `main-${GITHUB_SHA::12}`.
+5. Tags the image as `master-${GITHUB_SHA::12}`.
 6. Pushes the image to ECR.
 7. Packages only the `deploy/` directory.
 8. Sends an SSM command to EC2 that:
