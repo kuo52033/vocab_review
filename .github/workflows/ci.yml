@@ -201,7 +201,7 @@ jobs:
             aws ssm send-command \
               --document-name AWS-RunShellScript \
               --instance-ids "$EC2_INSTANCE_ID" \
-              --comment "Deploy Vocab Review backend $BACKEND_IMAGE" \
+              --comment "Deploy Vocab Review ${{ steps.image.outputs.tag }}" \
               --parameters file://ssm-parameters.json \
               --query "Command.CommandId" \
               --output text
