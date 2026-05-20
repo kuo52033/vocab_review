@@ -43,6 +43,7 @@ Before archiving, confirm these App Store Connect and Apple Developer identifier
 - App group: `group.com.tim.VocabReview`
 
 Archive from Xcode with the Release configuration, then upload to App Store Connect and distribute through TestFlight.
+For an Xcode production smoke test before archiving, select the shared `VocabReview Beta` scheme and Run. The normal Debug run uses `http://localhost:8080`.
 The Release configuration reads:
 
 - `VOCAB_REVIEW_API_BASE_URL=https://api.vocabreview.uk`
