@@ -60,7 +60,7 @@
       queueDebuggingEnableBacktraceRecording = "Yes">
       <RemoteRunnable
          runnableDebuggingMode = "1"
-         BundleIdentifier = "com.example.VocabReview"
+         BundleIdentifier = "com.tim.VocabReview"
          RemotePath = "/Users/kuo52033/Library/Developer/CoreSimulator/Devices/383F65B1-2CB1-406C-BB00-6C456A920413/data/Containers/Bundle/Application/56338970-884C-457B-B6F4-44EE3250FDD1/VocabReview.app">
       </RemoteRunnable>
       <MacroExpansion>

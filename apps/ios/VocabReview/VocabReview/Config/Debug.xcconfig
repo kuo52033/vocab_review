@@ -1,0 +1,3 @@
+VOCAB_REVIEW_API_BASE_URL = http:/$()/localhost:8080
+VOCAB_REVIEW_APP_GROUP = group.com.tim.VocabReview
+IPHONEOS_DEPLOYMENT_TARGET = 17.0

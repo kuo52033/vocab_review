@@ -10,7 +10,7 @@ struct SharedQueuedCapture: Codable, Identifiable {
 }
 
 enum SharedCaptureQueue {
-    static let appGroupID = "group.com.example.VocabReview"
+    static let appGroupID = Bundle.main.object(forInfoDictionaryKey: "VocabReviewAppGroup") as? String ?? "group.com.tim.VocabReview"
     static let storageKey = "queuedSharedCaptures"
 
     static func load() -> [SharedQueuedCapture] {

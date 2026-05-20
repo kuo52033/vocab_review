@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Save English words and phrases into your review library.",
   "permissions": ["activeTab", "storage", "contextMenus"],
-  "host_permissions": ["http://localhost:8080/*"],
+  "host_permissions": ["__API_HOST_PERMISSION__"],
   "background": {
     "service_worker": "assets/background.js",
     "type": "module"

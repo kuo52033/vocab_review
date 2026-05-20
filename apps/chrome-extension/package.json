@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "vite build"
+    "build": "vite build",
+    "release": "VITE_API_URL=https://api.vocabreview.uk vite build --mode production && node scripts/package-extension.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

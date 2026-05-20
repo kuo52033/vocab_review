@@ -8,3 +8,5 @@ This SwiftUI shell covers:
 - notification permission request
 
 Open the folder in Xcode to generate the `.xcodeproj` settings and run it with your local backend.
+
+Release configuration is controlled by `VocabReview/Config/Release.xcconfig` and points beta builds at `https://api.vocabreview.uk`.

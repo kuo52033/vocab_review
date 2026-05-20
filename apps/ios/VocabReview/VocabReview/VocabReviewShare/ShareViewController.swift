@@ -2,7 +2,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 final class ShareViewController: UIViewController {
-    private let appGroupID = "group.com.example.VocabReview"
+    private let appGroupID = Bundle.main.object(forInfoDictionaryKey: "VocabReviewAppGroup") as? String ?? "group.com.tim.VocabReview"
     private let storageKey = "queuedSharedCaptures"
 
     override func viewDidLoad() {

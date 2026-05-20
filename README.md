@@ -47,10 +47,13 @@ npm run build
 ```
 
 Load the generated `dist/` directory as an unpacked extension in Chrome.
+For a private beta production package, run `npm run release:extension` from the repository root.
 
 ### iOS
 
 Open `apps/ios/VocabReview` in Xcode and run on an iPhone simulator or device.
+
+Private beta release notes for Chrome Web Store and TestFlight live in `docs/private-beta-release.md`.
 
 ## Notes
 

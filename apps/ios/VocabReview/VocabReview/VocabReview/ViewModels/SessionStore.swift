@@ -26,7 +26,7 @@ final class SessionStore: ObservableObject {
     @Published var isDeletingVocab: Bool = false
     @Published var isAutocompletingVocab: Bool = false
 
-    private let baseURL = URL(string: "http://localhost:8080")!
+    private let baseURL = AppEnvironment.apiBaseURL
     private let sessionTokenKey = "session_token"
     let libraryPageSize = 10
     let reviewHistoryPageSize = 21

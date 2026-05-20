@@ -30,7 +30,7 @@ type QueuedCapture = {
   created_at: string;
 };
 
-const API_URL = "http://localhost:8080";
+const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8080";
 const QUEUE_KEY = "queuedCaptures";
 const allowedPartsOfSpeech = new Set([
   "",
