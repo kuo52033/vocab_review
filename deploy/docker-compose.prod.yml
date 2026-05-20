@@ -1,0 +1,33 @@
+services:
+  api:
+    image: ${BACKEND_IMAGE}
+    env_file: .env.production
+    environment:
+      ADDR: ":8080"
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  migrate:
+    image: ${BACKEND_IMAGE}
+    env_file: .env.production
+    command: ["/app/goose", "-dir", "/app/migrations", "postgres", "${DATABASE_URL}", "up"]
+    profiles:
+      - tools
+
+  caddy:
+    image: caddy:2
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
