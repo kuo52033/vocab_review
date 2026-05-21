@@ -9,6 +9,9 @@ This SwiftUI shell covers:
 
 Open the folder in Xcode to generate the `.xcodeproj` settings and run it with your local backend.
 
-Release configuration is controlled by `VocabReview/Config/Release.xcconfig` and points beta builds at `https://api.vocabreview.uk`.
+The shared `VocabReview` scheme uses two environments:
 
-For production beta testing from Xcode, select the shared `VocabReview Beta` scheme. The default Debug run configuration points at `http://localhost:8080`, so it requires the local backend to be running and only works from the simulator, not a physical iPhone.
+- Run uses the Debug configuration from `VocabReview/Config/Debug.xcconfig` and points at `http://localhost:8080`.
+- Archive uses the Release configuration from `VocabReview/Config/Release.xcconfig` and points at `https://api.vocabreview.uk`.
+
+Debug/local runs require the local backend to be running and only work from the simulator unless your physical device can reach your Mac's backend address.

@@ -6,7 +6,7 @@ This checklist prepares the Chrome extension and iOS app for a one-person privat
 
 - Distribution: Chrome Web Store unlisted/private testing and TestFlight.
 - Authentication: keep the development token flow for this private beta.
-- API: beta clients point at `https://api.vocabreview.uk`.
+- API: production clients point at `https://api.vocabreview.uk`.
 - iOS capture: include the share extension.
 - iOS notifications: include local reminders only; real APNs push stays out of scope.
 - Privacy URL: `https://vocabreview.uk/privacy.html`.
@@ -42,8 +42,7 @@ Before archiving, confirm these App Store Connect and Apple Developer identifier
 - Share extension bundle ID: `com.tim.VocabReview.VocabReviewShare`
 - App group: `group.com.tim.VocabReview`
 
-Archive from Xcode with the Release configuration, then upload to App Store Connect and distribute through TestFlight.
-For an Xcode production smoke test before archiving, select the shared `VocabReview Beta` scheme and Run. The normal Debug run uses `http://localhost:8080`.
+Archive from Xcode with the `VocabReview` scheme. The scheme runs locally with Debug and archives for production with Release.
 The Release configuration reads:
 
 - `VOCAB_REVIEW_API_BASE_URL=https://api.vocabreview.uk`
