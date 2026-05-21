@@ -3,7 +3,7 @@
   "name": "Vocab Review Capture",
   "version": "0.1.0",
   "description": "Save English words and phrases into your review library.",
-  "permissions": ["activeTab", "storage", "contextMenus"],
+  "permissions": ["activeTab", "storage", "contextMenus", "scripting"],
   "host_permissions": ["__API_HOST_PERMISSION__"],
   "background": {
     "service_worker": "assets/background.js",
@@ -13,10 +13,5 @@
     "default_popup": "popup.html",
     "default_title": "Capture vocabulary"
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["assets/content.js"]
-    }
-  ]
+  "content_scripts": []
 }

@@ -81,6 +81,12 @@ type AutocompleteResult = AutocompleteItem & {
   error: string;
 };
 
+type SelectionSnapshot = {
+  selection: string;
+  title: string;
+  url: string;
+};
+
 function normalizePartOfSpeech(value: string) {
   const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
   if (allowedPartsOfSpeech.has(normalized)) return normalized;
@@ -102,7 +108,7 @@ function Popup() {
   useEffect(() => {
     chrome.storage.local.get(["draftSelection", "draftPageURL", "draftPageTitle", "sessionToken", "email", QUEUE_KEY], async (stored) => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      const response = tab.id ? await chrome.tabs.sendMessage(tab.id, { type: "GET_SELECTION" }).catch(() => null) : null;
+      const response = tab.id ? await getSelectionFromActiveTab(tab.id).catch(() => null) : null;
       const selection = stored.draftSelection || response?.selection || "";
 
       setDraft({
@@ -154,6 +160,18 @@ function Popup() {
       throw new Error(error.error ?? "Request failed");
     }
     return response.json();
+  }
+
+  async function getSelectionFromActiveTab(tabID: number): Promise<SelectionSnapshot | null> {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId: tabID },
+      func: () => ({
+        selection: window.getSelection()?.toString() ?? "",
+        title: document.title,
+        url: window.location.href
+      })
+    });
+    return result?.result ?? null;
   }
 
   async function handleRequestLink(event: FormEvent) {
