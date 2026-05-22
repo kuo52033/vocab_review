@@ -117,15 +117,7 @@ type CreateVocabInput struct {
 
 func (a *App) CreateVocab(ctx context.Context, userID string, input CreateVocabInput) (domain.VocabItem, domain.ReviewState, error) {
 	now := a.clock.Now()
-	card, err := intake.NewVocabCard(userID, intake.VocabInput{
-		Term:            input.Term,
-		Meaning:         input.Meaning,
-		ExampleSentence: input.ExampleSentence,
-		PartOfSpeech:    partOfSpeechValue(input.PartOfSpeech),
-		SourceText:      input.SourceText,
-		SourceURL:       input.SourceURL,
-		Notes:           input.Notes,
-	}, intake.IDs{
+	card, err := intake.NewVocabCard(userID, vocabInput(input), intake.IDs{
 		VocabItemID:       newID("voc"),
 		NotificationJobID: newID("job"),
 	}, now)
@@ -153,15 +145,15 @@ func (a *App) UpdateVocab(ctx context.Context, userID, id string, input CreateVo
 	if !ok || item.UserID != userID {
 		return domain.VocabItem{}, errors.New("vocab not found")
 	}
-	item.Term = strings.TrimSpace(defaultString(input.Term, item.Term))
-	item.Meaning = strings.TrimSpace(defaultString(input.Meaning, item.Meaning))
-	item.ExampleSentence = strings.TrimSpace(defaultString(input.ExampleSentence, item.ExampleSentence))
+	item.Term = updatedString(input.Term, item.Term)
+	item.Meaning = updatedString(input.Meaning, item.Meaning)
+	item.ExampleSentence = updatedString(input.ExampleSentence, item.ExampleSentence)
 	if input.PartOfSpeech != nil {
 		item.PartOfSpeech = *input.PartOfSpeech
 	}
-	item.SourceText = strings.TrimSpace(defaultString(input.SourceText, item.SourceText))
-	item.SourceURL = strings.TrimSpace(defaultString(input.SourceURL, item.SourceURL))
-	item.Notes = strings.TrimSpace(defaultString(input.Notes, item.Notes))
+	item.SourceText = updatedString(input.SourceText, item.SourceText)
+	item.SourceURL = updatedString(input.SourceURL, item.SourceURL)
+	item.Notes = updatedString(input.Notes, item.Notes)
 	item.UpdatedAt = a.clock.Now()
 	if err := a.store.UpdateVocab(ctx, item); err != nil {
 		return domain.VocabItem{}, err
@@ -188,9 +180,22 @@ func partOfSpeechValue(value *domain.PartOfSpeech) domain.PartOfSpeech {
 	return *value
 }
 
-func defaultString(next, current string) string {
-	if strings.TrimSpace(next) == "" {
-		return current
+func vocabInput(input CreateVocabInput) intake.VocabInput {
+	return intake.VocabInput{
+		Term:            input.Term,
+		Meaning:         input.Meaning,
+		ExampleSentence: input.ExampleSentence,
+		PartOfSpeech:    partOfSpeechValue(input.PartOfSpeech),
+		SourceText:      input.SourceText,
+		SourceURL:       input.SourceURL,
+		Notes:           input.Notes,
+	}
+}
+
+func updatedString(next, current string) string {
+	next = strings.TrimSpace(next)
+	if next == "" {
+		return strings.TrimSpace(current)
 	}
 	return next
 }
@@ -297,14 +302,7 @@ func (a *App) GradeReview(ctx context.Context, userID, vocabID string, grade dom
 	}
 	var job *domain.NotificationJob
 	if !next.NextDueAt.After(now) {
-		job = &domain.NotificationJob{
-			ID:          newID("job"),
-			UserID:      userID,
-			VocabItemID: vocabID,
-			ScheduledAt: now,
-			Status:      "pending",
-			Message:     "Time to review your vocabulary.",
-		}
+		job = reviewReminderJob(newID("job"), userID, vocabID, now)
 	}
 	if err := a.store.RecordReview(ctx, next, log, job); err != nil {
 		return domain.ReviewState{}, err
@@ -399,4 +397,15 @@ func (a *App) HealthCheck(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	return a.store.HealthCheck(ctx)
+}
+
+func reviewReminderJob(id, userID, vocabID string, scheduledAt time.Time) *domain.NotificationJob {
+	return &domain.NotificationJob{
+		ID:          id,
+		UserID:      userID,
+		VocabItemID: vocabID,
+		ScheduledAt: scheduledAt,
+		Status:      "pending",
+		Message:     "Time to review your vocabulary.",
+	}
 }
