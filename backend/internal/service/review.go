@@ -228,11 +228,12 @@ func (a *App) ListVocab(ctx context.Context, userID string, input ListVocabInput
 	if err != nil {
 		return VocabPage{}, err
 	}
-	result := make([]VocabWithState, 0, len(items))
-	for _, item := range items {
-		result = append(result, VocabWithState{Item: item.Item, State: item.State})
-	}
-	return VocabPage{Items: result, Total: total, Limit: input.Limit, Offset: input.Offset}, nil
+	return VocabPage{
+		Items:  vocabWithStates(items),
+		Total:  total,
+		Limit:  input.Limit,
+		Offset: input.Offset,
+	}, nil
 }
 
 type DueCard struct {
@@ -271,11 +272,7 @@ func (a *App) DueCards(ctx context.Context, userID string) ([]DueCard, error) {
 	if err != nil {
 		return nil, err
 	}
-	result := make([]DueCard, 0, len(states))
-	for _, state := range states {
-		result = append(result, DueCard{Item: state.Item, State: state.State})
-	}
-	return result, nil
+	return dueCards(states), nil
 }
 
 func (a *App) GradeReview(ctx context.Context, userID, vocabID string, grade domain.ReviewGrade) (domain.ReviewState, error) {
@@ -315,11 +312,12 @@ func (a *App) ReviewHistory(ctx context.Context, userID string, input PageInput)
 	if err != nil {
 		return ReviewHistoryPage{}, err
 	}
-	result := make([]ReviewHistoryEntry, 0, len(entries))
-	for _, entry := range entries {
-		result = append(result, ReviewHistoryEntry{Log: entry.Log, Item: entry.Item, State: entry.State})
-	}
-	return ReviewHistoryPage{Items: result, Total: total, Limit: input.Limit, Offset: input.Offset}, nil
+	return ReviewHistoryPage{
+		Items:  reviewHistoryEntries(entries),
+		Total:  total,
+		Limit:  input.Limit,
+		Offset: input.Offset,
+	}, nil
 }
 
 func (a *App) ReviewStats(ctx context.Context, userID string) (ReviewStats, error) {
@@ -397,6 +395,30 @@ func (a *App) HealthCheck(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	return a.store.HealthCheck(ctx)
+}
+
+func vocabWithStates(items []repository.VocabWithState) []VocabWithState {
+	result := make([]VocabWithState, 0, len(items))
+	for _, item := range items {
+		result = append(result, VocabWithState{Item: item.Item, State: item.State})
+	}
+	return result
+}
+
+func dueCards(items []repository.VocabWithState) []DueCard {
+	result := make([]DueCard, 0, len(items))
+	for _, item := range items {
+		result = append(result, DueCard{Item: item.Item, State: item.State})
+	}
+	return result
+}
+
+func reviewHistoryEntries(entries []repository.ReviewHistoryEntry) []ReviewHistoryEntry {
+	result := make([]ReviewHistoryEntry, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, ReviewHistoryEntry{Log: entry.Log, Item: entry.Item, State: entry.State})
+	}
+	return result
 }
 
 func reviewReminderJob(id, userID, vocabID string, scheduledAt time.Time) *domain.NotificationJob {
