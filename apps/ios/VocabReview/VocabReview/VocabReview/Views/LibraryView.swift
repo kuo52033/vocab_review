@@ -203,6 +203,10 @@ private struct LibraryCardRow: View {
                         }
                     }
 
+                    Text(card.item.chinese.isEmpty ? "Chinese not added yet." : card.item.chinese)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(AppTheme.clay)
+
                     if !card.item.example_sentence.isEmpty {
                         Text(card.item.example_sentence)
                             .font(.callout)

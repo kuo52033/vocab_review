@@ -57,6 +57,7 @@ type VocabRepository interface {
 	CreateVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, job *domain.NotificationJob) error
 	CreateCapturedVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, capture domain.CaptureSource, job *domain.NotificationJob) error
 	GetVocab(ctx context.Context, id string) (domain.VocabItem, bool, error)
+	GetActiveVocabByTerm(ctx context.Context, userID string, term string) (VocabWithState, bool, error)
 	UpdateVocab(ctx context.Context, item domain.VocabItem) error
 	ArchiveVocabForUser(ctx context.Context, userID string, vocabID string, archivedAt time.Time) (domain.VocabItem, error)
 	ListVocabByUser(ctx context.Context, userID string, options ListVocabOptions) ([]VocabWithState, int, error)

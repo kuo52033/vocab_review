@@ -171,6 +171,10 @@ struct BulkImportView: View {
                             Text(card.meaning)
                                 .foregroundStyle(AppTheme.ink)
                         }
+                        if !card.chinese.isEmpty {
+                            Text(card.chinese)
+                                .foregroundStyle(AppTheme.clay)
+                        }
                         if !card.exampleSentence.isEmpty {
                             Text(card.exampleSentence)
                                 .font(.footnote)
@@ -248,8 +252,9 @@ struct BulkImportView: View {
             return VocabDraftInput(
                 term: parts.indices.contains(0) ? parts[0] : "",
                 meaning: parts.indices.contains(1) ? parts[1] : "",
-                exampleSentence: parts.indices.contains(2) ? parts[2] : "",
-                partOfSpeech: parts.indices.contains(3) ? parts[3] : "",
+                chinese: parts.count >= 5 && parts.indices.contains(2) ? parts[2] : "",
+                exampleSentence: parts.count >= 5 && parts.indices.contains(3) ? parts[3] : (parts.indices.contains(2) ? parts[2] : ""),
+                partOfSpeech: parts.count >= 5 && parts.indices.contains(4) ? parts[4] : (parts.indices.contains(3) ? parts[3] : ""),
                 notes: ""
             )
         }
@@ -270,6 +275,7 @@ struct BulkImportView: View {
                 var fields = [
                     card.term,
                     card.meaning,
+                    card.chinese,
                     card.exampleSentence,
                     card.partOfSpeech
                 ].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

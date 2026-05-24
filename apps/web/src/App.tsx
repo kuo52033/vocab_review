@@ -23,6 +23,7 @@ import {
 type CardDraft = {
   term: string;
   meaning: string;
+  chinese: string;
   example_sentence: string;
   notes: string;
 };
@@ -52,6 +53,7 @@ type QuizCard = {
 type ParsedImportCard = {
   term: string;
   meaning: string;
+  chinese: string;
   example_sentence: string;
   part_of_speech: string;
   error?: string;
@@ -77,6 +79,7 @@ const allowedPartsOfSpeech = new Set([
 const emptyForm: CardDraft = {
   term: "",
   meaning: "",
+  chinese: "",
   example_sentence: "",
   notes: ""
 };
@@ -96,6 +99,7 @@ function draftFromItem(item: VocabItem): CardDraft {
   return {
     term: item.term,
     meaning: item.meaning,
+    chinese: item.chinese,
     example_sentence: item.example_sentence,
     notes: item.notes
   };
@@ -112,8 +116,13 @@ function formatDate(value: string) {
 
 function parseImportLine(line: string): ParsedImportCard {
   if (line.includes("|")) {
-    const [term = "", meaning = "", example_sentence = "", part_of_speech = ""] = line.split("|").map((part) => part.trim());
-    return { term, meaning, example_sentence, part_of_speech };
+    const parts = line.split("|").map((part) => part.trim());
+    if (parts.length >= 5) {
+      const [term = "", meaning = "", chinese = "", example_sentence = "", part_of_speech = ""] = parts;
+      return { term, meaning, chinese, example_sentence, part_of_speech };
+    }
+    const [term = "", meaning = "", example_sentence = "", part_of_speech = ""] = parts;
+    return { term, meaning, chinese: "", example_sentence, part_of_speech };
   }
   const separators = [" - ", "\t", ": ", "："];
   for (const separator of separators) {
@@ -122,11 +131,12 @@ function parseImportLine(line: string): ParsedImportCard {
     return {
       term: line.slice(0, index).trim(),
       meaning: line.slice(index + separator.length).trim(),
+      chinese: "",
       example_sentence: "",
       part_of_speech: ""
     };
   }
-  return { term: line.trim(), meaning: "", example_sentence: "", part_of_speech: "" };
+  return { term: line.trim(), meaning: "", chinese: "", example_sentence: "", part_of_speech: "" };
 }
 
 function parseBulkImport(input: string) {
@@ -153,6 +163,10 @@ function shuffleItems<T>(items: T[]) {
 
 function answerText(item: VocabItem) {
   return item.meaning.trim();
+}
+
+function partOfSpeechLabel(item: VocabItem) {
+  return item.part_of_speech ? item.part_of_speech.replace(/_/g, " ") : "Word";
 }
 
 function buildQuizDeck(dueCards: VocabWithState[], candidates: VocabWithState[], limit: number): QuizCard[] {
@@ -223,6 +237,7 @@ function mergeAutocompleteResults(cards: ParsedImportCard[], results: Autocomple
     return {
       ...card,
       meaning: card.meaning || result.meaning || "",
+      chinese: card.chinese || result.chinese || "",
       example_sentence: card.example_sentence || result.example_sentence || "",
       part_of_speech: card.part_of_speech || partOfSpeech,
       error: result.error || undefined
@@ -236,6 +251,7 @@ function formatBulkImportCards(cards: ParsedImportCard[]) {
       const fields = [
         card.term,
         card.meaning,
+        card.chinese,
         card.example_sentence,
         card.part_of_speech
       ].map((value) => value.trim());
@@ -275,6 +291,8 @@ export function App() {
   const [pendingNextDue, setPendingNextDue] = useState("");
   const [lastCreatedTerm, setLastCreatedTerm] = useState("");
   const [lastImportCount, setLastImportCount] = useState(0);
+  const [lastSkippedDuplicateTerm, setLastSkippedDuplicateTerm] = useState("");
+  const [lastSkippedDuplicateCount, setLastSkippedDuplicateCount] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isStartingReview, setIsStartingReview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -371,11 +389,21 @@ export function App() {
     setIsSaving(true);
     try {
       const response = await createVocab(form);
+      if (response.skipped_duplicate) {
+        setLastCreatedTerm("");
+        setLastImportCount(0);
+        setLastSkippedDuplicateTerm(response.item.term);
+        setLastSkippedDuplicateCount(0);
+        setError("");
+        return;
+      }
       const createdCard = { item: response.item, state: response.state };
       setForm(emptyForm);
       applyCreatedCard(createdCard);
       setLastCreatedTerm(response.item.term);
       setLastImportCount(0);
+      setLastSkippedDuplicateTerm("");
+      setLastSkippedDuplicateCount(0);
       setError("");
       requestAnimationFrame(() => termInputRef.current?.focus());
     } catch (err) {
@@ -391,15 +419,21 @@ export function App() {
 
     setIsSaving(true);
     let importedCount = 0;
+    let skippedCount = 0;
     try {
       for (const card of parsedImportCards) {
         const response = await createVocab({
           term: card.term,
           meaning: card.meaning,
+          chinese: card.chinese,
           example_sentence: card.example_sentence,
           part_of_speech: card.part_of_speech,
           notes: ""
         });
+        if (response.skipped_duplicate) {
+          skippedCount += 1;
+          continue;
+        }
         applyCreatedCard({ item: response.item, state: response.state });
         importedCount += 1;
       }
@@ -408,9 +442,12 @@ export function App() {
       setEnrichmentError("");
       setLastCreatedTerm("");
       setLastImportCount(importedCount);
+      setLastSkippedDuplicateTerm("");
+      setLastSkippedDuplicateCount(skippedCount);
       setError("");
     } catch (err) {
       setLastImportCount(importedCount);
+      setLastSkippedDuplicateCount(skippedCount);
       setError((err as Error).message);
     } finally {
       setIsSaving(false);
@@ -425,9 +462,10 @@ export function App() {
     setIsEnriching(true);
     setEnrichmentError("");
     try {
-      const items: AutocompleteItem[] = cards.map(({ term, meaning, example_sentence, part_of_speech }) => ({
+      const items: AutocompleteItem[] = cards.map(({ term, meaning, chinese, example_sentence, part_of_speech }) => ({
         term,
         meaning,
+        chinese,
         example_sentence,
         part_of_speech
       }));
@@ -538,9 +576,6 @@ export function App() {
       await refresh();
       setPendingNextDue(response.state.next_due_at);
       setError("");
-      if (option.isCorrect) {
-        completeOrAdvanceQuiz(reviewed, correct, wrong, response.state.next_due_at);
-      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -659,9 +694,8 @@ export function App() {
                   <span style={{ width: `${sessionProgress}%` }} />
                 </div>
                 <div className="session-prompt" key={`prompt-${currentQuizCard.card.item.id}`}>
-                  <p className="eyebrow">Word</p>
+                  <p className="eyebrow">{partOfSpeechLabel(currentQuizCard.card.item)}</p>
                   <h3>{currentQuizCard.card.item.term}</h3>
-                  <small>Choose the correct meaning.</small>
                 </div>
                 <div className="answer-options" aria-label="Meaning choices" key={`options-${currentQuizCard.card.item.id}`}>
                   {currentQuizCard.options.map((option, index) => {
@@ -687,6 +721,33 @@ export function App() {
                     );
                   })}
                 </div>
+                {selectedOptionID ? (
+                  <div className={`quiz-result ${currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? "correct" : "wrong"}`}>
+                    <div className="quiz-result-badge" aria-hidden="true">
+                      {currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? "✓" : "!"}
+                    </div>
+                    <div>
+                      <strong>
+                        {currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? "Correct" : "Review again"}
+                      </strong>
+                      {currentQuizCard.card.item.chinese.trim() ? (
+                        <span>Chinese: {currentQuizCard.card.item.chinese}</span>
+                      ) : null}
+                      {currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? (
+                        currentQuizCard.card.item.example_sentence.trim() ? (
+                          <small>{currentQuizCard.card.item.example_sentence}</small>
+                        ) : null
+                      ) : (
+                        <>
+                          <small>Correct answer: {answerText(currentQuizCard.card.item)}</small>
+                          {currentQuizCard.card.item.example_sentence.trim() ? (
+                            <small>{currentQuizCard.card.item.example_sentence}</small>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
                 {selectedOptionID ? (
                   <button type="button" className="next-card-button" onClick={advanceQuizCard} disabled={isGrading}>
                     {sessionIndex + 1 >= sessionDeck.length ? "Show summary" : "Next word"}
@@ -769,6 +830,10 @@ export function App() {
                   <textarea value={form.meaning} placeholder="Short definition" onChange={(event) => setForm({ ...form, meaning: event.target.value })} />
                 </label>
                 <label className="field-label">
+                  <span>Chinese</span>
+                  <textarea value={form.chinese} placeholder="中文意思" onChange={(event) => setForm({ ...form, chinese: event.target.value })} />
+                </label>
+                <label className="field-label">
                   <span>Example sentence</span>
                   <textarea
                     value={form.example_sentence}
@@ -787,6 +852,7 @@ export function App() {
                 </button>
               </div>
               {lastCreatedTerm ? <p className="save-confirmation">Saved "{lastCreatedTerm}". Ready for the next one.</p> : null}
+              {lastSkippedDuplicateTerm ? <p className="save-confirmation skipped">Skipped duplicate "{lastSkippedDuplicateTerm}".</p> : null}
             </form>
 
             <form className="capture-card bulk-import" onSubmit={handleBulkImport}>
@@ -818,6 +884,7 @@ export function App() {
                       <strong>{card.term}</strong>
                       {card.part_of_speech ? <span className="pos-pill">{card.part_of_speech}</span> : null}
                       <span>{card.meaning || "Meaning can be added later."}</span>
+                      {card.chinese ? <span>{card.chinese}</span> : null}
                       {card.example_sentence ? <span>{card.example_sentence}</span> : null}
                       {card.error ? <span className="form-error">{card.error}</span> : null}
                     </article>
@@ -834,6 +901,12 @@ export function App() {
               {lastImportCount ? (
                 <p className="save-confirmation">
                   Imported {lastImportCount} card{lastImportCount === 1 ? "" : "s"}.
+                  {lastSkippedDuplicateCount ? ` Skipped ${lastSkippedDuplicateCount} duplicate${lastSkippedDuplicateCount === 1 ? "" : "s"}.` : ""}
+                </p>
+              ) : null}
+              {!lastImportCount && lastSkippedDuplicateCount ? (
+                <p className="save-confirmation skipped">
+                  Skipped {lastSkippedDuplicateCount} duplicate{lastSkippedDuplicateCount === 1 ? "" : "s"}.
                 </p>
               ) : null}
             </form>
@@ -876,6 +949,10 @@ export function App() {
                         <textarea value={editDraft.meaning} onChange={(event) => setEditDraft({ ...editDraft, meaning: event.target.value })} />
                       </label>
                       <label className="field-label">
+                        <span>Chinese</span>
+                        <textarea value={editDraft.chinese} onChange={(event) => setEditDraft({ ...editDraft, chinese: event.target.value })} />
+                      </label>
+                      <label className="field-label">
                         <span>Example sentence</span>
                         <textarea
                           value={editDraft.example_sentence}
@@ -899,6 +976,7 @@ export function App() {
                           <span className="part-of-speech-chip">{item.part_of_speech ? item.part_of_speech.replace(/_/g, " ") : "No part of speech"}</span>
                         </div>
                         <p>{item.meaning || "Meaning not added yet."}</p>
+                        <p className="chinese-line">{item.chinese || "Chinese not added yet."}</p>
                         {item.example_sentence ? <small>{item.example_sentence}</small> : null}
                         {item.notes ? <small className="notes">Notes: {item.notes}</small> : null}
                       </div>

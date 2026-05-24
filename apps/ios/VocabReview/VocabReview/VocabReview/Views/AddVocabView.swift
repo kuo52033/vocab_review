@@ -7,6 +7,7 @@ struct AddVocabView: View {
     @FocusState private var focusedField: Field?
     @State private var term = ""
     @State private var meaning = ""
+    @State private var chinese = ""
     @State private var exampleSentence = ""
     @State private var notes = ""
     @State private var lastSavedTerm = ""
@@ -19,6 +20,7 @@ struct AddVocabView: View {
         self.existingItem = item
         _term = State(initialValue: item?.term ?? "")
         _meaning = State(initialValue: item?.meaning ?? "")
+        _chinese = State(initialValue: item?.chinese ?? "")
         _exampleSentence = State(initialValue: item?.example_sentence ?? "")
         _notes = State(initialValue: item?.notes ?? "")
     }
@@ -60,14 +62,24 @@ struct AddVocabView: View {
                                 }
 
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text("Example sentence")
+                                    Text("Chinese")
                                         .font(.caption.weight(.bold))
                                         .textCase(.uppercase)
                                         .foregroundStyle(AppTheme.sageDark)
-                                    TextField("Use it in context", text: $exampleSentence, axis: .vertical)
+                                    TextField("中文意思", text: $chinese, axis: .vertical)
                                         .lineLimit(2...4)
                                         .textFieldStyle(.roundedBorder)
                                 }
+                            }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Example sentence")
+                                    .font(.caption.weight(.bold))
+                                    .textCase(.uppercase)
+                                    .foregroundStyle(AppTheme.sageDark)
+                                TextField("Use it in context", text: $exampleSentence, axis: .vertical)
+                                    .lineLimit(2...4)
+                                    .textFieldStyle(.roundedBorder)
                             }
 
                             Text("Notes")
@@ -142,6 +154,7 @@ struct AddVocabView: View {
                 cardID: existingItem.id,
                 term: term,
                 meaning: meaning,
+                chinese: chinese,
                 exampleSentence: exampleSentence,
                 notes: notes
             )
@@ -149,6 +162,7 @@ struct AddVocabView: View {
             saved = await sessionStore.createVocab(
                 term: term,
                 meaning: meaning,
+                chinese: chinese,
                 exampleSentence: exampleSentence,
                 notes: notes
             )
@@ -163,6 +177,7 @@ struct AddVocabView: View {
         let saved = await sessionStore.createVocab(
             term: term,
             meaning: meaning,
+            chinese: chinese,
             exampleSentence: exampleSentence,
             notes: notes
         )
@@ -170,6 +185,7 @@ struct AddVocabView: View {
         lastSavedTerm = savedTerm
         term = ""
         meaning = ""
+        chinese = ""
         exampleSentence = ""
         notes = ""
         focusedField = .term

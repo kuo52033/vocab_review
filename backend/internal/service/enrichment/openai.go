@@ -59,11 +59,11 @@ func (p *OpenAIProvider) Complete(ctx context.Context, items []Item) ([]Suggesti
 		Messages: []openAIMessage{
 			{
 				Role:    "system",
-				Content: "Return strict JSON only. Allowed part_of_speech values: noun, verb, adjective, adverb, phrase, idiom, phrasal_verb, preposition, conjunction, interjection, determiner, pronoun, other.",
+				Content: "Return strict JSON only. Fill chinese with a concise Traditional Chinese translation or meaning. Allowed part_of_speech values: noun, verb, adjective, adverb, phrase, idiom, phrasal_verb, preposition, conjunction, interjection, determiner, pronoun, other.",
 			},
 			{
 				Role:    "user",
-				Content: fmt.Sprintf("Fill missing vocabulary details for these items, preserving order: %s\nReturn JSON exactly matching this shape: {\"items\":[{\"term\":\"\",\"meaning\":\"\",\"example_sentence\":\"\",\"part_of_speech\":\"\",\"error\":\"\"}]}", itemJSON),
+				Content: fmt.Sprintf("Fill missing vocabulary details for these items, preserving order: %s\nReturn JSON exactly matching this shape: {\"items\":[{\"term\":\"\",\"meaning\":\"\",\"chinese\":\"\",\"example_sentence\":\"\",\"part_of_speech\":\"\",\"error\":\"\"}]}", itemJSON),
 			},
 		},
 		ResponseFormat: map[string]string{"type": "json_object"},

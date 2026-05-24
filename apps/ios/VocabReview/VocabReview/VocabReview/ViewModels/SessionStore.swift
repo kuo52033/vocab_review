@@ -242,6 +242,7 @@ final class SessionStore: ObservableObject {
     func createVocab(
         term: String,
         meaning: String,
+        chinese: String,
         exampleSentence: String,
         notes: String
     ) async -> Bool {
@@ -249,6 +250,7 @@ final class SessionStore: ObservableObject {
             VocabDraftInput(
                 term: term,
                 meaning: meaning,
+                chinese: chinese,
                 exampleSentence: exampleSentence,
                 notes: notes
             )
@@ -275,6 +277,7 @@ final class SessionStore: ObservableObject {
                 body: CreateVocabRequest(
                     term: trimmedTerm,
                     meaning: draft.meaning.trimmingCharacters(in: .whitespacesAndNewlines),
+                    chinese: draft.chinese.trimmingCharacters(in: .whitespacesAndNewlines),
                     example_sentence: draft.exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
                     part_of_speech: draft.partOfSpeech.trimmingCharacters(in: .whitespacesAndNewlines),
                     source_text: trimmedTerm,
@@ -282,6 +285,11 @@ final class SessionStore: ObservableObject {
                     notes: draft.notes.trimmingCharacters(in: .whitespacesAndNewlines)
                 )
             )
+            if response.skipped_duplicate == true {
+                infoMessage = "Skipped duplicate \"\(response.item.term)\"."
+                isCreatingVocab = false
+                return true
+            }
             infoMessage = "Card added."
             applyCreatedVocabCards([response])
             isCreatingVocab = false
@@ -301,6 +309,7 @@ final class SessionStore: ObservableObject {
                 VocabDraftInput(
                     term: $0.term.trimmingCharacters(in: .whitespacesAndNewlines),
                     meaning: $0.meaning.trimmingCharacters(in: .whitespacesAndNewlines),
+                    chinese: $0.chinese.trimmingCharacters(in: .whitespacesAndNewlines),
                     exampleSentence: $0.exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
                     partOfSpeech: $0.partOfSpeech.trimmingCharacters(in: .whitespacesAndNewlines),
                     notes: $0.notes.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -317,6 +326,7 @@ final class SessionStore: ObservableObject {
         errorMessage = ""
         infoMessage = ""
         var createdResponses: [CreateVocabResponse] = []
+        var skippedDuplicateCount = 0
 
         for draft in trimmedDrafts {
             do {
@@ -326,6 +336,7 @@ final class SessionStore: ObservableObject {
                     body: CreateVocabRequest(
                         term: draft.term,
                         meaning: draft.meaning,
+                        chinese: draft.chinese,
                         example_sentence: draft.exampleSentence,
                         part_of_speech: draft.partOfSpeech,
                         source_text: draft.term,
@@ -333,7 +344,11 @@ final class SessionStore: ObservableObject {
                         notes: draft.notes
                     )
                 )
-                createdResponses.append(response)
+                if response.skipped_duplicate == true {
+                    skippedDuplicateCount += 1
+                } else {
+                    createdResponses.append(response)
+                }
             } catch {
                 handleRequestError(error)
                 break
@@ -343,7 +358,10 @@ final class SessionStore: ObservableObject {
         applyCreatedVocabCards(createdResponses)
         let createdCount = createdResponses.count
         if createdCount > 0 {
-            infoMessage = "Imported \(createdCount) \(createdCount == 1 ? "card" : "cards")."
+            let skipped = skippedDuplicateCount > 0 ? " Skipped \(skippedDuplicateCount) duplicate\(skippedDuplicateCount == 1 ? "" : "s")." : ""
+            infoMessage = "Imported \(createdCount) \(createdCount == 1 ? "card" : "cards").\(skipped)"
+        } else if skippedDuplicateCount > 0 {
+            infoMessage = "Skipped \(skippedDuplicateCount) duplicate\(skippedDuplicateCount == 1 ? "" : "s")."
         }
         isCreatingVocab = false
         return createdCount
@@ -353,6 +371,7 @@ final class SessionStore: ObservableObject {
         cardID: String,
         term: String,
         meaning: String,
+        chinese: String,
         exampleSentence: String,
         notes: String
     ) async -> Bool {
@@ -375,6 +394,7 @@ final class SessionStore: ObservableObject {
                 body: CreateVocabRequest(
                     term: trimmedTerm,
                     meaning: meaning.trimmingCharacters(in: .whitespacesAndNewlines),
+                    chinese: chinese.trimmingCharacters(in: .whitespacesAndNewlines),
                     example_sentence: exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
                     part_of_speech: "",
                     source_text: trimmedTerm,
@@ -425,6 +445,7 @@ final class SessionStore: ObservableObject {
                 VocabDraftInput(
                     term: $0.term.trimmingCharacters(in: .whitespacesAndNewlines),
                     meaning: $0.meaning.trimmingCharacters(in: .whitespacesAndNewlines),
+                    chinese: $0.chinese.trimmingCharacters(in: .whitespacesAndNewlines),
                     exampleSentence: $0.exampleSentence.trimmingCharacters(in: .whitespacesAndNewlines),
                     partOfSpeech: $0.partOfSpeech.trimmingCharacters(in: .whitespacesAndNewlines),
                     notes: $0.notes.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -450,6 +471,7 @@ final class SessionStore: ObservableObject {
                         AutocompleteVocabItem(
                             term: $0.term,
                             meaning: $0.meaning,
+                            chinese: $0.chinese,
                             example_sentence: $0.exampleSentence,
                             part_of_speech: $0.partOfSpeech
                         )
@@ -631,6 +653,7 @@ final class SessionStore: ObservableObject {
             return VocabDraftInput(
                 term: card.term,
                 meaning: card.meaning.isEmpty ? suggestion.meaning : card.meaning,
+                chinese: card.chinese.isEmpty ? suggestion.chinese : card.chinese,
                 exampleSentence: card.exampleSentence.isEmpty ? suggestion.example_sentence : card.exampleSentence,
                 partOfSpeech: card.partOfSpeech.isEmpty ? normalizedPartOfSpeech(suggestion.part_of_speech) : card.partOfSpeech,
                 notes: card.notes
@@ -651,7 +674,7 @@ final class SessionStore: ObservableObject {
         guard !responses.isEmpty else { return }
 
         let now = Date()
-        let cards = responses.map { DueCard(item: $0.item, state: $0.state) }
+        let cards = responses.filter { $0.skipped_duplicate != true }.map { DueCard(item: $0.item, state: $0.state) }
         let dueNowCards = cards.filter { $0.state.nextDueAtDate <= now }
 
         libraryCards.insert(contentsOf: cards, at: 0)

@@ -956,6 +956,11 @@ button:disabled {
   box-shadow: 0 0 20px rgba(139, 240, 180, 0.18);
 }
 
+.answer-option.correct span {
+  color: #061016;
+  background: linear-gradient(135deg, #8bf0b4, #c7ffe0);
+}
+
 .answer-option.wrong {
   border-color: rgba(255, 111, 125, 0.66);
   background:
@@ -967,6 +972,78 @@ button:disabled {
 .answer-option.wrong span {
   color: white;
   background: linear-gradient(135deg, var(--danger), var(--pink));
+}
+
+.quiz-result {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  border: 2px solid transparent;
+  border-radius: 22px;
+  padding: 16px 18px;
+  animation: answer-pop 300ms var(--ease-press) both;
+}
+
+.quiz-result.correct {
+  border-color: rgba(141, 90, 53, 0.34);
+  background:
+    linear-gradient(135deg, rgba(255, 250, 240, 0.96), rgba(238, 248, 226, 0.9)),
+    radial-gradient(circle at 100% 0%, rgba(141, 90, 53, 0.08), transparent 44%);
+  box-shadow: 0 14px 34px rgba(128, 70, 72, 0.1);
+}
+
+.quiz-result.wrong {
+  border-color: rgba(198, 66, 75, 0.62);
+  background:
+    linear-gradient(135deg, rgba(255, 236, 234, 0.98), rgba(255, 209, 209, 0.94)),
+    radial-gradient(circle at 100% 0%, rgba(198, 66, 75, 0.18), transparent 44%);
+  box-shadow: 0 14px 34px rgba(198, 66, 75, 0.14);
+}
+
+.quiz-result.wrong .quiz-result-badge {
+  color: #fffaf0;
+  background: linear-gradient(135deg, var(--danger), #ff7c88);
+}
+
+.quiz-result.wrong strong {
+  color: var(--danger);
+}
+
+.quiz-result-badge {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 16px;
+  color: var(--ink);
+  background: rgba(255, 209, 209, 0.74);
+  font-family: var(--font-ui);
+  font-size: 1.3rem;
+  font-weight: 900;
+}
+
+.quiz-result div:last-child {
+  display: grid;
+  gap: 5px;
+}
+
+.quiz-result strong {
+  color: var(--amber);
+  font-family: var(--font-ui);
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.quiz-result span {
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.quiz-result small {
+  color: var(--muted);
 }
 
 .next-card-button {
@@ -1075,6 +1152,12 @@ button:disabled {
   background: rgba(167, 242, 200, 0.08);
 }
 
+.save-confirmation.skipped {
+  border-color: rgba(255, 200, 87, 0.3);
+  color: var(--amber);
+  background: rgba(255, 200, 87, 0.08);
+}
+
 .bulk-textarea {
   min-height: 170px;
 }
@@ -1128,6 +1211,10 @@ button:disabled {
 .import-preview-card span {
   color: var(--muted);
   font-size: 0.92rem;
+}
+
+.chinese-line {
+  color: var(--amber);
 }
 
 .pos-pill {

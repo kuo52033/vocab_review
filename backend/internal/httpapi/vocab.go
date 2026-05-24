@@ -35,12 +35,16 @@ func (s *Server) handleCreateVocab(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	item, state, err := s.app.CreateVocab(r.Context(), userIDFromContext(r.Context()), req)
+	result, err := s.app.CreateVocab(r.Context(), userIDFromContext(r.Context()), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"item": item, "state": state})
+	status := http.StatusCreated
+	if !result.Created {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, result)
 }
 
 func (s *Server) handleAutocompleteVocab(w http.ResponseWriter, r *http.Request) {

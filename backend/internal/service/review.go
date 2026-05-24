@@ -108,6 +108,7 @@ func (a *App) Session(ctx context.Context, token string) (domain.Session, domain
 type CreateVocabInput struct {
 	Term            string               `json:"term"`
 	Meaning         string               `json:"meaning"`
+	Chinese         string               `json:"chinese"`
 	ExampleSentence string               `json:"example_sentence"`
 	PartOfSpeech    *domain.PartOfSpeech `json:"part_of_speech"`
 	SourceText      string               `json:"source_text"`
@@ -115,19 +116,43 @@ type CreateVocabInput struct {
 	Notes           string               `json:"notes"`
 }
 
-func (a *App) CreateVocab(ctx context.Context, userID string, input CreateVocabInput) (domain.VocabItem, domain.ReviewState, error) {
+type CreateVocabResult struct {
+	Item             domain.VocabItem   `json:"item"`
+	State            domain.ReviewState `json:"state"`
+	Created          bool               `json:"created"`
+	SkippedDuplicate bool               `json:"skipped_duplicate"`
+}
+
+func (a *App) CreateVocab(ctx context.Context, userID string, input CreateVocabInput) (CreateVocabResult, error) {
+	term := strings.TrimSpace(input.Term)
+	if term == "" {
+		return CreateVocabResult{}, errors.New("term is required")
+	}
+	existing, ok, err := a.store.GetActiveVocabByTerm(ctx, userID, term)
+	if err != nil {
+		return CreateVocabResult{}, err
+	}
+	if ok {
+		return CreateVocabResult{
+			Item:             existing.Item,
+			State:            existing.State,
+			Created:          false,
+			SkippedDuplicate: true,
+		}, nil
+	}
+
 	now := a.clock.Now()
 	card, err := intake.NewVocabCard(userID, vocabInput(input), intake.IDs{
 		VocabItemID:       newID("voc"),
 		NotificationJobID: newID("job"),
 	}, now)
 	if err != nil {
-		return domain.VocabItem{}, domain.ReviewState{}, err
+		return CreateVocabResult{}, err
 	}
 	if err := a.store.CreateVocab(ctx, card.Item, card.State, card.NotificationJob); err != nil {
-		return domain.VocabItem{}, domain.ReviewState{}, err
+		return CreateVocabResult{}, err
 	}
-	return card.Item, card.State, nil
+	return CreateVocabResult{Item: card.Item, State: card.State, Created: true}, nil
 }
 
 func (a *App) AutocompleteVocab(ctx context.Context, items []enrichment.Item) ([]enrichment.Suggestion, error) {
@@ -147,6 +172,7 @@ func (a *App) UpdateVocab(ctx context.Context, userID, id string, input CreateVo
 	}
 	item.Term = updatedString(input.Term, item.Term)
 	item.Meaning = updatedString(input.Meaning, item.Meaning)
+	item.Chinese = updatedString(input.Chinese, item.Chinese)
 	item.ExampleSentence = updatedString(input.ExampleSentence, item.ExampleSentence)
 	if input.PartOfSpeech != nil {
 		item.PartOfSpeech = *input.PartOfSpeech
@@ -184,6 +210,7 @@ func vocabInput(input CreateVocabInput) intake.VocabInput {
 	return intake.VocabInput{
 		Term:            input.Term,
 		Meaning:         input.Meaning,
+		Chinese:         input.Chinese,
 		ExampleSentence: input.ExampleSentence,
 		PartOfSpeech:    partOfSpeechValue(input.PartOfSpeech),
 		SourceText:      input.SourceText,
@@ -337,6 +364,7 @@ func (a *App) ReviewStats(ctx context.Context, userID string) (ReviewStats, erro
 type CaptureInput struct {
 	Term            string `json:"term"`
 	Meaning         string `json:"meaning"`
+	Chinese         string `json:"chinese"`
 	ExampleSentence string `json:"example_sentence"`
 	PartOfSpeech    string `json:"part_of_speech"`
 	Selection       string `json:"selection"`
@@ -350,6 +378,7 @@ func (a *App) CreateCapture(ctx context.Context, userID string, input CaptureInp
 	card, err := intake.NewCapturedCard(userID, intake.CaptureInput{
 		Term:            input.Term,
 		Meaning:         input.Meaning,
+		Chinese:         input.Chinese,
 		ExampleSentence: input.ExampleSentence,
 		PartOfSpeech:    domain.PartOfSpeech(strings.TrimSpace(input.PartOfSpeech)),
 		Selection:       input.Selection,

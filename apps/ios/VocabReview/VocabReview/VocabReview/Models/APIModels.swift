@@ -47,6 +47,8 @@ struct ReviewStats: Codable {
 struct CreateVocabResponse: Codable {
     let item: VocabItem
     let state: ReviewState
+    let created: Bool?
+    let skipped_duplicate: Bool?
 }
 
 struct UpdateVocabResponse: Codable {
@@ -81,6 +83,7 @@ struct VocabItem: Codable {
     let user_id: String
     let term: String
     let meaning: String
+    let chinese: String
     let example_sentence: String
     let part_of_speech: String
     let source_text: String
@@ -89,6 +92,39 @@ struct VocabItem: Codable {
     let created_at: String
     let updated_at: String
     let archived_at: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case user_id
+        case term
+        case meaning
+        case chinese
+        case example_sentence
+        case part_of_speech
+        case source_text
+        case source_url
+        case notes
+        case created_at
+        case updated_at
+        case archived_at
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        user_id = try container.decode(String.self, forKey: .user_id)
+        term = try container.decode(String.self, forKey: .term)
+        meaning = try container.decode(String.self, forKey: .meaning)
+        chinese = try container.decodeIfPresent(String.self, forKey: .chinese) ?? ""
+        example_sentence = try container.decode(String.self, forKey: .example_sentence)
+        part_of_speech = try container.decode(String.self, forKey: .part_of_speech)
+        source_text = try container.decode(String.self, forKey: .source_text)
+        source_url = try container.decode(String.self, forKey: .source_url)
+        notes = try container.decode(String.self, forKey: .notes)
+        created_at = try container.decode(String.self, forKey: .created_at)
+        updated_at = try container.decode(String.self, forKey: .updated_at)
+        archived_at = try container.decodeIfPresent(String.self, forKey: .archived_at)
+    }
 }
 
 struct ReviewState: Codable {
@@ -116,6 +152,7 @@ struct VerifyRequest: Codable {
 struct CreateVocabRequest: Codable {
     let term: String
     let meaning: String
+    let chinese: String
     let example_sentence: String
     let part_of_speech: String
     let source_text: String
@@ -126,13 +163,15 @@ struct CreateVocabRequest: Codable {
 struct VocabDraftInput {
     let term: String
     let meaning: String
+    let chinese: String
     let exampleSentence: String
     let partOfSpeech: String
     let notes: String
 
-    init(term: String, meaning: String, exampleSentence: String, partOfSpeech: String = "", notes: String) {
+    init(term: String, meaning: String, chinese: String = "", exampleSentence: String, partOfSpeech: String = "", notes: String) {
         self.term = term
         self.meaning = meaning
+        self.chinese = chinese
         self.exampleSentence = exampleSentence
         self.partOfSpeech = partOfSpeech
         self.notes = notes
@@ -152,6 +191,7 @@ struct AutocompleteVocabRequest: Codable {
 struct AutocompleteVocabItem: Codable {
     let term: String
     let meaning: String
+    let chinese: String
     let example_sentence: String
     let part_of_speech: String
 }
@@ -163,7 +203,27 @@ struct AutocompleteVocabResponse: Codable {
 struct AutocompleteVocabSuggestion: Codable {
     let term: String
     let meaning: String
+    let chinese: String
     let example_sentence: String
     let part_of_speech: String
     let error: String
+
+    enum CodingKeys: String, CodingKey {
+        case term
+        case meaning
+        case chinese
+        case example_sentence
+        case part_of_speech
+        case error
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        term = try container.decode(String.self, forKey: .term)
+        meaning = try container.decode(String.self, forKey: .meaning)
+        chinese = try container.decodeIfPresent(String.self, forKey: .chinese) ?? ""
+        example_sentence = try container.decode(String.self, forKey: .example_sentence)
+        part_of_speech = try container.decode(String.self, forKey: .part_of_speech)
+        error = try container.decode(String.self, forKey: .error)
+    }
 }

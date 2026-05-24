@@ -23,6 +23,7 @@ type IDs struct {
 type VocabInput struct {
 	Term            string
 	Meaning         string
+	Chinese         string
 	ExampleSentence string
 	PartOfSpeech    domain.PartOfSpeech
 	SourceText      string
@@ -33,6 +34,7 @@ type VocabInput struct {
 type CaptureInput struct {
 	Term            string
 	Meaning         string
+	Chinese         string
 	ExampleSentence string
 	PartOfSpeech    domain.PartOfSpeech
 	Selection       string
@@ -62,6 +64,7 @@ func NewVocabCard(userID string, input VocabInput, ids IDs, now time.Time) (Card
 		UserID:          userID,
 		Term:            term,
 		Meaning:         strings.TrimSpace(input.Meaning),
+		Chinese:         strings.TrimSpace(input.Chinese),
 		ExampleSentence: strings.TrimSpace(input.ExampleSentence),
 		PartOfSpeech:    input.PartOfSpeech,
 		SourceText:      strings.TrimSpace(input.SourceText),
@@ -83,6 +86,7 @@ func NewCapturedCard(userID string, input CaptureInput, ids IDs, now time.Time) 
 	card, err := NewVocabCard(userID, VocabInput{
 		Term:            input.Term,
 		Meaning:         input.Meaning,
+		Chinese:         input.Chinese,
 		ExampleSentence: input.ExampleSentence,
 		PartOfSpeech:    input.PartOfSpeech,
 		SourceText:      input.Selection,

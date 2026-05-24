@@ -19,6 +19,7 @@ var (
 type Item struct {
 	Term            string              `json:"term"`
 	Meaning         string              `json:"meaning"`
+	Chinese         string              `json:"chinese"`
 	ExampleSentence string              `json:"example_sentence"`
 	PartOfSpeech    domain.PartOfSpeech `json:"part_of_speech"`
 }
@@ -26,6 +27,7 @@ type Item struct {
 type Suggestion struct {
 	Term            string              `json:"term"`
 	Meaning         string              `json:"meaning"`
+	Chinese         string              `json:"chinese"`
 	ExampleSentence string              `json:"example_sentence"`
 	PartOfSpeech    domain.PartOfSpeech `json:"part_of_speech"`
 	Error           string              `json:"error"`
@@ -84,6 +86,7 @@ func (e *Enricher) validateItems(items []Item) ([]Item, error) {
 		normalized[i] = Item{
 			Term:            strings.TrimSpace(item.Term),
 			Meaning:         strings.TrimSpace(item.Meaning),
+			Chinese:         strings.TrimSpace(item.Chinese),
 			ExampleSentence: strings.TrimSpace(item.ExampleSentence),
 			PartOfSpeech:    item.PartOfSpeech,
 		}
@@ -98,12 +101,16 @@ func fillMissingFields(item Item, suggestion Suggestion) Suggestion {
 	result := Suggestion{
 		Term:            item.Term,
 		Meaning:         strings.TrimSpace(suggestion.Meaning),
+		Chinese:         strings.TrimSpace(suggestion.Chinese),
 		ExampleSentence: strings.TrimSpace(suggestion.ExampleSentence),
 		PartOfSpeech:    suggestion.PartOfSpeech,
 		Error:           suggestion.Error,
 	}
 	if item.Meaning != "" {
 		result.Meaning = item.Meaning
+	}
+	if item.Chinese != "" {
+		result.Chinese = item.Chinese
 	}
 	if item.ExampleSentence != "" {
 		result.ExampleSentence = item.ExampleSentence

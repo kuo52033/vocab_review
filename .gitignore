@@ -13,3 +13,4 @@ backend/data
 *.xcuserstate
 xcuserdata/
 .superpowers/
+.codegraph/

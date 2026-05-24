@@ -234,14 +234,48 @@ struct ReviewListView: View {
                 Text("Correct answers use easy. Wrong answers use again.")
                     .readingMuted()
             } else if quizCard.options.first(where: { $0.id == selectedOptionID })?.isCorrect == true {
-                Text("Correct. This card will move further out.")
-                    .foregroundStyle(AppTheme.sageDark)
+                resultBanner(
+                    title: "Correct",
+                    message: quizCard.card.item.chinese.isEmpty ? "Chinese translation not added yet." : "Chinese: \(quizCard.card.item.chinese)",
+                    detail: "This card will move further out.",
+                    isCorrect: true
+                )
             } else {
-                Text("Not this one. The card will return sooner.")
-                    .foregroundStyle(AppTheme.danger)
+                resultBanner(
+                    title: "Review again",
+                    message: quizCard.card.item.chinese.isEmpty ? "Chinese translation not added yet." : "Chinese: \(quizCard.card.item.chinese)",
+                    detail: "Correct answer: \(quizCard.card.item.meaning)",
+                    isCorrect: false
+                )
             }
         }
-        .font(.callout.weight(.semibold))
+    }
+
+    private func resultBanner(title: String, message: String, detail: String, isCorrect: Bool) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: isCorrect ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .font(.title2)
+                .foregroundStyle(isCorrect ? AppTheme.sageDark : AppTheme.danger)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(isCorrect ? AppTheme.sageDark : AppTheme.danger)
+                Text(message)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(AppTheme.ink)
+                Text(detail)
+                    .font(.footnote)
+                    .readingMuted()
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background((isCorrect ? AppTheme.sage.opacity(0.22) : AppTheme.danger.opacity(0.1)), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke((isCorrect ? AppTheme.sageDark : AppTheme.danger).opacity(0.42), lineWidth: 2)
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.98)))
     }
 
     private func sessionSummaryCard(_ summary: ReviewSessionSummary) -> some View {
@@ -329,9 +363,6 @@ struct ReviewListView: View {
         correctCount += option.isCorrect ? 1 : 0
         wrongCount += option.isCorrect ? 0 : 1
         pendingNextDue = nextDue
-        if option.isCorrect {
-            advanceQuizCard()
-        }
     }
 
     private func advanceQuizCard() {

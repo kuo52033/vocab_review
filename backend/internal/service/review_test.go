@@ -130,6 +130,20 @@ func (f *fakeRepository) ArchiveVocabForUser(_ context.Context, userID string, v
 	return item, nil
 }
 
+func (f *fakeRepository) GetActiveVocabByTerm(_ context.Context, userID string, term string) (repository.VocabWithState, bool, error) {
+	normalizedTerm := strings.ToLower(strings.TrimSpace(term))
+	for _, item := range f.vocab {
+		if item.UserID != userID || item.ArchivedAt != nil {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(item.Term)) != normalizedTerm {
+			continue
+		}
+		return repository.VocabWithState{Item: item, State: f.reviewStates[item.ID]}, true, nil
+	}
+	return repository.VocabWithState{}, false, nil
+}
+
 func (f *fakeRepository) ListVocabByUser(_ context.Context, userID string, options repository.ListVocabOptions) ([]repository.VocabWithState, int, error) {
 	items := make([]repository.VocabWithState, 0)
 	for _, item := range f.vocab {
@@ -397,11 +411,54 @@ func TestCreateVocabPassesCallerContextToRepository(t *testing.T) {
 	app := NewApp(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
 	ctx := context.WithValue(context.Background(), testContextKey{}, "request-context")
 
-	if _, _, err := app.CreateVocab(ctx, "usr_test", CreateVocabInput{Term: "serendipity"}); err != nil {
+	if _, err := app.CreateVocab(ctx, "usr_test", CreateVocabInput{Term: "serendipity"}); err != nil {
 		t.Fatalf("create vocab: %v", err)
 	}
 	if repo.seenContextValue != "request-context" {
 		t.Fatalf("repository context value: got %#v want request-context", repo.seenContextValue)
+	}
+}
+
+func TestCreateVocabSkipsDuplicateTerms(t *testing.T) {
+	repo := newFakeRepository()
+	app := NewApp(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
+	userID := "usr_test"
+
+	first, err := app.CreateVocab(context.Background(), userID, CreateVocabInput{
+		Term:    " Serendipity ",
+		Meaning: "a happy accident",
+		Chinese: "意外發現的美好事物",
+	})
+	if err != nil {
+		t.Fatalf("create first vocab: %v", err)
+	}
+	if !first.Created || first.SkippedDuplicate {
+		t.Fatalf("first result flags: %+v", first)
+	}
+
+	duplicate, err := app.CreateVocab(context.Background(), userID, CreateVocabInput{
+		Term:    "serendipity",
+		Meaning: "different",
+	})
+	if err != nil {
+		t.Fatalf("create duplicate vocab: %v", err)
+	}
+	if duplicate.Created || !duplicate.SkippedDuplicate {
+		t.Fatalf("duplicate result flags: %+v", duplicate)
+	}
+	if duplicate.Item.ID != first.Item.ID {
+		t.Fatalf("duplicate item ID: got %q want %q", duplicate.Item.ID, first.Item.ID)
+	}
+	if duplicate.Item.Chinese != "意外發現的美好事物" {
+		t.Fatalf("duplicate chinese: got %q", duplicate.Item.Chinese)
+	}
+
+	listed, err := app.ListVocab(context.Background(), userID, ListVocabInput{})
+	if err != nil {
+		t.Fatalf("list vocab: %v", err)
+	}
+	if listed.Total != 1 {
+		t.Fatalf("listed total: got %d want 1", listed.Total)
 	}
 }
 
@@ -415,7 +472,7 @@ func TestReviewScheduling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	item, _, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
+	result, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
 		Term:    "serendipity",
 		Meaning: "a happy accident",
 	})
@@ -423,7 +480,7 @@ func TestReviewScheduling(t *testing.T) {
 		t.Fatalf("create vocab: %v", err)
 	}
 
-	state, err := app.GradeReview(context.Background(), auth.User.ID, item.ID, domain.ReviewGradeGood)
+	state, err := app.GradeReview(context.Background(), auth.User.ID, result.Item.ID, domain.ReviewGradeGood)
 	if err != nil {
 		t.Fatalf("good review: %v", err)
 	}
@@ -431,7 +488,7 @@ func TestReviewScheduling(t *testing.T) {
 		t.Fatalf("expected interval 1, got %d", state.IntervalDays)
 	}
 
-	state, err = app.GradeReview(context.Background(), auth.User.ID, item.ID, domain.ReviewGradeEasy)
+	state, err = app.GradeReview(context.Background(), auth.User.ID, result.Item.ID, domain.ReviewGradeEasy)
 	if err != nil {
 		t.Fatalf("easy review: %v", err)
 	}
@@ -451,14 +508,14 @@ func TestReviewHistoryReturnsRecentReviewedCards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	item, _, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
+	result, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
 		Term:    "serendipity",
 		Meaning: "a happy accident",
 	})
 	if err != nil {
 		t.Fatalf("create vocab: %v", err)
 	}
-	if _, err := app.GradeReview(context.Background(), auth.User.ID, item.ID, domain.ReviewGradeGood); err != nil {
+	if _, err := app.GradeReview(context.Background(), auth.User.ID, result.Item.ID, domain.ReviewGradeGood); err != nil {
 		t.Fatalf("grade review: %v", err)
 	}
 
@@ -469,7 +526,7 @@ func TestReviewHistoryReturnsRecentReviewedCards(t *testing.T) {
 	if len(history.Items) != 1 || history.Total != 1 {
 		t.Fatalf("expected one history entry, got %+v", history)
 	}
-	if history.Items[0].Item.ID != item.ID || history.Items[0].Log.Grade != domain.ReviewGradeGood {
+	if history.Items[0].Item.ID != result.Item.ID || history.Items[0].Log.Grade != domain.ReviewGradeGood {
 		t.Fatalf("unexpected history entry: %+v", history.Items[0])
 	}
 }
@@ -485,24 +542,24 @@ func TestReviewStatsCountsProgressAndCards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	item, _, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
+	result, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
 		Term:    "serendipity",
 		Meaning: "a happy accident",
 	})
 	if err != nil {
 		t.Fatalf("create vocab: %v", err)
 	}
-	if _, err := app.GradeReview(context.Background(), auth.User.ID, item.ID, domain.ReviewGradeGood); err != nil {
+	if _, err := app.GradeReview(context.Background(), auth.User.ID, result.Item.ID, domain.ReviewGradeGood); err != nil {
 		t.Fatalf("grade review: %v", err)
 	}
-	archived, _, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
+	archivedResult, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
 		Term:    "ephemeral",
 		Meaning: "lasting briefly",
 	})
 	if err != nil {
 		t.Fatalf("create archived vocab: %v", err)
 	}
-	if _, err := app.ArchiveVocab(context.Background(), auth.User.ID, archived.ID); err != nil {
+	if _, err := app.ArchiveVocab(context.Background(), auth.User.ID, archivedResult.Item.ID); err != nil {
 		t.Fatalf("archive vocab: %v", err)
 	}
 
@@ -526,7 +583,7 @@ func TestArchiveVocabRemovesCardFromDueReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	item, _, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
+	result, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
 		Term:    "ephemeral",
 		Meaning: "lasting briefly",
 	})
@@ -542,7 +599,7 @@ func TestArchiveVocabRemovesCardFromDueReview(t *testing.T) {
 		t.Fatalf("expected one due card before archive, got %d", len(due))
 	}
 
-	archived, err := app.ArchiveVocab(context.Background(), auth.User.ID, item.ID)
+	archived, err := app.ArchiveVocab(context.Background(), auth.User.ID, result.Item.ID)
 	if err != nil {
 		t.Fatalf("archive vocab: %v", err)
 	}
@@ -579,7 +636,7 @@ func TestUpdateVocabClearsPartOfSpeech(t *testing.T) {
 	}
 
 	noun := domain.PartOfSpeechNoun
-	item, _, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
+	result, err := app.CreateVocab(context.Background(), auth.User.ID, CreateVocabInput{
 		Term:         "serendipity",
 		Meaning:      "a happy accident",
 		PartOfSpeech: &noun,
@@ -587,12 +644,12 @@ func TestUpdateVocabClearsPartOfSpeech(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create vocab: %v", err)
 	}
-	if item.PartOfSpeech != domain.PartOfSpeechNoun {
-		t.Fatalf("part of speech after create: got %q want %q", item.PartOfSpeech, domain.PartOfSpeechNoun)
+	if result.Item.PartOfSpeech != domain.PartOfSpeechNoun {
+		t.Fatalf("part of speech after create: got %q want %q", result.Item.PartOfSpeech, domain.PartOfSpeechNoun)
 	}
 
 	unspecified := domain.PartOfSpeechUnspecified
-	updated, err := app.UpdateVocab(context.Background(), auth.User.ID, item.ID, CreateVocabInput{
+	updated, err := app.UpdateVocab(context.Background(), auth.User.ID, result.Item.ID, CreateVocabInput{
 		PartOfSpeech: &unspecified,
 	})
 	if err != nil {

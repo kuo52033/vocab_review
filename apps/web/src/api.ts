@@ -13,6 +13,7 @@ export interface VocabItem {
   id: string;
   term: string;
   meaning: string;
+  chinese: string;
   example_sentence: string;
   part_of_speech: string;
   source_text: string;
@@ -26,6 +27,7 @@ export interface VocabItem {
 export interface AutocompleteItem {
   term: string;
   meaning: string;
+  chinese: string;
   example_sentence: string;
   part_of_speech: string;
 }
@@ -37,6 +39,13 @@ export interface AutocompleteResult extends AutocompleteItem {
 export interface VocabWithState {
   item: VocabItem;
   state: ReviewState;
+}
+
+export interface CreateVocabResponse {
+  item: VocabItem;
+  state: ReviewState;
+  created: boolean;
+  skipped_duplicate: boolean;
 }
 
 export interface ReviewStats {
@@ -117,7 +126,7 @@ export async function listVocab(params?: PageParams) {
 }
 
 export async function createVocab(payload: Partial<VocabItem>) {
-  return request<{ item: VocabItem; state: ReviewState }>("/vocab", {
+  return request<CreateVocabResponse>("/vocab", {
     method: "POST",
     body: JSON.stringify(payload)
   });

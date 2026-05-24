@@ -46,7 +46,7 @@ func (s *Store) CreateCapturedVocab(ctx context.Context, item domain.VocabItem, 
 func (s *Store) GetVocab(ctx context.Context, id string) (domain.VocabItem, bool, error) {
 	item, err := scanVocab(
 		s.pool.QueryRow(ctx, `
-			SELECT id, user_id, term, meaning, example_sentence, part_of_speech, source_text, source_url, notes, created_at, updated_at, archived_at
+			SELECT id, user_id, term, meaning, chinese, example_sentence, part_of_speech, source_text, source_url, notes, created_at, updated_at, archived_at
 			FROM vocab_items
 			WHERE id = $1
 		`, id),
@@ -60,20 +60,48 @@ func (s *Store) GetVocab(ctx context.Context, id string) (domain.VocabItem, bool
 	return item, true, nil
 }
 
+func (s *Store) GetActiveVocabByTerm(ctx context.Context, userID string, term string) (repository.VocabWithState, bool, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			v.id, v.user_id, v.term, v.meaning, v.chinese, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes, v.created_at, v.updated_at, v.archived_at,
+			r.vocab_item_id, r.user_id, r.status, r.ease_factor, r.interval_days, r.repetition_count, r.last_reviewed_at, r.next_due_at, r.consecutive_again
+		FROM vocab_items v
+		JOIN review_states r ON r.vocab_item_id = v.id
+		WHERE v.user_id = $1
+		  AND v.archived_at IS NULL
+		  AND lower(btrim(v.term)) = lower(btrim($2))
+		ORDER BY v.created_at DESC
+		LIMIT 1
+	`, userID, term)
+	if err != nil {
+		return repository.VocabWithState{}, false, err
+	}
+	defer rows.Close()
+	items, err := scanVocabWithStates(rows)
+	if err != nil {
+		return repository.VocabWithState{}, false, err
+	}
+	if len(items) == 0 {
+		return repository.VocabWithState{}, false, nil
+	}
+	return items[0], true, nil
+}
+
 func (s *Store) UpdateVocab(ctx context.Context, item domain.VocabItem) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE vocab_items
 		SET term = $2,
 		    meaning = $3,
-		    example_sentence = $4,
-		    part_of_speech = $5,
-		    source_text = $6,
-		    source_url = $7,
-		    notes = $8,
-		    updated_at = $9,
-		    archived_at = $10
+		    chinese = $4,
+		    example_sentence = $5,
+		    part_of_speech = $6,
+		    source_text = $7,
+		    source_url = $8,
+		    notes = $9,
+		    updated_at = $10,
+		    archived_at = $11
 		WHERE id = $1
-	`, item.ID, item.Term, item.Meaning, item.ExampleSentence, item.PartOfSpeech, item.SourceText, item.SourceURL, item.Notes, item.UpdatedAt.UTC(), nullableTime(item.ArchivedAt))
+	`, item.ID, item.Term, item.Meaning, item.Chinese, item.ExampleSentence, item.PartOfSpeech, item.SourceText, item.SourceURL, item.Notes, item.UpdatedAt.UTC(), nullableTime(item.ArchivedAt))
 	return err
 }
 
@@ -85,7 +113,7 @@ func (s *Store) ArchiveVocabForUser(ctx context.Context, userID string, vocabID 
 			    archived_at = $3
 			WHERE id = $1
 			  AND user_id = $2
-			RETURNING id, user_id, term, meaning, example_sentence, part_of_speech, source_text, source_url, notes, created_at, updated_at, archived_at
+			RETURNING id, user_id, term, meaning, chinese, example_sentence, part_of_speech, source_text, source_url, notes, created_at, updated_at, archived_at
 		`, vocabID, userID, archivedAt.UTC()),
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -112,6 +140,7 @@ func (s *Store) ListVocabByUser(ctx context.Context, userID string, options repo
 		    $3 = '%%'
 		    OR v.term ILIKE $3
 		    OR v.meaning ILIKE $3
+		    OR v.chinese ILIKE $3
 		    OR v.example_sentence ILIKE $3
 		    OR v.notes ILIKE $3
 		  )
@@ -121,7 +150,7 @@ func (s *Store) ListVocabByUser(ctx context.Context, userID string, options repo
 
 	rows, err := s.pool.Query(ctx, `
 		SELECT
-			v.id, v.user_id, v.term, v.meaning, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes, v.created_at, v.updated_at, v.archived_at,
+			v.id, v.user_id, v.term, v.meaning, v.chinese, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes, v.created_at, v.updated_at, v.archived_at,
 			r.vocab_item_id, r.user_id, r.status, r.ease_factor, r.interval_days, r.repetition_count, r.last_reviewed_at, r.next_due_at, r.consecutive_again
 		FROM vocab_items v
 		JOIN review_states r ON r.vocab_item_id = v.id
@@ -132,6 +161,7 @@ func (s *Store) ListVocabByUser(ctx context.Context, userID string, options repo
 		    $3 = '%%'
 		    OR v.term ILIKE $3
 		    OR v.meaning ILIKE $3
+		    OR v.chinese ILIKE $3
 		    OR v.example_sentence ILIKE $3
 		    OR v.notes ILIKE $3
 		  )

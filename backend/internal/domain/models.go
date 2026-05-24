@@ -62,6 +62,7 @@ type VocabItem struct {
 	UserID          string       `json:"user_id"`
 	Term            string       `json:"term"`
 	Meaning         string       `json:"meaning"`
+	Chinese         string       `json:"chinese"`
 	ExampleSentence string       `json:"example_sentence"`
 	PartOfSpeech    PartOfSpeech `json:"part_of_speech"`
 	SourceText      string       `json:"source_text"`
