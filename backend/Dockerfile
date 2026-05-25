@@ -7,7 +7,8 @@ RUN go mod download
 
 COPY backend/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/vocab-api ./cmd/api \
-    && CGO_ENABLED=0 GOOS=linux go build -o /out/vocab-notifications ./cmd/notifications
+    && CGO_ENABLED=0 GOOS=linux go build -o /out/vocab-notifications ./cmd/notifications \
+    && CGO_ENABLED=0 GOOS=linux go build -o /out/backfill-chinese ./cmd/backfill-chinese
 
 RUN CGO_ENABLED=0 GOBIN=/out go install github.com/pressly/goose/v3/cmd/goose@v3.24.3
 
@@ -19,6 +20,7 @@ WORKDIR /app
 
 COPY --from=build /out/vocab-api /app/vocab-api
 COPY --from=build /out/vocab-notifications /app/vocab-notifications
+COPY --from=build /out/backfill-chinese /app/backfill-chinese
 COPY --from=build /out/goose /app/goose
 COPY backend/migrations /app/migrations
 
