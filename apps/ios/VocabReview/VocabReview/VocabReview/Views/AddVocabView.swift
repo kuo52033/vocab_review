@@ -4,16 +4,20 @@ struct AddVocabView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @Environment(\.dismiss) private var dismiss
     private let existingItem: VocabItem?
-    @FocusState private var focusedField: Field?
     @State private var term = ""
     @State private var meaning = ""
     @State private var chinese = ""
     @State private var exampleSentence = ""
     @State private var notes = ""
     @State private var lastSavedTerm = ""
+    @FocusState private var focusedField: Field?
 
-    private enum Field {
+    private enum Field: Hashable {
         case term
+        case meaning
+        case chinese
+        case exampleSentence
+        case notes
     }
 
     init(item: VocabItem? = nil) {
@@ -47,7 +51,7 @@ struct AddVocabView: View {
                             TextField("e.g. meticulous", text: $term)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
-                                .textFieldStyle(.roundedBorder)
+                                .readingInputField()
                                 .focused($focusedField, equals: .term)
 
                             HStack(alignment: .top, spacing: 12) {
@@ -58,7 +62,8 @@ struct AddVocabView: View {
                                         .foregroundStyle(AppTheme.sageDark)
                                     TextField("Short definition", text: $meaning, axis: .vertical)
                                         .lineLimit(2...4)
-                                        .textFieldStyle(.roundedBorder)
+                                        .readingInputField()
+                                        .focused($focusedField, equals: .meaning)
                                 }
 
                                 VStack(alignment: .leading, spacing: 6) {
@@ -68,7 +73,8 @@ struct AddVocabView: View {
                                         .foregroundStyle(AppTheme.sageDark)
                                     TextField("中文意思", text: $chinese, axis: .vertical)
                                         .lineLimit(2...4)
-                                        .textFieldStyle(.roundedBorder)
+                                        .readingInputField()
+                                        .focused($focusedField, equals: .chinese)
                                 }
                             }
 
@@ -79,7 +85,8 @@ struct AddVocabView: View {
                                     .foregroundStyle(AppTheme.sageDark)
                                 TextField("Use it in context", text: $exampleSentence, axis: .vertical)
                                     .lineLimit(2...4)
-                                    .textFieldStyle(.roundedBorder)
+                                    .readingInputField()
+                                    .focused($focusedField, equals: .exampleSentence)
                             }
 
                             Text("Notes")
@@ -88,7 +95,8 @@ struct AddVocabView: View {
                                 .foregroundStyle(AppTheme.sageDark)
                             TextField("Memory hint or source", text: $notes, axis: .vertical)
                                 .lineLimit(2...4)
-                                .textFieldStyle(.roundedBorder)
+                                .readingInputField()
+                                .focused($focusedField, equals: .notes)
 
                             Button {
                                 Task {
@@ -104,10 +112,9 @@ struct AddVocabView: View {
                                         .frame(maxWidth: .infinity)
                                 } else {
                                     Text("Save")
-                                        .frame(maxWidth: .infinity)
                                 }
                             }
-                            .buttonStyle(.borderedProminent)
+                            .readingPrimaryButton()
                             .disabled(sessionStore.isCreatingVocab || trimmedTerm.isEmpty)
                         }
                         .readingCard()
@@ -127,19 +134,8 @@ struct AddVocabView: View {
                     .padding()
                 }
             }
-            .navigationTitle(existingItem == nil ? "Add Card" : "Edit Card")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .disabled(sessionStore.isCreatingVocab)
-                }
-
-            }
-            .task {
-                focusedField = .term
-            }
+            .toolbar(.hidden, for: .navigationBar)
+            .dismissKeyboardOnTapOutside()
         }
     }
 
@@ -188,6 +184,5 @@ struct AddVocabView: View {
         chinese = ""
         exampleSentence = ""
         notes = ""
-        focusedField = .term
     }
 }

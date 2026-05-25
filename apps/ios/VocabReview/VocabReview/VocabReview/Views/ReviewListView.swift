@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ReviewListView: View {
     @EnvironmentObject private var sessionStore: SessionStore
+    @Binding private var isReviewSessionActive: Bool
     @State private var sessionDeck: [QuizCard] = []
     @State private var sessionIndex = 0
     @State private var selectedOptionID = ""
@@ -10,8 +11,14 @@ struct ReviewListView: View {
     @State private var pendingNextDue = ""
     @State private var sessionSummary: ReviewSessionSummary?
     @State private var isStartingReview = false
+    @State private var isAdvancingQuizCard = false
+    @State private var focusedReviewContentHeight: CGFloat = 0
 
     private let sessionLimit = 12
+
+    init(isReviewSessionActive: Binding<Bool> = .constant(false)) {
+        _isReviewSessionActive = isReviewSessionActive
+    }
 
     private var currentQuizCard: QuizCard? {
         guard sessionDeck.indices.contains(sessionIndex) else { return nil }
@@ -26,37 +33,79 @@ struct ReviewListView: View {
         ZStack {
             ReadingDeskBackground()
 
+            if let card = currentQuizCard {
+                focusedReviewSession(card)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else {
+                reviewHome
+                    .transition(.opacity)
+            }
+        }
+        .navigationTitle(isSessionActive ? "" : "Start Review")
+        .animation(.easeOut(duration: 0.28), value: isSessionActive)
+        .animation(.easeOut(duration: 0.28), value: sessionIndex)
+        .onChange(of: isSessionActive) { _, newValue in
+            isReviewSessionActive = newValue
+        }
+        .onDisappear {
+            isReviewSessionActive = false
+        }
+    }
+
+    private var reviewHome: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Start Review")
+                        .readingTitle()
+                    Text("Answer one card at a time. Each session uses up to \(sessionLimit) due words.")
+                        .readingMuted()
+                }
+
+                startReviewCard
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+
+                if let summary = sessionSummary {
+                    sessionSummaryCard(summary)
+                }
+            }
+            .padding()
+        }
+        .refreshable {
+            await sessionStore.loadDueCards()
+            await sessionStore.loadReviewStats()
+        }
+    }
+
+    private func focusedReviewSession(_ card: QuizCard) -> some View {
+        GeometryReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Start Review")
-                            .readingTitle()
-                        Text("Answer one card at a time. Each session uses up to \(sessionLimit) due words.")
-                            .readingMuted()
-                    }
-
-                    if let card = currentQuizCard {
-                        quizCard(card)
-                            .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    } else {
-                        startReviewCard
-                            .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    }
-
-                    if let summary = sessionSummary {
-                        sessionSummaryCard(summary)
+                VStack {
+                    quizCard(card)
+                        .id(card.card.item.id)
+                        .opacity(isAdvancingQuizCard ? 0 : 1)
+                        .scaleEffect(isAdvancingQuizCard ? 0.98 : 1)
+                        .offset(y: isAdvancingQuizCard ? 18 : 0)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+                .padding(.horizontal, 18)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .center)
+                .background {
+                    GeometryReader { contentProxy in
+                        Color.clear
+                            .preference(key: FocusedReviewContentHeightKey.self, value: contentProxy.size.height)
                     }
                 }
-                .padding()
             }
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollDisabled(focusedReviewContentHeight <= proxy.size.height + 1)
+            .onPreferenceChange(FocusedReviewContentHeightKey.self) { focusedReviewContentHeight = $0 }
             .refreshable {
                 await sessionStore.loadDueCards()
                 await sessionStore.loadReviewStats()
             }
         }
-        .navigationTitle("Start Review")
-        .animation(.easeOut(duration: 0.28), value: isSessionActive)
-        .animation(.easeOut(duration: 0.28), value: sessionIndex)
     }
 
     private var startReviewCard: some View {
@@ -132,7 +181,7 @@ struct ReviewListView: View {
             ProgressView(value: Double(sessionIndex), total: Double(max(sessionDeck.count, 1)))
                 .tint(AppTheme.clay)
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .center, spacing: 8) {
                 Text(partOfSpeechLabel(quizCard.card.item))
                     .font(.caption.weight(.bold))
                     .textCase(.uppercase)
@@ -140,8 +189,10 @@ struct ReviewListView: View {
                 Text(quizCard.card.item.term)
                     .font(.system(size: 46, weight: .regular, design: .rounded))
                     .foregroundStyle(AppTheme.ink)
+                    .multilineTextAlignment(.center)
                     .tracking(0)
             }
+            .frame(maxWidth: .infinity, alignment: .center)
             .id("prompt-\(quizCard.card.item.id)")
             .transition(.opacity.combined(with: .move(edge: .bottom)))
 
@@ -163,7 +214,7 @@ struct ReviewListView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(sessionStore.isGrading)
+                .disabled(sessionStore.isGrading || isAdvancingQuizCard)
             }
         }
         .padding()
@@ -404,6 +455,7 @@ struct ReviewListView: View {
             wrongCount = 0
             pendingNextDue = ""
             sessionSummary = nil
+            isAdvancingQuizCard = false
         }
         sessionStore.clearError()
     }
@@ -422,6 +474,8 @@ struct ReviewListView: View {
     }
 
     private func advanceQuizCard() {
+        guard !isAdvancingQuizCard else { return }
+
         let reviewed = sessionIndex + 1
         if reviewed >= sessionDeck.count {
             sessionSummary = ReviewSessionSummary(
@@ -434,10 +488,19 @@ struct ReviewListView: View {
             return
         }
 
-        withAnimation(.easeOut(duration: 0.24)) {
+        withAnimation(.easeInOut(duration: 0.16)) {
+            isAdvancingQuizCard = true
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 130_000_000)
             sessionIndex = reviewed
             selectedOptionID = ""
             pendingNextDue = ""
+
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                isAdvancingQuizCard = false
+            }
         }
     }
 
@@ -447,6 +510,7 @@ struct ReviewListView: View {
             sessionIndex = 0
             selectedOptionID = ""
             pendingNextDue = ""
+            isAdvancingQuizCard = false
         }
     }
 
@@ -477,6 +541,14 @@ private struct ReviewSessionSummary {
 
     var accuracy: Int {
         Int((Double(correct) / Double(max(reviewed, 1)) * 100).rounded())
+    }
+}
+
+private struct FocusedReviewContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 

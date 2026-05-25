@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum AppTheme {
     static let linen = Color(red: 1.0, green: 0.89, blue: 0.88)
@@ -26,24 +27,6 @@ struct ReadingDeskBackground: View {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
-        .overlay(alignment: .topLeading) {
-            LinearGradient(
-                colors: [AppTheme.linen.opacity(0.72), .clear],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .frame(width: 280, height: 220)
-            .offset(x: -60, y: -40)
-        }
-        .overlay(alignment: .topTrailing) {
-            LinearGradient(
-                colors: [AppTheme.blush.opacity(0.62), .clear],
-                startPoint: .topTrailing,
-                endPoint: .bottomLeading
-            )
-            .frame(width: 260, height: 220)
-            .offset(x: 60, y: -36)
-        }
         .ignoresSafeArea()
     }
 }
@@ -61,9 +44,60 @@ struct ReadingCard: ViewModifier {
     }
 }
 
+struct ReadingInputField: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .textFieldStyle(.plain)
+            .font(.body.weight(.medium))
+            .foregroundStyle(AppTheme.ink)
+            .tint(AppTheme.coral)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .background(AppTheme.paper.opacity(0.96), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(AppTheme.ink.opacity(0.1), lineWidth: 1)
+            }
+    }
+}
+
+struct ReadingPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.bold))
+            .foregroundStyle(isEnabled ? Color.white : AppTheme.muted.opacity(0.72))
+            .padding(.vertical, 13)
+            .frame(maxWidth: .infinity)
+            .background(
+                isEnabled
+                    ? AppTheme.coral.opacity(configuration.isPressed ? 0.78 : 1.0)
+                    : AppTheme.blush.opacity(0.42),
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(isEnabled ? Color.white.opacity(0.28) : AppTheme.ink.opacity(0.06), lineWidth: 1)
+            }
+            .shadow(color: isEnabled ? AppTheme.coral.opacity(0.22) : .clear, radius: 10, x: 0, y: 6)
+            .opacity(configuration.isPressed ? 0.92 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.12), value: isEnabled)
+    }
+}
+
 extension View {
     func readingCard() -> some View {
         modifier(ReadingCard())
+    }
+
+    func readingInputField() -> some View {
+        modifier(ReadingInputField())
+    }
+
+    func readingPrimaryButton() -> some View {
+        buttonStyle(ReadingPrimaryButtonStyle())
     }
 
     func readingTitle() -> some View {
@@ -78,5 +112,69 @@ extension View {
 
     func readingMuted() -> some View {
         foregroundStyle(AppTheme.muted)
+    }
+
+    func dismissKeyboardOnTapOutside() -> some View {
+        background(KeyboardDismissTapInstaller().frame(width: 0, height: 0))
+    }
+}
+
+private struct KeyboardDismissTapInstaller: UIViewRepresentable {
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        DispatchQueue.main.async {
+            context.coordinator.install(in: view.window)
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        DispatchQueue.main.async {
+            context.coordinator.install(in: uiView.window)
+        }
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        coordinator.uninstall()
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        private weak var gesture: UITapGestureRecognizer?
+
+        func install(in window: UIWindow?) {
+            guard let window, gesture?.view !== window else { return }
+            uninstall()
+            let tapGesture = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
+            tapGesture.cancelsTouchesInView = false
+            tapGesture.delegate = self
+            window.addGestureRecognizer(tapGesture)
+            gesture = tapGesture
+        }
+
+        func uninstall() {
+            guard let gesture else { return }
+            gesture.view?.removeGestureRecognizer(gesture)
+            self.gesture = nil
+        }
+
+        @objc private func dismissKeyboard() {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            var view = touch.view
+            while let currentView = view {
+                if currentView is UITextField || currentView is UITextView {
+                    return false
+                }
+                view = currentView.superview
+            }
+            return true
+        }
     }
 }

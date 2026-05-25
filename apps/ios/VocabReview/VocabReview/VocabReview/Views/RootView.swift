@@ -8,6 +8,8 @@ struct RootView: View {
     @State private var isAddingVocab = false
     @State private var isImportingVocab = false
     @State private var selectedTab: AppTab = .review
+    @State private var isReviewSessionActive = false
+    @FocusState private var signInFocusedField: SignInField?
 
     var body: some View {
         NavigationStack {
@@ -18,6 +20,7 @@ struct RootView: View {
             }
         }
         .tint(AppTheme.sage)
+        .dismissKeyboardOnTapOutside()
         .sheet(isPresented: $isAddingVocab) {
             AddVocabView()
                 .environmentObject(sessionStore)
@@ -37,13 +40,16 @@ struct RootView: View {
             ReadingDeskBackground()
 
             VStack(spacing: 0) {
-                authenticatedActionBar
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                    .padding(.bottom, 10)
+                if !isReviewSessionActive {
+                    authenticatedActionBar
+                        .padding(.horizontal)
+                        .padding(.top, 8)
+                        .padding(.bottom, 10)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
 
                 ZStack(alignment: .top) {
-                    ReviewListView()
+                    ReviewListView(isReviewSessionActive: $isReviewSessionActive)
                         .opacity(selectedTab == .review ? 1 : 0)
                         .allowsHitTesting(selectedTab == .review)
                         .accessibilityHidden(selectedTab != .review)
@@ -57,10 +63,14 @@ struct RootView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom) {
-            authenticatedTabBar
-                .padding(.bottom, 8)
+            if !isReviewSessionActive {
+                authenticatedTabBar
+                    .padding(.bottom, 8)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
         }
         .animation(.easeOut(duration: 0.18), value: selectedTab)
+        .animation(.easeOut(duration: 0.22), value: isReviewSessionActive)
         .task { await sessionStore.refreshAuthenticatedData() }
     }
 
@@ -82,11 +92,13 @@ struct RootView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Request magic link")
                         .font(.headline)
+                        .foregroundStyle(AppTheme.ink)
                     TextField("you@example.com", text: $email)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.emailAddress)
-                        .textFieldStyle(.roundedBorder)
+                        .readingInputField()
+                        .focused($signInFocusedField, equals: .email)
                     Button {
                         Task { await sessionStore.requestMagicLink(for: email) }
                     } label: {
@@ -133,10 +145,12 @@ struct RootView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Paste token fallback")
                         .font(.headline)
+                        .foregroundStyle(AppTheme.ink)
                     TextField("Paste magic token", text: $magicToken)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .textFieldStyle(.roundedBorder)
+                        .readingInputField()
+                        .focused($signInFocusedField, equals: .magicToken)
                     Button {
                         Task { await sessionStore.signIn(with: magicToken) }
                     } label: {
@@ -242,6 +256,11 @@ struct RootView: View {
 private enum AppTab: Hashable {
     case review
     case library
+}
+
+private enum SignInField: Hashable {
+    case email
+    case magicToken
 }
 
 private struct ReadingToolbarButtonStyle: ButtonStyle {

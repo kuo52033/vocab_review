@@ -194,9 +194,9 @@ private struct LibraryCardRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) {
                         isExpanded.toggle()
                     }
                 } label: {
@@ -215,62 +215,32 @@ private struct LibraryCardRow: View {
 
                 Button(action: onEdit) {
                     Image(systemName: "pencil")
-                        .frame(width: 34, height: 34)
+                        .font(.caption.weight(.semibold))
+                        .frame(width: 28, height: 28)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(LibraryRowActionButtonStyle())
                 .disabled(isBusy)
                 .accessibilityLabel("Edit \(card.item.term)")
 
                 Button(role: .destructive, action: onDelete) {
                     Image(systemName: "xmark")
-                        .frame(width: 34, height: 34)
+                        .font(.caption.weight(.semibold))
+                        .frame(width: 28, height: 28)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(LibraryRowActionButtonStyle())
                 .disabled(isBusy)
                 .accessibilityLabel("Delete \(card.item.term)")
             }
             .padding()
 
             if isExpanded {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(card.item.meaning.isEmpty ? "Meaning not added yet." : card.item.meaning)
-                            .foregroundStyle(AppTheme.ink)
-                        Spacer()
-                        if !card.item.part_of_speech.isEmpty {
-                            Text(card.item.part_of_speech.replacingOccurrences(of: "_", with: " "))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(AppTheme.sageDark)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(AppTheme.sage.opacity(0.12), in: Capsule())
-                        }
-                    }
-
-                    Text(card.item.chinese.isEmpty ? "Chinese not added yet." : card.item.chinese)
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(AppTheme.clay)
-
-                    if !card.item.example_sentence.isEmpty {
-                        Text(card.item.example_sentence)
-                            .font(.callout)
-                            .readingMuted()
-                    }
-
-                    if !card.item.notes.isEmpty {
-                        Text("Notes: \(card.item.notes)")
-                            .font(.callout)
-                            .readingMuted()
-                    }
-
-                    Text("Next due: \(formattedDate(card.state.next_due_at))")
-                        .font(.caption)
-                        .readingMuted()
-                }
-                .padding([.horizontal, .bottom])
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                details
+                    .padding([.horizontal, .bottom])
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.blurFade)
             }
         }
+        .animation(.spring(response: 0.32, dampingFraction: 0.9), value: isExpanded)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(AppTheme.paper.opacity(0.88), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
@@ -280,10 +250,83 @@ private struct LibraryCardRow: View {
         .shadow(color: AppTheme.ink.opacity(0.06), radius: 14, x: 0, y: 8)
     }
 
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !card.item.part_of_speech.isEmpty {
+                Text(card.item.part_of_speech.replacingOccurrences(of: "_", with: " "))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppTheme.sageDark)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(AppTheme.sage.opacity(0.12), in: Capsule())
+            }
+
+            Text(card.item.meaning.isEmpty ? "Meaning not added yet." : card.item.meaning)
+                .foregroundStyle(AppTheme.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(card.item.chinese.isEmpty ? "Chinese not added yet." : card.item.chinese)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(AppTheme.clay)
+
+            if !card.item.example_sentence.isEmpty {
+                Text(card.item.example_sentence)
+                    .font(.callout)
+                    .readingMuted()
+            }
+
+            if !card.item.notes.isEmpty {
+                Text("Notes: \(card.item.notes)")
+                    .font(.callout)
+                    .readingMuted()
+            }
+
+            Text("Next due: \(formattedDate(card.state.next_due_at))")
+                .font(.caption)
+                .readingMuted()
+        }
+    }
+
     private func formattedDate(_ value: String) -> String {
         guard let date = ISO8601DateFormatter.vocabReview.date(from: value) else {
             return value
         }
         return date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+private struct LibraryRowActionButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isEnabled ? AppTheme.coral : AppTheme.muted.opacity(0.45))
+            .background(
+                AppTheme.blush.opacity(configuration.isPressed ? 0.5 : 0.32),
+                in: Circle()
+            )
+            .opacity(isEnabled ? 1 : 0.55)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.12), value: isEnabled)
+    }
+}
+
+private struct BlurFadeModifier: ViewModifier {
+    let opacity: Double
+    let blurRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(opacity)
+            .blur(radius: blurRadius)
+    }
+}
+
+private extension AnyTransition {
+    static var blurFade: AnyTransition {
+        .modifier(
+            active: BlurFadeModifier(opacity: 0, blurRadius: 8),
+            identity: BlurFadeModifier(opacity: 1, blurRadius: 0)
+        )
     }
 }

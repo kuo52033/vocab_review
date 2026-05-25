@@ -7,6 +7,7 @@ struct BulkImportView: View {
     @State private var parsedCards: [VocabDraftInput] = []
     @State private var sharedCaptures: [SharedQueuedCapture] = []
     @State private var enrichedCards: [VocabDraftInput]?
+    @FocusState private var isImportTextFocused: Bool
 
     private var sharedCards: [VocabDraftInput] {
         sharedCaptures.map {
@@ -38,6 +39,9 @@ struct BulkImportView: View {
                             TextEditor(text: $rawText)
                                 .frame(minHeight: 190)
                                 .scrollContentBackground(.hidden)
+                                .foregroundStyle(AppTheme.ink)
+                                .tint(AppTheme.coral)
+                                .focused($isImportTextFocused)
                                 .padding(10)
                                 .background(AppTheme.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                                 .overlay {
@@ -53,6 +57,19 @@ struct BulkImportView: View {
 
                         previewSection
 
+                        Button {
+                            Task { await importCards() }
+                        } label: {
+                            if sessionStore.isCreatingVocab {
+                                ProgressView()
+                                    .frame(maxWidth: .infinity)
+                            } else {
+                                Text("Import")
+                            }
+                        }
+                        .readingPrimaryButton()
+                        .disabled(sessionStore.isCreatingVocab || importCandidates.isEmpty)
+
                         if !sessionStore.errorMessage.isEmpty {
                             Text(sessionStore.errorMessage)
                                 .foregroundStyle(AppTheme.danger)
@@ -62,28 +79,8 @@ struct BulkImportView: View {
                     .padding()
                 }
             }
-            .navigationTitle("Import Cards")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .disabled(sessionStore.isCreatingVocab)
-                }
-
-                ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        Task { await importCards() }
-                    } label: {
-                        if sessionStore.isCreatingVocab {
-                            ProgressView()
-                        } else {
-                            Text("Import")
-                        }
-                    }
-                    .disabled(sessionStore.isCreatingVocab || importCandidates.isEmpty)
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
+            .dismissKeyboardOnTapOutside()
             .task {
                 sharedCaptures = SharedCaptureQueue.load()
                 enrichedCards = nil
@@ -204,7 +201,7 @@ struct BulkImportView: View {
                     Text("Auto-complete missing details")
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .readingPrimaryButton()
             .disabled(sessionStore.isAutocompletingVocab || sessionStore.isCreatingVocab || importCandidates.isEmpty)
         }
         .readingCard()
