@@ -5,77 +5,46 @@ struct LibraryView: View {
     @State private var editingCard: DueCard?
     @State private var deletingCard: DueCard?
     @State private var searchText = ""
+    @State private var searchTask: Task<Void, Never>?
+    @FocusState private var isSearchFocused: Bool
+
+    private var searchQuery: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     var body: some View {
-        Group {
-            if sessionStore.isLoadingLibraryCards && sessionStore.libraryCards.isEmpty {
-                ZStack {
-                    ReadingDeskBackground()
-                    ProgressView("Loading library...")
-                        .padding()
-                        .readingCard()
-                }
-            } else if sessionStore.libraryCards.isEmpty {
-                ZStack {
-                    ReadingDeskBackground()
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            statusMessages
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("No cards yet")
-                                    .readingTitle()
-                                Text("Use Add to create your first vocabulary card.")
-                                    .readingMuted()
-                            }
-                            .readingCard()
-                        }
-                        .padding()
-                    }
-                    .refreshable {
-                        await loadCurrentPage()
+        ZStack {
+            ReadingDeskBackground()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    searchField
+                    loadingIndicator
+
+                    if sessionStore.libraryCards.isEmpty && !sessionStore.isLoadingLibraryCards {
+                        emptyState
+                    } else {
+                        libraryResults
                     }
                 }
-            } else {
-                ZStack {
-                    ReadingDeskBackground()
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 14) {
-                            statusMessages
-                            ForEach(sessionStore.libraryCards) { card in
-                                LibraryCardRow(
-                                    card: card,
-                                    isBusy: sessionStore.isCreatingVocab || sessionStore.isDeletingVocab,
-                                    onEdit: { editingCard = card },
-                                    onDelete: { deletingCard = card }
-                                )
-                            }
-                            PaginationControl(
-                                page: sessionStore.libraryPage,
-                                totalPages: sessionStore.libraryPageCount,
-                                previous: {
-                                    Task { await changePage(to: sessionStore.libraryPage - 1) }
-                                },
-                                next: {
-                                    Task { await changePage(to: sessionStore.libraryPage + 1) }
-                                }
-                            )
-                        }
-                        .padding()
-                    }
-                    .refreshable {
-                        await loadCurrentPage()
-                    }
-                }
+                .padding()
+                .animation(.easeOut(duration: 0.16), value: sessionStore.libraryCards.map(\.id))
+                .animation(.easeOut(duration: 0.16), value: sessionStore.isLoadingLibraryCards)
+            }
+            .refreshable {
+                await loadCurrentPage()
             }
         }
         .navigationTitle("Library")
-        .searchable(text: $searchText, prompt: "Search term or meaning")
         .onSubmit(of: .search) {
+            searchTask?.cancel()
             Task { await resetAndLoad() }
         }
-        .onChange(of: searchText) { _, newValue in
-            if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Task { await resetAndLoad() }
+        .onChange(of: searchQuery.lowercased()) { _, _ in
+            searchTask?.cancel()
+            searchTask = Task {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                guard !Task.isCancelled else { return }
+                await resetAndLoad()
             }
         }
         .sheet(item: $editingCard) { card in
@@ -95,6 +64,99 @@ struct LibraryView: View {
         } message: { card in
             Text("This removes \"\(card.item.term)\" from your library and review queue.")
         }
+        .onDisappear {
+            searchTask?.cancel()
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(AppTheme.muted)
+            TextField(
+                "",
+                text: $searchText,
+                prompt: Text("Search term or meaning")
+                    .foregroundStyle(AppTheme.muted.opacity(0.82))
+            )
+                .font(.body.weight(.medium))
+                .foregroundStyle(AppTheme.ink)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .tint(AppTheme.coral)
+                .focused($isSearchFocused)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                    isSearchFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(AppTheme.muted)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(AppTheme.paper.opacity(0.9), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
+        }
+    }
+
+    @ViewBuilder
+    private var loadingIndicator: some View {
+        if sessionStore.isLoadingLibraryCards {
+            HStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(searchQuery.isEmpty ? "Loading library..." : "Searching...")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppTheme.muted)
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(AppTheme.paper.opacity(0.62), in: Capsule())
+            .transition(.opacity)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(searchQuery.isEmpty ? "No cards yet" : "No matching cards")
+                .readingTitle()
+            Text(searchQuery.isEmpty ? "Use Add to create your first vocabulary card." : "Try a different term or meaning.")
+                .readingMuted()
+        }
+        .readingCard()
+        .transition(.opacity)
+    }
+
+    @ViewBuilder
+    private var libraryResults: some View {
+        ForEach(sessionStore.libraryCards) { card in
+            LibraryCardRow(
+                card: card,
+                isBusy: sessionStore.isCreatingVocab || sessionStore.isDeletingVocab,
+                onEdit: { editingCard = card },
+                onDelete: { deletingCard = card }
+            )
+        }
+
+        PaginationControl(
+            page: sessionStore.libraryPage,
+            totalPages: sessionStore.libraryPageCount,
+            previous: {
+                Task { await changePage(to: sessionStore.libraryPage - 1) }
+            },
+            next: {
+                Task { await changePage(to: sessionStore.libraryPage + 1) }
+            }
+        )
     }
 
     private var deleteConfirmationPresented: Binding<Bool> {
@@ -108,35 +170,17 @@ struct LibraryView: View {
         )
     }
 
-    @ViewBuilder
-    private var statusMessages: some View {
-        if !sessionStore.errorMessage.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(sessionStore.errorMessage)
-                    .foregroundStyle(.red)
-                Button("Dismiss") {
-                    sessionStore.clearError()
-                }
-                .buttonStyle(.bordered)
-            }
-        }
-        if !sessionStore.infoMessage.isEmpty {
-            Text(sessionStore.infoMessage)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     private func resetAndLoad() async {
         sessionStore.libraryPage = 1
         await loadCurrentPage()
     }
 
     private func changePage(to page: Int) async {
-        await sessionStore.setLibraryPage(page, query: searchText)
+        await sessionStore.setLibraryPage(page, query: searchQuery)
     }
 
     private func loadCurrentPage() async {
-        await sessionStore.loadLibraryCards(query: searchText)
+        await sessionStore.loadLibraryCards(query: searchQuery)
     }
 
 }

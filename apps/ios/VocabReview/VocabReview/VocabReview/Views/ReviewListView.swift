@@ -28,8 +28,6 @@ struct ReviewListView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    statusMessages
-
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Start Review")
                             .readingTitle()
@@ -59,21 +57,6 @@ struct ReviewListView: View {
         .navigationTitle("Start Review")
         .animation(.easeOut(duration: 0.28), value: isSessionActive)
         .animation(.easeOut(duration: 0.28), value: sessionIndex)
-    }
-
-    @ViewBuilder
-    private var statusMessages: some View {
-        if !sessionStore.errorMessage.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(sessionStore.errorMessage)
-                    .foregroundStyle(AppTheme.danger)
-                Button("Dismiss") {
-                    sessionStore.clearError()
-                }
-                .buttonStyle(.bordered)
-            }
-            .readingCard()
-        }
     }
 
     private var startReviewCard: some View {

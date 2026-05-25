@@ -7,51 +7,12 @@ struct RootView: View {
     @State private var magicToken = ""
     @State private var isAddingVocab = false
     @State private var isImportingVocab = false
+    @State private var selectedTab: AppTab = .review
 
     var body: some View {
         NavigationStack {
             if sessionStore.isAuthenticated {
-                ZStack(alignment: .top) {
-                    TabView {
-                        ReviewListView()
-                            .tabItem {
-                                Label("Review", systemImage: "rectangle.stack")
-                            }
-
-                        LibraryView()
-                            .tabItem {
-                                Label("Library", systemImage: "books.vertical")
-                            }
-                    }
-                    .tint(AppTheme.sage)
-
-                    if !sessionStore.errorMessage.isEmpty || !sessionStore.infoMessage.isEmpty {
-                        authenticatedStatusBanner
-                            .padding(.horizontal)
-                            .padding(.top, 8)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                            .zIndex(1)
-                    }
-                }
-                .animation(.easeInOut(duration: 0.2), value: sessionStore.errorMessage)
-                .animation(.easeInOut(duration: 0.2), value: sessionStore.infoMessage)
-                .task { await sessionStore.refreshAuthenticatedData() }
-                .toolbar {
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button("Add") {
-                            isAddingVocab = true
-                        }
-                        Button("Import") {
-                            isImportingVocab = true
-                        }
-                        Button("Notify") {
-                            Task { await sessionStore.registerNotifications() }
-                        }
-                        Button("Sign out") {
-                            sessionStore.signOut()
-                        }
-                    }
-                }
+                authenticatedView
             } else {
                 signInView
             }
@@ -69,6 +30,38 @@ struct RootView: View {
             guard newPhase == .active, sessionStore.isAuthenticated else { return }
             Task { await sessionStore.refreshAuthenticatedData() }
         }
+    }
+
+    private var authenticatedView: some View {
+        ZStack {
+            ReadingDeskBackground()
+
+            VStack(spacing: 0) {
+                authenticatedActionBar
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .padding(.bottom, 10)
+
+                ZStack(alignment: .top) {
+                    ReviewListView()
+                        .opacity(selectedTab == .review ? 1 : 0)
+                        .allowsHitTesting(selectedTab == .review)
+                        .accessibilityHidden(selectedTab != .review)
+
+                    LibraryView()
+                        .opacity(selectedTab == .library ? 1 : 0)
+                        .allowsHitTesting(selectedTab == .library)
+                        .accessibilityHidden(selectedTab != .library)
+                }
+            }
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .bottom) {
+            authenticatedTabBar
+                .padding(.bottom, 8)
+        }
+        .animation(.easeOut(duration: 0.18), value: selectedTab)
+        .task { await sessionStore.refreshAuthenticatedData() }
     }
 
     private var signInView: some View {
@@ -165,6 +158,73 @@ struct RootView: View {
         }
     }
 
+    private var authenticatedActionBar: some View {
+        HStack(spacing: 4) {
+            topActionButton("Add") {
+                isAddingVocab = true
+            }
+            topActionButton("Import") {
+                isImportingVocab = true
+            }
+            topActionButton("Notify") {
+                Task { await sessionStore.registerNotifications() }
+            }
+            topActionButton("Sign out") {
+                sessionStore.signOut()
+            }
+        }
+        .padding(6)
+        .background(AppTheme.paper.opacity(0.9), in: Capsule())
+        .overlay {
+            Capsule()
+                .stroke(AppTheme.coral.opacity(0.16), lineWidth: 1)
+        }
+        .shadow(color: AppTheme.ink.opacity(0.08), radius: 14, x: 0, y: 8)
+    }
+
+    private var authenticatedTabBar: some View {
+        HStack(spacing: 0) {
+            tabButton(.review, title: "Review", systemImage: "rectangle.stack.fill")
+            tabButton(.library, title: "Library", systemImage: "books.vertical.fill")
+        }
+        .padding(6)
+        .background(AppTheme.paper.opacity(0.94), in: Capsule())
+        .overlay {
+            Capsule()
+                .stroke(AppTheme.coral.opacity(0.16), lineWidth: 1)
+        }
+        .shadow(color: AppTheme.ink.opacity(0.12), radius: 18, x: 0, y: 10)
+    }
+
+    private func tabButton(_ tab: AppTab, title: String, systemImage: String) -> some View {
+        Button {
+            selectedTab = tab
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(.title2.weight(.semibold))
+                Text(title)
+                    .font(.caption.weight(.semibold))
+            }
+            .frame(width: 122, height: 54)
+        }
+        .buttonStyle(ReadingTabButtonStyle(isSelected: selectedTab == tab))
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
+    }
+
+    private func topActionButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.callout.weight(.medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .frame(minWidth: 64, minHeight: 36)
+        }
+        .buttonStyle(ReadingToolbarButtonStyle())
+        .accessibilityLabel(title)
+    }
+
     @ViewBuilder
     private var statusMessages: some View {
         if !sessionStore.errorMessage.isEmpty {
@@ -177,38 +237,38 @@ struct RootView: View {
         }
     }
 
-    private var authenticatedStatusBanner: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: sessionStore.errorMessage.isEmpty ? "bell.badge" : "exclamationmark.triangle")
-                .foregroundStyle(sessionStore.errorMessage.isEmpty ? AppTheme.sageDark : AppTheme.danger)
+}
 
-            VStack(alignment: .leading, spacing: 4) {
-                if !sessionStore.errorMessage.isEmpty {
-                    Text(sessionStore.errorMessage)
-                        .foregroundStyle(AppTheme.danger)
-                }
-                if !sessionStore.infoMessage.isEmpty {
-                    Text(sessionStore.infoMessage)
-                        .foregroundStyle(AppTheme.ink)
-                }
-            }
-            .font(.callout.weight(.semibold))
+private enum AppTab: Hashable {
+    case review
+    case library
+}
 
-            Spacer()
+private struct ReadingToolbarButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(AppTheme.coral)
+            .background(
+                AppTheme.blush.opacity(configuration.isPressed ? 0.42 : 0.0),
+                in: Capsule()
+            )
+            .opacity(configuration.isPressed ? 0.82 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
 
-            Button("Dismiss") {
-                sessionStore.clearError()
-                sessionStore.infoMessage = ""
-            }
-            .font(.caption.weight(.semibold))
-            .buttonStyle(.bordered)
-        }
-        .padding()
-        .background(AppTheme.paper.opacity(0.95), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
-        }
-        .shadow(color: AppTheme.ink.opacity(0.08), radius: 14, x: 0, y: 8)
+private struct ReadingTabButtonStyle: ButtonStyle {
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isSelected ? AppTheme.coral : AppTheme.ink)
+            .background(
+                AppTheme.blush.opacity(isSelected ? 0.48 : (configuration.isPressed ? 0.24 : 0.0)),
+                in: Capsule()
+            )
+            .opacity(configuration.isPressed ? 0.82 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.18), value: isSelected)
     }
 }

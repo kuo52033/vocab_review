@@ -9,9 +9,11 @@ struct PaginationControl: View {
     var body: some View {
         if totalPages > 1 {
             HStack {
-                Button("Previous", action: previous)
-                    .buttonStyle(.bordered)
-                    .disabled(page <= 1)
+                Button(action: previous) {
+                    Label("Previous", systemImage: "chevron.left")
+                }
+                .buttonStyle(PaginationButtonStyle())
+                .disabled(page <= 1)
 
                 Spacer()
 
@@ -21,11 +23,37 @@ struct PaginationControl: View {
 
                 Spacer()
 
-                Button("Next", action: next)
-                    .buttonStyle(.bordered)
-                    .disabled(page >= totalPages)
+                Button(action: next) {
+                    Label("Next", systemImage: "chevron.right")
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(PaginationButtonStyle())
+                .disabled(page >= totalPages)
             }
             .padding(.vertical, 6)
         }
+    }
+}
+
+private struct PaginationButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(isEnabled ? AppTheme.coral : AppTheme.muted.opacity(0.45))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                AppTheme.blush.opacity(configuration.isPressed ? 0.42 : 0.22),
+                in: Capsule()
+            )
+            .overlay {
+                Capsule()
+                    .stroke(AppTheme.coral.opacity(isEnabled ? 0.16 : 0.06), lineWidth: 1)
+            }
+            .opacity(isEnabled ? 1 : 0.62)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.12), value: isEnabled)
     }
 }

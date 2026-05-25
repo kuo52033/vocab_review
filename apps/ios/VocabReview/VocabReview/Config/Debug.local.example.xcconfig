@@ -1,0 +1,7 @@
+// Copy this file to Debug.local.xcconfig for physical-device testing.
+// Use your Mac's current LAN IP address, not localhost.
+//
+// Example:
+// VOCAB_REVIEW_API_BASE_URL = http:/$()/192.168.0.88:8080
+
+VOCAB_REVIEW_API_BASE_URL = http:/$()/192.168.0.88:8080

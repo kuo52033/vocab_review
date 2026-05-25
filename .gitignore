@@ -12,5 +12,6 @@ backend/data
 .xcode-derived-data*/
 *.xcuserstate
 xcuserdata/
+apps/ios/VocabReview/VocabReview/Config/Debug.local.xcconfig
 .superpowers/
 .codegraph/

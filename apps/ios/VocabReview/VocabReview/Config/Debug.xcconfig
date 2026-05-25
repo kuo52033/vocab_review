@@ -1,3 +1,8 @@
 VOCAB_REVIEW_API_BASE_URL = http:/$()/localhost:8080
 VOCAB_REVIEW_APP_GROUP = group.com.tim.VocabReview
 IPHONEOS_DEPLOYMENT_TARGET = 17.0
+
+// Create Debug.local.xcconfig next to this file to override the API URL for
+// physical-device testing, for example:
+// VOCAB_REVIEW_API_BASE_URL = http:/$()/192.168.0.88:8080
+#include? "Debug.local.xcconfig"

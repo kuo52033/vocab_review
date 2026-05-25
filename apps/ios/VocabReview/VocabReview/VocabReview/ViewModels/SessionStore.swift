@@ -125,7 +125,6 @@ final class SessionStore: ObservableObject {
         let loadID = libraryLoadID
         isLoadingLibraryCards = true
         errorMessage = ""
-        libraryCards = []
         defer {
             if loadID == libraryLoadID {
                 isLoadingLibraryCards = false
