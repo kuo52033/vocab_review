@@ -150,7 +150,7 @@ struct ReviewListView: View {
                 .tint(AppTheme.clay)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Word")
+                Text(partOfSpeechLabel(quizCard.card.item))
                     .font(.caption.weight(.bold))
                     .textCase(.uppercase)
                     .foregroundStyle(AppTheme.sageDark)
@@ -158,8 +158,6 @@ struct ReviewListView: View {
                     .font(.system(size: 46, weight: .regular, design: .rounded))
                     .foregroundStyle(AppTheme.ink)
                     .tracking(0)
-                Text("Choose the correct meaning.")
-                    .readingMuted()
             }
             .id("prompt-\(quizCard.card.item.id)")
             .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -231,94 +229,169 @@ struct ReviewListView: View {
     private func quizFeedback(for quizCard: QuizCard) -> some View {
         Group {
             if selectedOptionID.isEmpty {
-                Text("Correct answers use easy. Wrong answers use again.")
-                    .readingMuted()
+                EmptyView()
             } else if quizCard.options.first(where: { $0.id == selectedOptionID })?.isCorrect == true {
                 resultBanner(
                     title: "Correct",
-                    message: quizCard.card.item.chinese.isEmpty ? "Chinese translation not added yet." : "Chinese: \(quizCard.card.item.chinese)",
-                    detail: "This card will move further out.",
+                    item: quizCard.card.item,
+                    correctAnswer: nil,
                     isCorrect: true
                 )
             } else {
                 resultBanner(
                     title: "Review again",
-                    message: quizCard.card.item.chinese.isEmpty ? "Chinese translation not added yet." : "Chinese: \(quizCard.card.item.chinese)",
-                    detail: "Correct answer: \(quizCard.card.item.meaning)",
+                    item: quizCard.card.item,
+                    correctAnswer: quizCard.card.item.meaning,
                     isCorrect: false
                 )
             }
         }
     }
 
-    private func resultBanner(title: String, message: String, detail: String, isCorrect: Bool) -> some View {
+    private func resultBanner(title: String, item: VocabItem, correctAnswer: String?, isCorrect: Bool) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: isCorrect ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                 .font(.title2)
-                .foregroundStyle(isCorrect ? AppTheme.sageDark : AppTheme.danger)
+                .foregroundStyle(isCorrect ? AppTheme.successDark : AppTheme.danger)
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
                     .font(.headline)
-                    .foregroundStyle(isCorrect ? AppTheme.sageDark : AppTheme.danger)
-                Text(message)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(AppTheme.ink)
-                Text(detail)
-                    .font(.footnote)
+                    .foregroundStyle(isCorrect ? AppTheme.successDark : AppTheme.danger)
+                if !item.chinese.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(item.chinese)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(AppTheme.ink)
+                }
+                if let correctAnswer {
+                    Text("Correct answer: \(correctAnswer)")
+                        .font(.footnote)
+                        .readingMuted()
+                }
+                if !item.example_sentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(item.example_sentence)
+                        .font(.footnote)
+                        .readingMuted()
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background((isCorrect ? AppTheme.success.opacity(0.18) : AppTheme.danger.opacity(0.1)), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke((isCorrect ? AppTheme.successDark : AppTheme.danger).opacity(0.42), lineWidth: 2)
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+    }
+
+    private func partOfSpeechLabel(_ item: VocabItem) -> String {
+        if item.part_of_speech.isEmpty {
+            return "Word"
+        }
+        return item.part_of_speech.replacingOccurrences(of: "_", with: " ")
+    }
+
+    private func sessionSummaryCard(_ summary: ReviewSessionSummary) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: "checkmark")
+                    .font(.title3.weight(.black))
+                    .foregroundStyle(AppTheme.paper)
+                    .frame(width: 48, height: 48)
+                    .background(
+                        LinearGradient(
+                            colors: [AppTheme.coral, AppTheme.danger],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    )
+                    .shadow(color: AppTheme.danger.opacity(0.18), radius: 14, x: 0, y: 8)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Review complete")
+                        .font(.headline.weight(.bold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(AppTheme.danger)
+                    Text("\(summary.reviewed) cards reviewed")
+                        .readingMuted()
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text("\(summary.accuracy)%")
+                        .font(.system(.title, design: .rounded, weight: .bold))
+                        .foregroundStyle(AppTheme.ink)
+                    Text("accuracy")
+                        .font(.caption.weight(.bold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(AppTheme.danger)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(AppTheme.paper.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(AppTheme.danger.opacity(0.16), lineWidth: 1)
+                }
+            }
+
+            HStack(spacing: 8) {
+                summaryPill("\(summary.correct) correct")
+                summaryPill("\(summary.wrong) wrong")
+            }
+
+            if let lastNextDue = summary.lastNextDue {
+                Text("Last card returns \(formattedDate(lastNextDue)).")
+                    .font(.caption)
                     .readingMuted()
             }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background((isCorrect ? AppTheme.sage.opacity(0.22) : AppTheme.danger.opacity(0.1)), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(
+            LinearGradient(
+                colors: [AppTheme.paper.opacity(0.98), AppTheme.linen.opacity(0.92)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke((isCorrect ? AppTheme.sageDark : AppTheme.danger).opacity(0.42), lineWidth: 2)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(AppTheme.danger.opacity(0.2), lineWidth: 1)
         }
-        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        .shadow(color: AppTheme.danger.opacity(0.12), radius: 22, x: 0, y: 12)
     }
 
-    private func sessionSummaryCard(_ summary: ReviewSessionSummary) -> some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Review complete.")
-                    .font(.headline)
-                    .foregroundStyle(AppTheme.sageDark)
-                Text("\(summary.correct) correct, \(summary.wrong) wrong.")
-                    .readingMuted()
-                if let lastNextDue = summary.lastNextDue {
-                    Text("Last card returns \(formattedDate(lastNextDue)).")
-                        .font(.caption)
-                        .readingMuted()
-                }
+    private func summaryPill(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.bold))
+            .foregroundStyle(AppTheme.muted)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(AppTheme.paper.opacity(0.7), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(AppTheme.danger.opacity(0.14), lineWidth: 1)
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("\(summary.accuracy)%")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(AppTheme.sageDark)
-                Text("accuracy")
-                    .font(.caption)
-                    .readingMuted()
-            }
-        }
-        .readingCard()
     }
 
     private func optionBackground(showCorrect: Bool, showWrong: Bool) -> Color {
-        if showCorrect { return AppTheme.blush.opacity(0.42) }
+        if showCorrect { return AppTheme.success.opacity(0.18) }
         if showWrong { return AppTheme.danger.opacity(0.12) }
         return AppTheme.paper.opacity(0.82)
     }
 
     private func optionBorder(showCorrect: Bool, showWrong: Bool) -> Color {
-        if showCorrect { return AppTheme.sageDark.opacity(0.35) }
+        if showCorrect { return AppTheme.successDark.opacity(0.42) }
         if showWrong { return AppTheme.danger.opacity(0.45) }
         return AppTheme.coral.opacity(0.18)
     }
 
     private func optionBadgeColor(showCorrect: Bool, showWrong: Bool) -> Color {
-        if showCorrect { return AppTheme.coral }
+        if showCorrect { return AppTheme.success }
         if showWrong { return AppTheme.danger }
         return AppTheme.blush
     }

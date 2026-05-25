@@ -10,6 +10,8 @@ enum AppTheme {
     static let sage = coral
     static let sageDark = Color(red: 0.65, green: 0.30, blue: 0.32)
     static let clay = coral
+    static let success = Color(red: 0.34, green: 0.72, blue: 0.48)
+    static let successDark = Color(red: 0.16, green: 0.45, blue: 0.27)
     static let danger = Color(red: 0.78, green: 0.26, blue: 0.29)
 }
 

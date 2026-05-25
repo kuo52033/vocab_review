@@ -266,6 +266,7 @@ function formatBulkImportCards(cards: ParsedImportCard[]) {
 export function App() {
   const termInputRef = useRef<HTMLInputElement>(null);
   const bulkTextRef = useRef("");
+  const refreshRequestIDRef = useRef(0);
   const [auth, setAuth] = useState<AuthState>({ email: "", token: localStorage.getItem("session_token") ?? "" });
   const [vocab, setVocab] = useState<VocabWithState[]>([]);
   const [due, setDue] = useState<VocabWithState[]>([]);
@@ -312,12 +313,13 @@ export function App() {
     }
   }, []);
 
+  const normalizedQuery = query.trim().toLowerCase();
+
   useEffect(() => {
     if (!auth.token) return;
-    refresh();
-  }, [auth.token, libraryPage, query]);
+    refresh(libraryPage, normalizedQuery);
+  }, [auth.token, libraryPage, normalizedQuery]);
 
-  const normalizedQuery = query.trim().toLowerCase();
   const visibleVocab = [...vocab]
     .sort((left, right) => new Date(right.item.created_at).getTime() - new Date(left.item.created_at).getTime());
 
@@ -333,19 +335,24 @@ export function App() {
   const rawImportCards = parseBulkImport(bulkText);
   const parsedImportCards = enrichedCards ?? rawImportCards;
 
-  async function refresh() {
+  async function refresh(page = libraryPage, searchQuery = normalizedQuery) {
+    const requestID = refreshRequestIDRef.current + 1;
+    refreshRequestIDRef.current = requestID;
     setIsRefreshing(true);
+    setVocab([]);
+    setEditingID("");
     try {
       const [vocabResponse, dueResponse, statsResponse, jobsResponse] = await Promise.all([
         listVocab({
           limit: libraryPageSize,
-          offset: (libraryPage - 1) * libraryPageSize,
-          q: normalizedQuery
+          offset: (page - 1) * libraryPageSize,
+          q: searchQuery
         }),
         listDue(),
         getReviewStats(),
         listNotificationJobs()
       ]);
+      if (requestID !== refreshRequestIDRef.current) return;
       setVocab(vocabResponse.items);
       setDue(dueResponse.items);
       setVocabTotal(vocabResponse.total);
@@ -353,9 +360,12 @@ export function App() {
       setJobs(jobsResponse.items);
       setError("");
     } catch (err) {
+      if (requestID !== refreshRequestIDRef.current) return;
       setError((err as Error).message);
     } finally {
-      setIsRefreshing(false);
+      if (requestID === refreshRequestIDRef.current) {
+        setIsRefreshing(false);
+      }
     }
   }
 
@@ -616,6 +626,12 @@ export function App() {
     setEnrichmentError("");
   }
 
+  function openLibrary() {
+    setQuery("");
+    setLibraryPage(1);
+    setActiveSection("library");
+  }
+
   if (!auth.token) {
     return (
       <main className="shell auth-shell">
@@ -664,7 +680,7 @@ export function App() {
             <button
               type="button"
               className="outline-action"
-              onClick={() => setActiveSection("library")}
+              onClick={openLibrary}
             >
               <span aria-hidden="true">▦</span>
               Manage Cards
@@ -731,7 +747,7 @@ export function App() {
                         {currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? "Correct" : "Review again"}
                       </strong>
                       {currentQuizCard.card.item.chinese.trim() ? (
-                        <span>Chinese: {currentQuizCard.card.item.chinese}</span>
+                        <span>{currentQuizCard.card.item.chinese}</span>
                       ) : null}
                       {currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? (
                         currentQuizCard.card.item.example_sentence.trim() ? (
@@ -787,17 +803,22 @@ export function App() {
             )}
             {sessionSummary ? (
               <div className="session-summary quiz-summary">
-                <div>
-                  <strong>Review complete.</strong>
-                  <span>
-                    {sessionSummary.correct} correct, {sessionSummary.wrong} wrong.
-                  </span>
+                <div className="summary-mark" aria-hidden="true">✓</div>
+                <div className="summary-copy">
+                  <strong>Review complete</strong>
+                  <span>{sessionSummary.reviewed} cards reviewed</span>
                 </div>
-                <div>
+                <div className="summary-score">
                   <strong>{Math.round((sessionSummary.correct / Math.max(1, sessionSummary.reviewed)) * 100)}%</strong>
                   <span>accuracy</span>
                 </div>
-                {sessionSummary.lastNextDue ? <span>Last card returns {formatDate(sessionSummary.lastNextDue)}.</span> : null}
+                <div className="summary-breakdown" aria-label="Review result breakdown">
+                  <span>{sessionSummary.correct} correct</span>
+                  <span>{sessionSummary.wrong} wrong</span>
+                </div>
+                {sessionSummary.lastNextDue ? (
+                  <span className="summary-return">Last card returns {formatDate(sessionSummary.lastNextDue)}.</span>
+                ) : null}
               </div>
             ) : null}
           </section>
@@ -936,7 +957,11 @@ export function App() {
             </div>
 
             <div className="library" key={`library-${libraryPage}-${query}`}>
-              {paginatedVocab.map(({ item, state }) => (
+              {isRefreshing && paginatedVocab.length === 0 ? (
+                <div className="empty-state spacious">
+                  <strong>Loading cards...</strong>
+                </div>
+              ) : paginatedVocab.map(({ item, state }) => (
                 <article className={editingID === item.id ? "library-card editing" : "library-card"} key={item.id}>
                   {editingID === item.id ? (
                     <form className="edit-form" onSubmit={handleSaveEdit}>

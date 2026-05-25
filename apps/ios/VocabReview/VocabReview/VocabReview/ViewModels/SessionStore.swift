@@ -28,6 +28,7 @@ final class SessionStore: ObservableObject {
 
     private let baseURL = AppEnvironment.apiBaseURL
     private let sessionTokenKey = "session_token"
+    private var libraryLoadID = 0
     let libraryPageSize = 10
     let reviewHistoryPageSize = 21
 
@@ -120,8 +121,16 @@ final class SessionStore: ObservableObject {
     func loadLibraryCards(query: String = "", status: String = "") async {
         guard isAuthenticated else { return }
 
+        libraryLoadID += 1
+        let loadID = libraryLoadID
         isLoadingLibraryCards = true
         errorMessage = ""
+        libraryCards = []
+        defer {
+            if loadID == libraryLoadID {
+                isLoadingLibraryCards = false
+            }
+        }
 
         do {
             let response: LibraryResponse = try await sendRequest(path: pathWithQuery("/vocab", [
@@ -130,16 +139,16 @@ final class SessionStore: ObservableObject {
                 URLQueryItem(name: "q", value: query.trimmingCharacters(in: .whitespacesAndNewlines)),
                 URLQueryItem(name: "status", value: status)
             ]))
+            guard loadID == libraryLoadID else { return }
             libraryCards = response.items.sorted { lhs, rhs in
                 lhs.item.createdAtDate > rhs.item.createdAtDate
             }
             libraryTotal = response.total ?? response.items.count
             libraryPage = min(libraryPage, libraryPageCount)
         } catch {
+            guard loadID == libraryLoadID else { return }
             handleRequestError(error)
         }
-
-        isLoadingLibraryCards = false
     }
 
     func loadReviewHistory() async {
