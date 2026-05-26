@@ -132,19 +132,21 @@ struct ReviewListView: View {
                     .readingMuted()
             }
 
-            Button {
-                Task { await startReviewSession() }
-            } label: {
-                if isStartingReview {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                } else {
-                    Text(sessionStore.reviewStats.due_now == 0 ? "All caught up" : "Start Review")
-                        .frame(maxWidth: .infinity)
+            if sessionStore.reviewStats.due_now > 0 {
+                Button {
+                    Task { await startReviewSession() }
+                } label: {
+                    if isStartingReview {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Text("Start Review")
+                            .frame(maxWidth: .infinity)
+                    }
                 }
+                .buttonStyle(.borderedProminent)
+                .disabled(sessionStore.dueCards.isEmpty || isStartingReview)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(sessionStore.dueCards.isEmpty || isStartingReview)
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -431,9 +433,15 @@ struct ReviewListView: View {
     }
 
     private func startReviewSession() async {
-        guard !sessionStore.dueCards.isEmpty else { return }
         isStartingReview = true
         defer { isStartingReview = false }
+
+        await sessionStore.loadDueCards()
+        await sessionStore.loadReviewStats()
+        guard !sessionStore.dueCards.isEmpty else {
+            sessionStore.clearError()
+            return
+        }
 
         let candidates = await sessionStore.loadReviewOptionCards()
         let deck = buildQuizDeck(

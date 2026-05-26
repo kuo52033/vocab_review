@@ -8,7 +8,7 @@ include $(ENV_FILE)
 export
 endif
 
-.PHONY: db-up db-down db-wait migrate migrate-test backend-run notifications-run test test-integration prod-build prod-up prod-pull prod-down prod-logs prod-migrate
+.PHONY: db-up db-down db-wait migrate migrate-test backend-run notifications-run test test-integration
 
 db-up:
 	docker compose up -d postgres
@@ -42,24 +42,3 @@ test:
 test-integration:
 	$(MAKE) ENV_FILE=.env.test migrate-test
 	cd backend && set -a && . ../.env.test && set +a && go test ./internal/repository/postgres -count=1
-
-prod-build:
-	docker compose --env-file .env.production -f docker-compose.prod.yml build
-
-prod-up:
-	test -f .env.production
-	docker compose --env-file .env.production -f docker-compose.prod.yml up -d
-
-prod-pull:
-	test -f .env.production
-	docker compose --env-file .env.production -f docker-compose.prod.yml pull
-
-prod-down:
-	docker compose --env-file .env.production -f docker-compose.prod.yml down
-
-prod-logs:
-	docker compose --env-file .env.production -f docker-compose.prod.yml logs -f
-
-prod-migrate:
-	test -f .env.production
-	docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate

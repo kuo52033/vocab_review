@@ -1,5 +1,8 @@
 # Repository Guidelines
 
+## Agent Tooling
+Keep the agent surface small. Use CodeGraph only for structural code questions such as symbol lookup, callers/callees, impact analysis, or focused architecture context. Use `rg`/file reads for literal text, config, docs, and exact strings. Do not add agent-specific plans, generated working notes, or tool integrations unless they are part of the checked-in development workflow.
+
 ## Project Structure & Module Organization
 This repository is a small monorepo for the Vocab Review product.
 
@@ -23,7 +26,7 @@ Prefer changes inside the existing layer for each feature rather than mixing HTT
 - `npm run build:extension` from the repo root: build the Chrome extension into `apps/chrome-extension/dist`.
 - `gofmt -w cmd internal` from `backend/`: format Go sources before committing.
 - `xcodebuild -project apps/ios/VocabReview/VocabReview/VocabReview.xcodeproj -scheme VocabReview -destination 'generic/platform=iOS Simulator' -derivedDataPath .xcode-derived-data build`: verify the iOS app builds.
-- `docker compose --env-file .env.production -f deploy/docker-compose.prod.yml config`: validate the production Compose file locally with a temporary/safe env file. Do not create or commit `.env.production` in the repo.
+- `APP_ENV_FILE=../.env.production docker compose --env-file .env.production -f deploy/docker-compose.prod.yml config --quiet`: validate the production Compose file locally with a temporary/safe env file. Do not commit `.env.production`.
 
 ## Coding Style & Naming Conventions
 Go code should follow `gofmt` defaults and keep packages focused. React and TypeScript files use 2-space indentation, `PascalCase` for components, and `camelCase` for hooks, helpers, and local state. Keep filenames descriptive and lowercase for Go, and match component names for React files when new components are introduced.

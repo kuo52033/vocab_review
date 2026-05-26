@@ -1,7 +1,7 @@
 services:
   api:
     image: ${BACKEND_IMAGE}
-    env_file: .env.production
+    env_file: ${APP_ENV_FILE:-.env.production}
     environment:
       ADDR: ":8080"
     expose:
@@ -10,7 +10,7 @@ services:
 
   migrate:
     image: ${BACKEND_IMAGE}
-    env_file: .env.production
+    env_file: ${APP_ENV_FILE:-.env.production}
     command: ["/app/goose", "-dir", "/app/migrations", "postgres", "${DATABASE_URL}", "up"]
     profiles:
       - tools

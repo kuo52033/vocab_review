@@ -539,11 +539,22 @@ export function App() {
   }
 
   async function startReviewSession() {
-    if (due.length === 0) return;
     setIsStartingReview(true);
     try {
-      const vocabResponse = await listVocab({ limit: 100, offset: 0 });
-      const deck = buildQuizDeck(due, vocabResponse.items, reviewSessionSize);
+      const [freshDueResponse, vocabResponse, statsResponse] = await Promise.all([
+        listDue(),
+        listVocab({ limit: 100, offset: 0 }),
+        getReviewStats()
+      ]);
+      setDue(freshDueResponse.items);
+      setStats(statsResponse.stats);
+
+      if (freshDueResponse.items.length === 0) {
+        setError("");
+        return;
+      }
+
+      const deck = buildQuizDeck(freshDueResponse.items, vocabResponse.items, reviewSessionSize);
       if (deck.length === 0) {
         setError("Start Review needs at least one due card with a meaning and one other active card with a meaning.");
         return;
@@ -780,9 +791,11 @@ export function App() {
                       {stats.due_now === 0 ? "No cards ready to review" : `${stats.due_now} card${stats.due_now === 1 ? "" : "s"} ready to review`}
                     </span>
                   </div>
-                  <button type="button" className="start-review-button" onClick={startReviewSession} disabled={due.length === 0 || isStartingReview}>
-                    {stats.due_now === 0 ? "All caught up" : isStartingReview ? "Preparing..." : "Start Review"}
-                  </button>
+                  {stats.due_now > 0 ? (
+                    <button type="button" className="start-review-button" onClick={startReviewSession} disabled={due.length === 0 || isStartingReview}>
+                      {isStartingReview ? "Preparing..." : "Start Review"}
+                    </button>
+                  ) : null}
                 </article>
 
                 <div className="home-stats" aria-label="Review stats">
