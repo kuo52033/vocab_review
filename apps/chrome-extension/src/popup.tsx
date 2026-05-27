@@ -107,6 +107,13 @@ function Popup() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
+    const tokenFromURL = new URLSearchParams(window.location.search).get("token");
+    if (tokenFromURL) {
+      setMagicToken(tokenFromURL);
+      void verifyToken(tokenFromURL);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
     chrome.storage.local.get(["draftSelection", "draftPageURL", "draftPageTitle", "sessionToken", "email", QUEUE_KEY], async (stored) => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       const response = tab.id ? await getSelectionFromActiveTab(tab.id).catch(() => null) : null;
@@ -119,7 +126,9 @@ function Popup() {
         page_url: stored.draftPageURL || response?.url || "",
         term: selection
       });
-      setSessionToken(stored.sessionToken || "");
+      if (!tokenFromURL) {
+        setSessionToken(stored.sessionToken || "");
+      }
       setEmail(stored.email || "");
 
       const storedQueue = (stored[QUEUE_KEY] || []) as QueuedCapture[];
@@ -182,7 +191,7 @@ function Popup() {
     try {
       const response = await request<MagicLink>("/auth/magic-link", {
         method: "POST",
-        body: JSON.stringify({ email, base_url: "http://localhost:5173" })
+        body: JSON.stringify({ email, base_url: chrome.runtime.getURL("popup.html"), client: "chrome_extension" })
       });
       await chrome.storage.local.set({ email });
       setMagicLink(response);
@@ -197,12 +206,16 @@ function Popup() {
 
   async function handleVerify(event: FormEvent) {
     event.preventDefault();
+    await verifyToken(magicToken);
+  }
+
+  async function verifyToken(token: string) {
     setStatus("Signing in...");
     setIsLoading(true);
     try {
       const response = await request<{ session: { token: string } }>("/auth/verify", {
         method: "POST",
-        body: JSON.stringify({ token: magicToken })
+        body: JSON.stringify({ token })
       });
       await chrome.storage.local.set({ sessionToken: response.session.token });
       setSessionToken(response.session.token);
@@ -366,12 +379,18 @@ function Popup() {
             </button>
           </form>
 
-          {magicLink?.verification_url ? (
+          {magicLink ? (
             <form onSubmit={handleVerify} className="verify-block">
-              <p className="small">Development URL</p>
-              <a href={magicLink.verification_url} target="_blank" rel="noreferrer">
-                {magicLink.verification_url}
-              </a>
+              {magicLink.verification_url ? (
+                <>
+                  <p className="small">Development URL</p>
+                  <a href={magicLink.verification_url} target="_blank" rel="noreferrer">
+                    {magicLink.verification_url}
+                  </a>
+                </>
+              ) : (
+                <p className="small">{magicLink.message}</p>
+              )}
               <label>
                 Verification token
                 <input value={magicToken} onChange={(event) => setMagicToken(event.target.value)} />

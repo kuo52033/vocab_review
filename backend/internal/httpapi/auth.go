@@ -8,6 +8,7 @@ func (s *Server) handleMagicLink(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Email   string `json:"email"`
 		BaseURL string `json:"base_url"`
+		Client  string `json:"client"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -16,7 +17,7 @@ func (s *Server) handleMagicLink(w http.ResponseWriter, r *http.Request) {
 	if req.BaseURL == "" {
 		req.BaseURL = "http://localhost:8080"
 	}
-	result, err := s.app.RequestMagicLink(r.Context(), req.Email, req.BaseURL)
+	result, err := s.app.RequestMagicLink(r.Context(), req.Email, req.BaseURL, req.Client)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

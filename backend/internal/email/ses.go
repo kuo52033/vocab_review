@@ -26,14 +26,15 @@ func NewSESSender(config aws.Config, fromEmail, fromName string) *SESSender {
 	}
 }
 
-func (s *SESSender) SendMagicLink(ctx context.Context, email, verificationURL string, expiresAt time.Time) error {
+func (s *SESSender) SendMagicLink(ctx context.Context, email, verificationURL, token string, expiresAt time.Time) error {
 	from := s.fromEmail
 	if s.fromName != "" {
 		from = fmt.Sprintf("%s <%s>", s.fromName, s.fromEmail)
 	}
-	textBody := fmt.Sprintf("Use this link to sign in to Vocab Review:\n\n%s\n\nThis link expires at %s. If you did not request it, you can ignore this email.\n", verificationURL, expiresAt.Format(time.RFC1123))
+	textBody := fmt.Sprintf("Use this link to sign in to Vocab Review on the web:\n\n%s\n\nUsing the Chrome extension or iOS app? Paste this verification token instead:\n\n%s\n\nThis link and token expire at %s. If you did not request it, you can ignore this email.\n", verificationURL, token, expiresAt.Format(time.RFC1123))
 	htmlURL := html.EscapeString(verificationURL)
-	htmlBody := fmt.Sprintf(`<p>Use this link to sign in to Vocab Review:</p><p><a href="%s">Sign in to Vocab Review</a></p><p>This link expires at %s. If you did not request it, you can ignore this email.</p>`, htmlURL, html.EscapeString(expiresAt.Format(time.RFC1123)))
+	htmlToken := html.EscapeString(token)
+	htmlBody := fmt.Sprintf(`<p>Use this link to sign in to Vocab Review on the web:</p><p><a href="%s">Sign in to Vocab Review</a></p><p>Using the Chrome extension or iOS app? Paste this verification token instead:</p><p><code>%s</code></p><p>This link and token expire at %s. If you did not request it, you can ignore this email.</p>`, htmlURL, htmlToken, html.EscapeString(expiresAt.Format(time.RFC1123)))
 
 	_, err := s.client.SendEmail(ctx, &sesv2.SendEmailInput{
 		FromEmailAddress: aws.String(from),

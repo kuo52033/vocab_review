@@ -265,8 +265,8 @@ type loggingMagicLinkSender struct {
 	logger *slog.Logger
 }
 
-func (s loggingMagicLinkSender) SendMagicLink(ctx context.Context, email, verificationURL string, expiresAt time.Time) error {
-	err := s.sender.SendMagicLink(ctx, email, verificationURL, expiresAt)
+func (s loggingMagicLinkSender) SendMagicLink(ctx context.Context, email, verificationURL, token string, expiresAt time.Time) error {
+	err := s.sender.SendMagicLink(ctx, email, verificationURL, token, expiresAt)
 	if err != nil {
 		s.logger.Error("magic link email send failed", "email", email, "error", err)
 	}

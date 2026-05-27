@@ -25,7 +25,7 @@ type VocabEnricher interface {
 }
 
 type MagicLinkSender interface {
-	SendMagicLink(ctx context.Context, email, verificationURL string, expiresAt time.Time) error
+	SendMagicLink(ctx context.Context, email, verificationURL, token string, expiresAt time.Time) error
 }
 
 type App struct {
@@ -91,7 +91,7 @@ type MagicLinkResponse struct {
 	ExpiresAt       string `json:"expires_at,omitempty"`
 }
 
-func (a *App) RequestMagicLink(ctx context.Context, email, baseURL string) (MagicLinkResponse, error) {
+func (a *App) RequestMagicLink(ctx context.Context, email, baseURL, client string) (MagicLinkResponse, error) {
 	email = normalizeEmail(email)
 	if !validEmail(email) {
 		return MagicLinkResponse{}, errors.New("valid email is required")
@@ -118,14 +118,14 @@ func (a *App) RequestMagicLink(ctx context.Context, email, baseURL string) (Magi
 		return MagicLinkResponse{}, err
 	}
 
-	verificationURL := a.verificationURL(baseURL, rawToken)
+	verificationURL := a.verificationURL(baseURL, rawToken, client)
 	if isDevelopment || isDebugEmail {
 		response.Token = rawToken
 		response.VerificationURL = verificationURL
 		response.ExpiresAt = token.ExpiresAt.Format(time.RFC3339)
 	}
 	if !isDevelopment && a.magicLinkSender != nil {
-		if err := a.magicLinkSender.SendMagicLink(ctx, email, verificationURL, token.ExpiresAt); err != nil {
+		if err := a.magicLinkSender.SendMagicLink(ctx, email, verificationURL, rawToken, token.ExpiresAt); err != nil {
 			return response, nil
 		}
 	}
@@ -187,7 +187,7 @@ func (a *App) hashToken(token string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func (a *App) verificationURL(baseURL, token string) string {
+func (a *App) verificationURL(baseURL, token, client string) string {
 	webBaseURL := a.authConfig.PublicWebBaseURL
 	if a.authConfig.Environment == "development" && strings.TrimSpace(baseURL) != "" {
 		webBaseURL = baseURL
@@ -195,7 +195,7 @@ func (a *App) verificationURL(baseURL, token string) string {
 	if strings.TrimSpace(webBaseURL) == "" {
 		webBaseURL = "http://localhost:8080"
 	}
-	return strings.TrimRight(webBaseURL, "/") + "/?token=" + token
+	return strings.TrimRight(webBaseURL, "/") + "?token=" + token
 }
 
 func (a *App) isDebugEmail(email string) bool {
