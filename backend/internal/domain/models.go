@@ -54,6 +54,7 @@ type Session struct {
 type MagicLinkToken struct {
 	TokenHash string    `json:"token_hash"`
 	Email     string    `json:"email"`
+	CreatedAt time.Time `json:"created_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 

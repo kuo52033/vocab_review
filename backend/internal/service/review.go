@@ -20,6 +20,8 @@ import (
 
 var ErrEnrichmentNotConfigured = errors.New("vocab enrichment is not configured")
 
+const productionMagicLinkMinInterval = 60 * time.Second
+
 type VocabEnricher interface {
 	Autocomplete(ctx context.Context, items []enrichment.Item) ([]enrichment.Suggestion, error)
 }
@@ -109,13 +111,23 @@ func (a *App) RequestMagicLink(ctx context.Context, email, baseURL, client strin
 	}
 
 	rawToken := newID("ml")
+	now := a.clock.Now()
 	token := domain.MagicLinkToken{
 		TokenHash: a.hashToken(rawToken),
 		Email:     email,
-		ExpiresAt: a.clock.Now().Add(15 * time.Minute),
+		CreatedAt: now,
+		ExpiresAt: now.Add(15 * time.Minute),
 	}
-	if err := a.store.PutMagicLink(ctx, token); err != nil {
+	minInterval := time.Duration(0)
+	if !isDevelopment {
+		minInterval = productionMagicLinkMinInterval
+	}
+	issued, err := a.store.PutMagicLink(ctx, token, minInterval)
+	if err != nil {
 		return MagicLinkResponse{}, err
+	}
+	if !issued {
+		return response, nil
 	}
 
 	verificationURL := a.verificationURL(baseURL, rawToken, client)

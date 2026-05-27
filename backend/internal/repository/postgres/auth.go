@@ -11,15 +11,42 @@ import (
 	"vocabreview/backend/internal/repository"
 )
 
-func (s *Store) PutMagicLink(ctx context.Context, token domain.MagicLinkToken) error {
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO magic_links (token_hash, email, expires_at)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (email)
-		DO UPDATE SET token_hash = EXCLUDED.token_hash,
-		              expires_at = EXCLUDED.expires_at
-	`, token.TokenHash, token.Email, token.ExpiresAt.UTC())
-	return err
+func (s *Store) PutMagicLink(ctx context.Context, token domain.MagicLinkToken, minInterval time.Duration) (bool, error) {
+	issued := false
+	err := withTx(ctx, s.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `DELETE FROM magic_links WHERE expires_at < $1`, token.CreatedAt.UTC()); err != nil {
+			return err
+		}
+
+		var createdAt time.Time
+		err := tx.QueryRow(ctx, `
+			SELECT created_at
+			FROM magic_links
+			WHERE email = $1
+			FOR UPDATE
+		`, token.Email).Scan(&createdAt)
+		if err == nil && minInterval > 0 && token.CreatedAt.Sub(createdAt) < minInterval {
+			return nil
+		}
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO magic_links (token_hash, email, created_at, expires_at)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (email)
+			DO UPDATE SET token_hash = EXCLUDED.token_hash,
+			              created_at = EXCLUDED.created_at,
+			              expires_at = EXCLUDED.expires_at
+		`, token.TokenHash, token.Email, token.CreatedAt.UTC(), token.ExpiresAt.UTC())
+		if err != nil {
+			return err
+		}
+		issued = true
+		return nil
+	})
+	return issued, err
 }
 
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (domain.User, bool, error) {

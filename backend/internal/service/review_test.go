@@ -49,14 +49,26 @@ func newFakeRepository() *fakeRepository {
 
 func (f *fakeRepository) HealthCheck(context.Context) error { return nil }
 
-func (f *fakeRepository) PutMagicLink(_ context.Context, token domain.MagicLinkToken) error {
+func (f *fakeRepository) PutMagicLink(_ context.Context, token domain.MagicLinkToken, minInterval time.Duration) (bool, error) {
+	for _, existing := range f.magicLinks {
+		if token.CreatedAt.After(existing.ExpiresAt) {
+			continue
+		}
+		if existing.Email == token.Email && minInterval > 0 && token.CreatedAt.Sub(existing.CreatedAt) < minInterval {
+			return false, nil
+		}
+	}
 	for tokenHash, existing := range f.magicLinks {
+		if token.CreatedAt.After(existing.ExpiresAt) {
+			delete(f.magicLinks, tokenHash)
+			continue
+		}
 		if existing.Email == token.Email {
 			delete(f.magicLinks, tokenHash)
 		}
 	}
 	f.magicLinks[token.TokenHash] = token
-	return nil
+	return true, nil
 }
 
 func (f *fakeRepository) GetUserByEmail(_ context.Context, email string) (domain.User, bool, error) {
@@ -477,6 +489,42 @@ func TestProductionDebugEmailIncludesTokenForExistingUser(t *testing.T) {
 	}
 	if strings.Contains(response.VerificationURL, "evil.test") {
 		t.Fatalf("production used request base URL: %q", response.VerificationURL)
+	}
+}
+
+func TestProductionMagicLinkRateLimitSuppressesEmailAndDebugToken(t *testing.T) {
+	repo := newFakeRepository()
+	now := time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)
+	user := domain.User{ID: "usr_existing", Email: "tester@example.com", CreatedAt: now.Add(-time.Hour)}
+	repo.users[user.ID] = user
+	repo.usersByEmail[user.Email] = user.ID
+	sender := &fakeMagicLinkSender{}
+	app := NewAppWithConfig(repo, stubClock{now: now}, nil, AuthConfig{
+		Environment:      "production",
+		TokenHashSecret:  "secret",
+		PublicWebBaseURL: "https://vocabreview.uk",
+		DebugEmails:      []string{"tester@example.com"},
+	}, sender)
+
+	first, err := app.RequestMagicLink(context.Background(), "tester@example.com", "http://evil.test", "")
+	if err != nil {
+		t.Fatalf("first request link: %v", err)
+	}
+	second, err := app.RequestMagicLink(context.Background(), "tester@example.com", "http://evil.test", "")
+	if err != nil {
+		t.Fatalf("second request link: %v", err)
+	}
+	if first.Token == "" {
+		t.Fatalf("expected first debug response to include token: %+v", first)
+	}
+	if second.Token != "" || second.VerificationURL != "" || second.ExpiresAt != "" {
+		t.Fatalf("expected generic rate-limited response, got %+v", second)
+	}
+	if len(sender.sends) != 1 {
+		t.Fatalf("email sends: got %d want 1", len(sender.sends))
+	}
+	if len(repo.magicLinks) != 1 {
+		t.Fatalf("magic links: got %d want 1", len(repo.magicLinks))
 	}
 }
 
