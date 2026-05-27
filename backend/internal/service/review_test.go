@@ -50,6 +50,11 @@ func newFakeRepository() *fakeRepository {
 func (f *fakeRepository) HealthCheck(context.Context) error { return nil }
 
 func (f *fakeRepository) PutMagicLink(_ context.Context, token domain.MagicLinkToken) error {
+	for tokenHash, existing := range f.magicLinks {
+		if existing.Email == token.Email {
+			delete(f.magicLinks, tokenHash)
+		}
+	}
 	f.magicLinks[token.TokenHash] = token
 	return nil
 }
@@ -471,6 +476,32 @@ func TestProductionDebugEmailIncludesTokenForExistingUser(t *testing.T) {
 	}
 	if strings.Contains(response.VerificationURL, "evil.test") {
 		t.Fatalf("production used request base URL: %q", response.VerificationURL)
+	}
+}
+
+func TestRequestMagicLinkReplacesPendingTokenForEmail(t *testing.T) {
+	repo := newFakeRepository()
+	app := NewApp(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
+
+	first, err := app.RequestMagicLink(context.Background(), "test@example.com", "http://localhost:8080")
+	if err != nil {
+		t.Fatalf("first request link: %v", err)
+	}
+	second, err := app.RequestMagicLink(context.Background(), "test@example.com", "http://localhost:8080")
+	if err != nil {
+		t.Fatalf("second request link: %v", err)
+	}
+	if first.Token == second.Token {
+		t.Fatal("expected new token on second request")
+	}
+	if len(repo.magicLinks) != 1 {
+		t.Fatalf("magic link count: got %d want 1", len(repo.magicLinks))
+	}
+	if _, err := app.VerifyMagicLink(context.Background(), first.Token); err == nil || err.Error() != "invalid token" {
+		t.Fatalf("old token verify error: got %v want invalid token", err)
+	}
+	if _, err := app.VerifyMagicLink(context.Background(), second.Token); err != nil {
+		t.Fatalf("new token verify: %v", err)
 	}
 }
 

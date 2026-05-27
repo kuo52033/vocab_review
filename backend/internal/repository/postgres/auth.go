@@ -15,6 +15,9 @@ func (s *Store) PutMagicLink(ctx context.Context, token domain.MagicLinkToken) e
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO magic_links (token_hash, email, expires_at)
 		VALUES ($1, $2, $3)
+		ON CONFLICT (email)
+		DO UPDATE SET token_hash = EXCLUDED.token_hash,
+		              expires_at = EXCLUDED.expires_at
 	`, token.TokenHash, token.Email, token.ExpiresAt.UTC())
 	return err
 }

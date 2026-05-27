@@ -8,7 +8,7 @@ include $(ENV_FILE)
 export
 endif
 
-.PHONY: db-up db-down db-wait migrate migrate-test backend-run notifications-run test test-integration
+.PHONY: db-up db-down db-wait db-reset db-reset-test migrate migrate-test backend-run notifications-run test test-integration
 
 db-up:
 	docker compose up -d postgres
@@ -27,6 +27,14 @@ migrate: db-wait
 migrate-test: db-wait
 	test -n "$(DATABASE_URL)"
 	$(GOOSE) -dir $(MIGRATIONS_DIR) postgres "$(DATABASE_URL)" up
+
+db-reset: db-wait
+	docker compose exec -T postgres psql -U vocab -d vocab_review_dev -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+	$(MAKE) migrate
+
+db-reset-test: db-wait
+	docker compose exec -T postgres psql -U vocab -d vocab_review_test -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+	$(MAKE) ENV_FILE=.env.test migrate-test
 
 backend-run:
 	test -n "$(DATABASE_URL)"

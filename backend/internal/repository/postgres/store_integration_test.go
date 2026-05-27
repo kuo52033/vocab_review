@@ -180,6 +180,59 @@ func TestStoreLifecycle(t *testing.T) {
 	}
 }
 
+func TestPutMagicLinkReplacesExistingLinkForEmail(t *testing.T) {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DATABASE_URL is required for postgres integration tests")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resetDatabase(t, databaseURL)
+
+	store, err := New(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.PutMagicLink(ctx, domain.MagicLinkToken{
+		TokenHash: "first_hash",
+		Email:     "test@example.com",
+		ExpiresAt: time.Now().UTC().Add(15 * time.Minute),
+	}); err != nil {
+		t.Fatalf("put first magic link: %v", err)
+	}
+	if err := store.PutMagicLink(ctx, domain.MagicLinkToken{
+		TokenHash: "second_hash",
+		Email:     "test@example.com",
+		ExpiresAt: time.Now().UTC().Add(15 * time.Minute),
+	}); err != nil {
+		t.Fatalf("put second magic link: %v", err)
+	}
+
+	var count int
+	if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM magic_links WHERE email = $1`, "test@example.com").Scan(&count); err != nil {
+		t.Fatalf("count magic links: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("magic link count: got %d want 1", count)
+	}
+
+	_, _, err = store.ConsumeMagicLink(ctx, "first_hash", time.Now().UTC(), domain.User{
+		ID:        "usr_first",
+		CreatedAt: time.Now().UTC(),
+	}, domain.Session{
+		TokenHash: "sess_first",
+		CreatedAt: time.Now().UTC(),
+		ExpiresAt: time.Now().UTC().Add(30 * 24 * time.Hour),
+	})
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("old token error: got %v want %v", err, repository.ErrNotFound)
+	}
+}
+
 func TestArchiveVocabForUserScopesArchiveByOwner(t *testing.T) {
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
