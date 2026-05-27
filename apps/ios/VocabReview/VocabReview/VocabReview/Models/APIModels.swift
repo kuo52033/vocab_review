@@ -1,9 +1,10 @@
 import Foundation
 
 struct MagicLinkResponse: Codable {
-    let token: String
-    let verification_url: String
-    let expires_at: String
+    let message: String
+    let token: String?
+    let verification_url: String?
+    let expires_at: String?
 }
 
 struct AuthResponse: Codable {

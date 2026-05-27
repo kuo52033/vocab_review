@@ -50,12 +50,20 @@ func newFakeRepository() *fakeRepository {
 func (f *fakeRepository) HealthCheck(context.Context) error { return nil }
 
 func (f *fakeRepository) PutMagicLink(_ context.Context, token domain.MagicLinkToken) error {
-	f.magicLinks[token.Token] = token
+	f.magicLinks[token.TokenHash] = token
 	return nil
 }
 
-func (f *fakeRepository) ConsumeMagicLink(_ context.Context, token string, now time.Time, newUser domain.User, newSession domain.Session) (domain.User, domain.Session, error) {
-	link, ok := f.magicLinks[token]
+func (f *fakeRepository) GetUserByEmail(_ context.Context, email string) (domain.User, bool, error) {
+	userID, ok := f.usersByEmail[email]
+	if !ok {
+		return domain.User{}, false, nil
+	}
+	return f.users[userID], true, nil
+}
+
+func (f *fakeRepository) ConsumeMagicLink(_ context.Context, tokenHash string, now time.Time, newUser domain.User, newSession domain.Session) (domain.User, domain.Session, error) {
+	link, ok := f.magicLinks[tokenHash]
 	if !ok {
 		return domain.User{}, domain.Session{}, repository.ErrNotFound
 	}
@@ -74,13 +82,13 @@ func (f *fakeRepository) ConsumeMagicLink(_ context.Context, token string, now t
 	}
 
 	newSession.UserID = user.ID
-	f.sessions[newSession.Token] = newSession
-	delete(f.magicLinks, token)
+	f.sessions[newSession.TokenHash] = newSession
+	delete(f.magicLinks, tokenHash)
 	return user, newSession, nil
 }
 
-func (f *fakeRepository) GetSessionUser(_ context.Context, token string) (domain.Session, domain.User, bool, error) {
-	session, ok := f.sessions[token]
+func (f *fakeRepository) GetSessionUser(_ context.Context, tokenHash string) (domain.Session, domain.User, bool, error) {
+	session, ok := f.sessions[tokenHash]
 	if !ok {
 		return domain.Session{}, domain.User{}, false, nil
 	}
@@ -343,6 +351,129 @@ func newTestApp() *App {
 	return NewApp(newFakeRepository(), stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
 }
 
+type sentMagicLink struct {
+	email           string
+	verificationURL string
+	expiresAt       time.Time
+}
+
+type fakeMagicLinkSender struct {
+	sends []sentMagicLink
+	err   error
+}
+
+func (f *fakeMagicLinkSender) SendMagicLink(_ context.Context, email, verificationURL string, expiresAt time.Time) error {
+	f.sends = append(f.sends, sentMagicLink{email: email, verificationURL: verificationURL, expiresAt: expiresAt})
+	return f.err
+}
+
+func TestMagicLinkTokensAreHashedAtRest(t *testing.T) {
+	repo := newFakeRepository()
+	app := NewApp(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
+
+	link, err := app.RequestMagicLink(context.Background(), "test@example.com", "http://localhost:8080")
+	if err != nil {
+		t.Fatalf("request link: %v", err)
+	}
+	if _, ok := repo.magicLinks[link.Token]; ok {
+		t.Fatal("raw magic link token was stored")
+	}
+	tokenHash := app.hashToken(link.Token)
+	stored, ok := repo.magicLinks[tokenHash]
+	if !ok {
+		t.Fatal("hashed magic link token was not stored")
+	}
+	if stored.TokenHash == link.Token {
+		t.Fatal("stored magic link token hash equals raw token")
+	}
+
+	auth, err := app.VerifyMagicLink(context.Background(), link.Token)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if _, ok := repo.sessions[auth.Session.Token]; ok {
+		t.Fatal("raw session token was stored")
+	}
+	if _, ok := repo.sessions[app.hashToken(auth.Session.Token)]; !ok {
+		t.Fatal("hashed session token was not stored")
+	}
+}
+
+func TestProductionMagicLinkForUnknownEmailIsGeneric(t *testing.T) {
+	repo := newFakeRepository()
+	sender := &fakeMagicLinkSender{}
+	app := NewAppWithConfig(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)}, nil, AuthConfig{
+		Environment:      "production",
+		TokenHashSecret:  "secret",
+		PublicWebBaseURL: "https://vocabreview.uk",
+	}, sender)
+
+	response, err := app.RequestMagicLink(context.Background(), "unknown@example.com", "http://evil.test")
+	if err != nil {
+		t.Fatalf("request link: %v", err)
+	}
+	if response.Message == "" || response.Token != "" || response.VerificationURL != "" || response.ExpiresAt != "" {
+		t.Fatalf("unexpected response: %+v", response)
+	}
+	if len(repo.magicLinks) != 0 {
+		t.Fatalf("expected no magic links, got %d", len(repo.magicLinks))
+	}
+	if len(sender.sends) != 0 {
+		t.Fatalf("expected no email sends, got %d", len(sender.sends))
+	}
+}
+
+func TestProductionMagicLinkForExistingUserSendsEmailWithoutTokenResponse(t *testing.T) {
+	repo := newFakeRepository()
+	user := domain.User{ID: "usr_existing", Email: "test@example.com", CreatedAt: time.Date(2026, 4, 25, 0, 0, 0, 0, time.UTC)}
+	repo.users[user.ID] = user
+	repo.usersByEmail[user.Email] = user.ID
+	sender := &fakeMagicLinkSender{}
+	app := NewAppWithConfig(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)}, nil, AuthConfig{
+		Environment:      "production",
+		TokenHashSecret:  "secret",
+		PublicWebBaseURL: "https://vocabreview.uk/app",
+	}, sender)
+
+	response, err := app.RequestMagicLink(context.Background(), "test@example.com", "http://evil.test")
+	if err != nil {
+		t.Fatalf("request link: %v", err)
+	}
+	if response.Token != "" || response.VerificationURL != "" || response.ExpiresAt != "" {
+		t.Fatalf("unexpected token response: %+v", response)
+	}
+	if len(sender.sends) != 1 {
+		t.Fatalf("email sends: got %d want 1", len(sender.sends))
+	}
+	if !strings.HasPrefix(sender.sends[0].verificationURL, "https://vocabreview.uk/app/?token=ml_") {
+		t.Fatalf("unexpected verification URL: %q", sender.sends[0].verificationURL)
+	}
+}
+
+func TestProductionDebugEmailIncludesTokenForExistingUser(t *testing.T) {
+	repo := newFakeRepository()
+	user := domain.User{ID: "usr_existing", Email: "tester@example.com", CreatedAt: time.Date(2026, 4, 25, 0, 0, 0, 0, time.UTC)}
+	repo.users[user.ID] = user
+	repo.usersByEmail[user.Email] = user.ID
+	app := NewAppWithConfig(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)}, nil, AuthConfig{
+		Environment:      "production",
+		TokenHashSecret:  "secret",
+		PublicWebBaseURL: "https://vocabreview.uk",
+		DebugEmails:      []string{"tester@example.com"},
+	}, nil)
+
+	response, err := app.RequestMagicLink(context.Background(), "tester@example.com", "http://evil.test")
+	if err != nil {
+		t.Fatalf("request link: %v", err)
+	}
+	if response.Token == "" || response.VerificationURL == "" || response.ExpiresAt == "" {
+		t.Fatalf("expected debug token response, got %+v", response)
+	}
+	if strings.Contains(response.VerificationURL, "evil.test") {
+		t.Fatalf("production used request base URL: %q", response.VerificationURL)
+	}
+}
+
 type testContextKey struct{}
 
 type fakeEnricher struct {
@@ -468,7 +599,7 @@ func TestReviewScheduling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request link: %v", err)
 	}
-	auth, err := app.VerifyMagicLink(context.Background(), link["token"])
+	auth, err := app.VerifyMagicLink(context.Background(), link.Token)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -504,7 +635,7 @@ func TestReviewHistoryReturnsRecentReviewedCards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request link: %v", err)
 	}
-	auth, err := app.VerifyMagicLink(context.Background(), link["token"])
+	auth, err := app.VerifyMagicLink(context.Background(), link.Token)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -538,7 +669,7 @@ func TestReviewStatsCountsProgressAndCards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request link: %v", err)
 	}
-	auth, err := app.VerifyMagicLink(context.Background(), link["token"])
+	auth, err := app.VerifyMagicLink(context.Background(), link.Token)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -579,7 +710,7 @@ func TestArchiveVocabRemovesCardFromDueReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request link: %v", err)
 	}
-	auth, err := app.VerifyMagicLink(context.Background(), link["token"])
+	auth, err := app.VerifyMagicLink(context.Background(), link.Token)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
@@ -630,7 +761,7 @@ func TestUpdateVocabClearsPartOfSpeech(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request link: %v", err)
 	}
-	auth, err := app.VerifyMagicLink(context.Background(), link["token"])
+	auth, err := app.VerifyMagicLink(context.Background(), link.Token)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}

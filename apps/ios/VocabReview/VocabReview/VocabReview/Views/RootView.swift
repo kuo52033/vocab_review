@@ -117,26 +117,31 @@ struct RootView: View {
 
                 if let link = sessionStore.requestedMagicLink {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Development link")
-                            .font(.headline)
-                        Text(link.verification_url)
-                            .textSelection(.enabled)
-                            .font(.footnote.monospaced())
-                        Text("Token: \(link.token)")
-                            .textSelection(.enabled)
-                            .font(.footnote.monospaced())
+                        if let verificationURL = link.verification_url, let token = link.token {
+                            Text("Development link")
+                                .font(.headline)
+                            Text(verificationURL)
+                                .textSelection(.enabled)
+                                .font(.footnote.monospaced())
+                            Text("Token: \(token)")
+                                .textSelection(.enabled)
+                                .font(.footnote.monospaced())
 
-                        HStack {
-                            Button("Use this link") {
-                                Task { await sessionStore.useRequestedMagicLink() }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(sessionStore.isSigningIn || sessionStore.isRequestingMagicLink)
+                            HStack {
+                                Button("Use this link") {
+                                    Task { await sessionStore.useRequestedMagicLink() }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(sessionStore.isSigningIn || sessionStore.isRequestingMagicLink)
 
-                            Button("Fill token") {
-                                magicToken = link.token
+                                Button("Fill token") {
+                                    magicToken = token
+                                }
+                                .buttonStyle(.bordered)
                             }
-                            .buttonStyle(.bordered)
+                        } else {
+                            Text(link.message)
+                                .foregroundStyle(AppTheme.muted)
                         }
                     }
                     .readingCard()

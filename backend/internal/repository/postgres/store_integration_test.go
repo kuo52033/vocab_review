@@ -34,7 +34,7 @@ func TestStoreLifecycle(t *testing.T) {
 	defer store.Close()
 
 	magicLink := domain.MagicLinkToken{
-		Token:     "ml_test",
+		TokenHash: "ml_hash_test",
 		Email:     "test@example.com",
 		ExpiresAt: time.Now().UTC().Add(15 * time.Minute),
 	}
@@ -42,11 +42,11 @@ func TestStoreLifecycle(t *testing.T) {
 		t.Fatalf("put magic link: %v", err)
 	}
 
-	user, session, err := store.ConsumeMagicLink(ctx, magicLink.Token, time.Now().UTC(), domain.User{
+	user, session, err := store.ConsumeMagicLink(ctx, magicLink.TokenHash, time.Now().UTC(), domain.User{
 		ID:        "usr_test",
 		CreatedAt: time.Now().UTC(),
 	}, domain.Session{
-		Token:     "sess_test",
+		TokenHash: "sess_hash_test",
 		CreatedAt: time.Now().UTC(),
 		ExpiresAt: time.Now().UTC().Add(30 * 24 * time.Hour),
 	})
@@ -54,12 +54,12 @@ func TestStoreLifecycle(t *testing.T) {
 		t.Fatalf("consume magic link: %v", err)
 	}
 
-	loadedSession, loadedUser, ok, err := store.GetSessionUser(ctx, session.Token)
+	loadedSession, loadedUser, ok, err := store.GetSessionUser(ctx, session.TokenHash)
 	if err != nil {
 		t.Fatalf("get session user: %v", err)
 	}
-	if !ok || loadedUser.ID != user.ID || loadedSession.Token != session.Token {
-		t.Fatalf("unexpected session lookup: ok=%v user=%s session=%s", ok, loadedUser.ID, loadedSession.Token)
+	if !ok || loadedUser.ID != user.ID || loadedSession.TokenHash != session.TokenHash {
+		t.Fatalf("unexpected session lookup: ok=%v user=%s session=%s", ok, loadedUser.ID, loadedSession.TokenHash)
 	}
 
 	now := time.Now().UTC()

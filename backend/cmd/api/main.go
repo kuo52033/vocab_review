@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -12,7 +14,10 @@ import (
 	"strings"
 	"time"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+
 	"vocabreview/backend/internal/clock"
+	"vocabreview/backend/internal/email"
 	"vocabreview/backend/internal/httpapi"
 	"vocabreview/backend/internal/repository/postgres"
 	"vocabreview/backend/internal/service"
@@ -38,7 +43,10 @@ func main() {
 	}
 	defer store.Close()
 
-	app := service.NewAppWithEnricher(store, clock.RealClock{}, newVocabEnricherFromEnv())
+	authConfig, err := newAuthConfigFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
 	logOutput := logFormatWriter{
 		out:   os.Stdout,
 		color: logColorEnabled(os.Getenv("LOG_COLOR")),
@@ -46,6 +54,13 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(logOutput, &slog.HandlerOptions{
 		ReplaceAttr: replaceLogAttr,
 	}))
+	awsCtx, awsCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer awsCancel()
+	magicLinkSender, err := newMagicLinkSender(awsCtx, authConfig.Environment, logger)
+	if err != nil {
+		log.Fatal(err)
+	}
+	app := service.NewAppWithConfig(store, clock.RealClock{}, newVocabEnricherFromEnv(), authConfig, magicLinkSender)
 	server := httpapi.NewServer(app, logger)
 
 	log.Printf("listening on %s", addr)
@@ -194,6 +209,82 @@ func newVocabEnricherFromEnv() service.VocabEnricher {
 	}
 	provider := enrichment.NewOpenAIProvider(baseURL, apiKey, model, &http.Client{Timeout: 15 * time.Second})
 	return enrichment.New(provider, 20)
+}
+
+func newAuthConfigFromEnv() (service.AuthConfig, error) {
+	environment := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
+
+	if environment == "" {
+		environment = "production"
+	}
+	config := service.AuthConfig{
+		Environment:      environment,
+		TokenHashSecret:  os.Getenv("TOKEN_HASH_SECRET"),
+		PublicWebBaseURL: os.Getenv("PUBLIC_WEB_BASE_URL"),
+		DebugEmails:      splitCSV(os.Getenv("MAGIC_LINK_DEBUG_EMAILS")),
+	}
+	if environment == "development" {
+		return config, nil
+	}
+
+	if config.TokenHashSecret == "" {
+		return service.AuthConfig{}, errors.New("TOKEN_HASH_SECRET is required outside development")
+	}
+	if strings.TrimSpace(config.PublicWebBaseURL) == "" {
+		return service.AuthConfig{}, errors.New("PUBLIC_WEB_BASE_URL is required outside development")
+	}
+	if strings.ToLower(strings.TrimSpace(os.Getenv("MAIL_PROVIDER"))) != "ses" {
+		return service.AuthConfig{}, errors.New("MAIL_PROVIDER=ses is required outside development")
+	}
+	if strings.TrimSpace(os.Getenv("MAIL_FROM_EMAIL")) == "" {
+		return service.AuthConfig{}, errors.New("MAIL_FROM_EMAIL is required outside development")
+	}
+	return config, nil
+}
+
+func newMagicLinkSender(ctx context.Context, environment string, logger *slog.Logger) (service.MagicLinkSender, error) {
+	if environment == "development" {
+		return nil, nil
+	}
+	awsConfig, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load AWS config: %w", err)
+	}
+	if strings.TrimSpace(awsConfig.Region) == "" {
+		return nil, errors.New("AWS_REGION is required outside development")
+	}
+	fromName := os.Getenv("MAIL_FROM_NAME")
+	if strings.TrimSpace(fromName) == "" {
+		fromName = "Vocab Review"
+	}
+	return loggingMagicLinkSender{sender: email.NewSESSender(awsConfig, os.Getenv("MAIL_FROM_EMAIL"), fromName), logger: logger}, nil
+}
+
+type loggingMagicLinkSender struct {
+	sender service.MagicLinkSender
+	logger *slog.Logger
+}
+
+func (s loggingMagicLinkSender) SendMagicLink(ctx context.Context, email, verificationURL string, expiresAt time.Time) error {
+	err := s.sender.SendMagicLink(ctx, email, verificationURL, expiresAt)
+	if err != nil {
+		s.logger.Error("magic link email send failed", "email", email, "error", err)
+	}
+	return err
+}
+
+func splitCSV(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			values = append(values, trimmed)
+		}
+	}
+	return values
 }
 
 func logColorEnabled(value string) bool {

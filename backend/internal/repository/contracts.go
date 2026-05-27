@@ -49,8 +49,9 @@ type HealthChecker interface {
 
 type AuthRepository interface {
 	PutMagicLink(ctx context.Context, token domain.MagicLinkToken) error
-	ConsumeMagicLink(ctx context.Context, token string, now time.Time, newUser domain.User, newSession domain.Session) (domain.User, domain.Session, error)
-	GetSessionUser(ctx context.Context, token string) (domain.Session, domain.User, bool, error)
+	GetUserByEmail(ctx context.Context, email string) (domain.User, bool, error)
+	ConsumeMagicLink(ctx context.Context, tokenHash string, now time.Time, newUser domain.User, newSession domain.Session) (domain.User, domain.Session, error)
+	GetSessionUser(ctx context.Context, tokenHash string) (domain.Session, domain.User, bool, error)
 }
 
 type VocabRepository interface {

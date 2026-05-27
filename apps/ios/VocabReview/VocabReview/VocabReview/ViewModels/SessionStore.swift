@@ -58,7 +58,7 @@ final class SessionStore: ObservableObject {
                 body: MagicLinkRequest(email: trimmedEmail, base_url: baseURL.absoluteString)
             )
             requestedMagicLink = response
-            infoMessage = "Development magic link created."
+            infoMessage = response.verification_url == nil ? response.message : "Development magic link created."
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -531,6 +531,12 @@ final class SessionStore: ObservableObject {
         requestedMagicLink = nil
         errorMessage = ""
         infoMessage = ""
+        isRequestingMagicLink = false
+        isSigningIn = false
+        isLoadingDueCards = false
+        isLoadingLibraryCards = false
+        isLoadingReviewHistory = false
+        isGrading = false
         isCreatingVocab = false
         isDeletingVocab = false
         isAutocompletingVocab = false
@@ -621,6 +627,8 @@ final class SessionStore: ObservableObject {
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
             if httpResponse.statusCode == 401 {
+                signOut()
+                errorMessage = "Session expired. Sign in again."
                 throw SessionStoreError.unauthorized
             }
             if let apiError = try? JSONDecoder().decode(APIErrorResponse.self, from: data) {
@@ -647,7 +655,9 @@ final class SessionStore: ObservableObject {
 
     private func handleRequestError(_ error: Error) {
         if case SessionStoreError.unauthorized = error {
-            signOut()
+            if isAuthenticated {
+                signOut()
+            }
             errorMessage = "Session expired. Sign in again."
             return
         }

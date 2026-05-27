@@ -24,11 +24,11 @@ type reviewHTTPRepository struct {
 func (r *reviewHTTPRepository) HealthCheck(context.Context) error { return nil }
 
 func (r *reviewHTTPRepository) GetSessionUser(_ context.Context, token string) (domain.Session, domain.User, bool, error) {
-	if token != "sess_test" {
+	if token == "" {
 		return domain.Session{}, domain.User{}, false, nil
 	}
 	return domain.Session{
-			Token:     token,
+			TokenHash: token,
 			UserID:    "usr_test",
 			ExpiresAt: time.Now().Add(time.Hour),
 		}, domain.User{

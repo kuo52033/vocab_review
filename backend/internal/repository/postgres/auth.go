@@ -13,13 +13,29 @@ import (
 
 func (s *Store) PutMagicLink(ctx context.Context, token domain.MagicLinkToken) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO magic_links (token, email, expires_at)
+		INSERT INTO magic_links (token_hash, email, expires_at)
 		VALUES ($1, $2, $3)
-	`, token.Token, token.Email, token.ExpiresAt.UTC())
+	`, token.TokenHash, token.Email, token.ExpiresAt.UTC())
 	return err
 }
 
-func (s *Store) ConsumeMagicLink(ctx context.Context, token string, now time.Time, newUser domain.User, newSession domain.Session) (domain.User, domain.Session, error) {
+func (s *Store) GetUserByEmail(ctx context.Context, email string) (domain.User, bool, error) {
+	var user domain.User
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, email, created_at
+		FROM users
+		WHERE email = $1
+	`, email).Scan(&user.ID, &user.Email, &user.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.User{}, false, nil
+	}
+	if err != nil {
+		return domain.User{}, false, err
+	}
+	return user, true, nil
+}
+
+func (s *Store) ConsumeMagicLink(ctx context.Context, tokenHash string, now time.Time, newUser domain.User, newSession domain.Session) (domain.User, domain.Session, error) {
 	var user domain.User
 	var session domain.Session
 
@@ -29,9 +45,9 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token string, now time.Tim
 		err := tx.QueryRow(ctx, `
 			SELECT email, expires_at
 			FROM magic_links
-			WHERE token = $1
+			WHERE token_hash = $1
 			FOR UPDATE
-		`, token).Scan(&email, &expiresAt)
+		`, tokenHash).Scan(&email, &expiresAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return repository.ErrNotFound
 		}
@@ -62,12 +78,12 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token string, now time.Tim
 
 		newSession.UserID = user.ID
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO sessions (token, user_id, created_at, expires_at)
+			INSERT INTO sessions (token_hash, user_id, created_at, expires_at)
 			VALUES ($1, $2, $3, $4)
-		`, newSession.Token, newSession.UserID, newSession.CreatedAt.UTC(), newSession.ExpiresAt.UTC()); err != nil {
+		`, newSession.TokenHash, newSession.UserID, newSession.CreatedAt.UTC(), newSession.ExpiresAt.UTC()); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `DELETE FROM magic_links WHERE token = $1`, token); err != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM magic_links WHERE token_hash = $1`, tokenHash); err != nil {
 			return err
 		}
 		session = newSession
@@ -76,17 +92,17 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token string, now time.Tim
 	return user, session, err
 }
 
-func (s *Store) GetSessionUser(ctx context.Context, token string) (domain.Session, domain.User, bool, error) {
+func (s *Store) GetSessionUser(ctx context.Context, tokenHash string) (domain.Session, domain.User, bool, error) {
 	var session domain.Session
 	var user domain.User
 	err := s.pool.QueryRow(ctx, `
-		SELECT s.token, s.user_id, s.created_at, s.expires_at,
+		SELECT s.token_hash, s.user_id, s.created_at, s.expires_at,
 		       u.id, u.email, u.created_at
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
-		WHERE s.token = $1
-	`, token).Scan(
-		&session.Token,
+		WHERE s.token_hash = $1
+	`, tokenHash).Scan(
+		&session.TokenHash,
 		&session.UserID,
 		&session.CreatedAt,
 		&session.ExpiresAt,

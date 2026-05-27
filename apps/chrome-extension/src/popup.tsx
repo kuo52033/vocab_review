@@ -13,9 +13,10 @@ type Draft = {
 };
 
 type MagicLink = {
-  token: string;
-  verification_url: string;
-  expires_at: string;
+  message: string;
+  token?: string;
+  verification_url?: string;
+  expires_at?: string;
 };
 
 type QueuedCapture = {
@@ -185,8 +186,8 @@ function Popup() {
       });
       await chrome.storage.local.set({ email });
       setMagicLink(response);
-      setMagicToken(response.token);
-      setStatus("Development verification token is ready.");
+      setMagicToken(response.token ?? "");
+      setStatus(response.token ? "Development verification token is ready." : response.message);
     } catch (error) {
       setStatus((error as Error).message);
     } finally {
@@ -365,7 +366,7 @@ function Popup() {
             </button>
           </form>
 
-          {magicLink ? (
+          {magicLink?.verification_url ? (
             <form onSubmit={handleVerify} className="verify-block">
               <p className="small">Development URL</p>
               <a href={magicLink.verification_url} target="_blank" rel="noreferrer">

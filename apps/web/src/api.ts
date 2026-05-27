@@ -72,12 +72,27 @@ export interface PageResponse<T> {
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8080";
 
+export class UnauthorizedError extends Error {
+  constructor(message = "Session expired. Sign in again.") {
+    super(message);
+    this.name = "UnauthorizedError";
+  }
+}
+
+export function isUnauthorizedError(error: unknown) {
+  return error instanceof UnauthorizedError;
+}
+
 function getToken() {
   return localStorage.getItem("session_token") ?? "";
 }
 
 export function setToken(token: string) {
   localStorage.setItem("session_token", token);
+}
+
+export function clearToken() {
+  localStorage.removeItem("session_token");
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -91,6 +106,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: "Request failed" }));
+    if (response.status === 401) {
+      throw new UnauthorizedError(error.error);
+    }
     throw new Error(error.error ?? "Request failed");
   }
   return response.json();
@@ -108,7 +126,7 @@ function withQuery(path: string, params?: PageParams) {
 }
 
 export async function requestMagicLink(email: string) {
-  return request<{ token: string; verification_url: string; expires_at: string }>("/auth/magic-link", {
+  return request<{ message: string; token?: string; verification_url?: string; expires_at?: string }>("/auth/magic-link", {
     method: "POST",
     body: JSON.stringify({ email, base_url: window.location.origin })
   });

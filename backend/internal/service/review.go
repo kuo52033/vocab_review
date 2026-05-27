@@ -2,7 +2,11 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -20,10 +24,24 @@ type VocabEnricher interface {
 	Autocomplete(ctx context.Context, items []enrichment.Item) ([]enrichment.Suggestion, error)
 }
 
+type MagicLinkSender interface {
+	SendMagicLink(ctx context.Context, email, verificationURL string, expiresAt time.Time) error
+}
+
 type App struct {
-	store    repository.AppRepository
-	clock    clock.Clock
-	enricher VocabEnricher
+	store           repository.AppRepository
+	clock           clock.Clock
+	enricher        VocabEnricher
+	authConfig      AuthConfig
+	debugEmails     map[string]struct{}
+	magicLinkSender MagicLinkSender
+}
+
+type AuthConfig struct {
+	Environment      string
+	TokenHashSecret  string
+	PublicWebBaseURL string
+	DebugEmails      []string
 }
 
 func NewApp(store repository.AppRepository, appClock clock.Clock) *App {
@@ -31,49 +49,107 @@ func NewApp(store repository.AppRepository, appClock clock.Clock) *App {
 }
 
 func NewAppWithEnricher(store repository.AppRepository, appClock clock.Clock, enricher VocabEnricher) *App {
-	return &App{store: store, clock: appClock, enricher: enricher}
+	return NewAppWithConfig(store, appClock, enricher, AuthConfig{
+		Environment:     "development",
+		TokenHashSecret: "development-token-hash-secret",
+	}, nil)
+}
+
+func NewAppWithConfig(store repository.AppRepository, appClock clock.Clock, enricher VocabEnricher, config AuthConfig, sender MagicLinkSender) *App {
+	config.Environment = strings.ToLower(strings.TrimSpace(config.Environment))
+	if config.Environment == "" {
+		config.Environment = "production"
+	}
+	if config.Environment == "development" && config.TokenHashSecret == "" {
+		config.TokenHashSecret = "development-token-hash-secret"
+	}
+	debugEmails := make(map[string]struct{}, len(config.DebugEmails))
+	for _, email := range config.DebugEmails {
+		normalized := normalizeEmail(email)
+		if normalized != "" {
+			debugEmails[normalized] = struct{}{}
+		}
+	}
+	return &App{store: store, clock: appClock, enricher: enricher, authConfig: config, debugEmails: debugEmails, magicLinkSender: sender}
 }
 
 type AuthResult struct {
-	User        domain.User    `json:"user"`
-	Session     domain.Session `json:"session"`
-	RedirectURL string         `json:"redirect_url"`
+	User        domain.User `json:"user"`
+	Session     AuthSession `json:"session"`
+	RedirectURL string      `json:"redirect_url"`
 }
 
-func (a *App) RequestMagicLink(ctx context.Context, email, baseURL string) (map[string]string, error) {
-	email = strings.TrimSpace(strings.ToLower(email))
-	if email == "" {
-		return nil, errors.New("email is required")
+type AuthSession struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type MagicLinkResponse struct {
+	Message         string `json:"message"`
+	Token           string `json:"token,omitempty"`
+	VerificationURL string `json:"verification_url,omitempty"`
+	ExpiresAt       string `json:"expires_at,omitempty"`
+}
+
+func (a *App) RequestMagicLink(ctx context.Context, email, baseURL string) (MagicLinkResponse, error) {
+	email = normalizeEmail(email)
+	if !validEmail(email) {
+		return MagicLinkResponse{}, errors.New("valid email is required")
 	}
 
+	response := MagicLinkResponse{Message: "Check your email for the sign-in link."}
+	isDevelopment := a.authConfig.Environment == "development"
+	isDebugEmail := a.isDebugEmail(email)
+	if !isDevelopment {
+		if _, ok, err := a.store.GetUserByEmail(ctx, email); err != nil {
+			return MagicLinkResponse{}, err
+		} else if !ok {
+			return response, nil
+		}
+	}
+
+	rawToken := newID("ml")
 	token := domain.MagicLinkToken{
-		Token:     newID("ml"),
+		TokenHash: a.hashToken(rawToken),
 		Email:     email,
 		ExpiresAt: a.clock.Now().Add(15 * time.Minute),
 	}
 	if err := a.store.PutMagicLink(ctx, token); err != nil {
-		return nil, err
+		return MagicLinkResponse{}, err
 	}
 
-	return map[string]string{
-		"token":            token.Token,
-		"verification_url": strings.TrimRight(baseURL, "/") + "/?token=" + token.Token,
-		"expires_at":       token.ExpiresAt.Format(time.RFC3339),
-	}, nil
+	verificationURL := a.verificationURL(baseURL, rawToken)
+	if isDevelopment || isDebugEmail {
+		response.Token = rawToken
+		response.VerificationURL = verificationURL
+		response.ExpiresAt = token.ExpiresAt.Format(time.RFC3339)
+	}
+	if !isDevelopment && a.magicLinkSender != nil {
+		if err := a.magicLinkSender.SendMagicLink(ctx, email, verificationURL, token.ExpiresAt); err != nil {
+			return response, nil
+		}
+	}
+
+	return response, nil
 }
 
 func (a *App) VerifyMagicLink(ctx context.Context, token string) (AuthResult, error) {
 	now := a.clock.Now()
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return AuthResult{}, errors.New("invalid token")
+	}
+	sessionToken := newID("sess")
 	newUser := domain.User{
 		ID:        newID("usr"),
 		CreatedAt: now,
 	}
 	newSession := domain.Session{
-		Token:     newID("sess"),
+		TokenHash: a.hashToken(sessionToken),
 		CreatedAt: now,
 		ExpiresAt: now.Add(30 * 24 * time.Hour),
 	}
-	user, session, err := a.store.ConsumeMagicLink(ctx, token, now, newUser, newSession)
+	user, session, err := a.store.ConsumeMagicLink(ctx, a.hashToken(token), now, newUser, newSession)
 	if errors.Is(err, repository.ErrNotFound) {
 		return AuthResult{}, errors.New("invalid token")
 	}
@@ -86,13 +162,13 @@ func (a *App) VerifyMagicLink(ctx context.Context, token string) (AuthResult, er
 
 	return AuthResult{
 		User:        user,
-		Session:     session,
-		RedirectURL: "/auth/success?session_token=" + session.Token,
+		Session:     AuthSession{Token: sessionToken, ExpiresAt: session.ExpiresAt},
+		RedirectURL: "/auth/success?session_token=" + sessionToken,
 	}, nil
 }
 
 func (a *App) Session(ctx context.Context, token string) (domain.Session, domain.User, error) {
-	session, user, ok, err := a.store.GetSessionUser(ctx, token)
+	session, user, ok, err := a.store.GetSessionUser(ctx, a.hashToken(strings.TrimSpace(token)))
 	if err != nil {
 		return domain.Session{}, domain.User{}, err
 	}
@@ -103,6 +179,40 @@ func (a *App) Session(ctx context.Context, token string) (domain.Session, domain
 		return domain.Session{}, domain.User{}, errors.New("session expired")
 	}
 	return session, user, nil
+}
+
+func (a *App) hashToken(token string) string {
+	mac := hmac.New(sha256.New, []byte(a.authConfig.TokenHashSecret))
+	mac.Write([]byte(token))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func (a *App) verificationURL(baseURL, token string) string {
+	webBaseURL := a.authConfig.PublicWebBaseURL
+	if a.authConfig.Environment == "development" && strings.TrimSpace(baseURL) != "" {
+		webBaseURL = baseURL
+	}
+	if strings.TrimSpace(webBaseURL) == "" {
+		webBaseURL = "http://localhost:8080"
+	}
+	return strings.TrimRight(webBaseURL, "/") + "/?token=" + token
+}
+
+func (a *App) isDebugEmail(email string) bool {
+	_, ok := a.debugEmails[email]
+	return ok
+}
+
+func normalizeEmail(email string) string {
+	return strings.TrimSpace(strings.ToLower(email))
+}
+
+func validEmail(email string) bool {
+	if email == "" {
+		return false
+	}
+	address, err := mail.ParseAddress(email)
+	return err == nil && strings.EqualFold(address.Address, email)
 }
 
 type CreateVocabInput struct {

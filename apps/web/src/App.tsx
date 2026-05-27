@@ -3,10 +3,12 @@ import {
   autocompleteVocab,
   AutocompleteItem,
   AutocompleteResult,
+  clearToken,
   createVocab,
   deleteVocab,
   getReviewStats,
   gradeReview,
+  isUnauthorizedError,
   listDue,
   listNotificationJobs,
   listVocab,
@@ -31,6 +33,7 @@ type CardDraft = {
 type AuthState = {
   email: string;
   magicLink?: string;
+  magicMessage?: string;
   token: string;
 };
 
@@ -361,7 +364,7 @@ export function App() {
       setError("");
     } catch (err) {
       if (requestID !== refreshRequestIDRef.current) return;
-      setError((err as Error).message);
+      handleRequestError(err);
     } finally {
       if (requestID === refreshRequestIDRef.current) {
         setIsRefreshing(false);
@@ -369,14 +372,48 @@ export function App() {
     }
   }
 
+  function clearAuthenticatedState() {
+    refreshRequestIDRef.current += 1;
+    clearToken();
+    setAuth((current) => ({ ...current, token: "", magicLink: undefined, magicMessage: undefined }));
+    setVocab([]);
+    setDue([]);
+    setVocabTotal(0);
+    setStats(emptyStats);
+    setJobs([]);
+    setEditingID("");
+    setEditDraft(emptyForm);
+    setSessionDeck([]);
+    setSessionIndex(0);
+    setSessionCorrectCount(0);
+    setSessionWrongCount(0);
+    setSessionSummary(null);
+    setSelectedOptionID("");
+    setPendingNextDue("");
+    setIsRefreshing(false);
+    setIsStartingReview(false);
+    setIsSaving(false);
+    setIsGrading(false);
+  }
+
+  function handleRequestError(error: unknown) {
+    if (isUnauthorizedError(error)) {
+      clearAuthenticatedState();
+      setError("Session expired. Sign in again.");
+      return true;
+    }
+    setError((error as Error).message);
+    return false;
+  }
+
   async function handleRequestLink(event: FormEvent) {
     event.preventDefault();
     try {
       const response = await requestMagicLink(auth.email);
-      setAuth((current) => ({ ...current, magicLink: response.verification_url }));
+      setAuth((current) => ({ ...current, magicLink: response.verification_url, magicMessage: response.message }));
       setError("");
     } catch (err) {
-      setError((err as Error).message);
+      handleRequestError(err);
     }
   }
 
@@ -417,7 +454,7 @@ export function App() {
       setError("");
       requestAnimationFrame(() => termInputRef.current?.focus());
     } catch (err) {
-      setError((err as Error).message);
+      handleRequestError(err);
     } finally {
       setIsSaving(false);
     }
@@ -458,7 +495,7 @@ export function App() {
     } catch (err) {
       setLastImportCount(importedCount);
       setLastSkippedDuplicateCount(skippedCount);
-      setError((err as Error).message);
+      handleRequestError(err);
     } finally {
       setIsSaving(false);
     }
@@ -488,6 +525,7 @@ export function App() {
       setEnrichedCards(mergedCards);
     } catch (err) {
       if (bulkTextRef.current !== inputSnapshot) return;
+      if (handleRequestError(err)) return;
       setEnrichmentError(`${(err as Error).message}. Manual import still works with the details currently shown.`);
     } finally {
       setIsEnriching(false);
@@ -504,7 +542,7 @@ export function App() {
       setEditDraft(emptyForm);
       await refresh();
     } catch (err) {
-      setError((err as Error).message);
+      handleRequestError(err);
     } finally {
       setIsSaving(false);
     }
@@ -520,7 +558,7 @@ export function App() {
       }
       await refresh();
     } catch (err) {
-      setError((err as Error).message);
+      handleRequestError(err);
     } finally {
       setIsSaving(false);
     }
@@ -532,7 +570,7 @@ export function App() {
       await gradeReview(id, grade);
       await refresh();
     } catch (err) {
-      setError((err as Error).message);
+      handleRequestError(err);
     } finally {
       setIsGrading(false);
     }
@@ -567,7 +605,7 @@ export function App() {
       setSelectedOptionID("");
       setError("");
     } catch (err) {
-      setError((err as Error).message);
+      handleRequestError(err);
     } finally {
       setIsStartingReview(false);
     }
@@ -598,7 +636,7 @@ export function App() {
       setPendingNextDue(response.state.next_due_at);
       setError("");
     } catch (err) {
-      setError((err as Error).message);
+      handleRequestError(err);
     } finally {
       setIsGrading(false);
     }
@@ -664,6 +702,7 @@ export function App() {
               <a href={auth.magicLink}>{auth.magicLink}</a>
             </div>
           ) : null}
+          {!auth.magicLink && auth.magicMessage ? <p className="notice">{auth.magicMessage}</p> : null}
           {error ? <p className="error">{error}</p> : null}
         </section>
       </main>
