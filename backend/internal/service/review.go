@@ -496,6 +496,18 @@ type CaptureInput struct {
 }
 
 func (a *App) CreateCapture(ctx context.Context, userID string, input CaptureInput) (DueCard, error) {
+	term := strings.TrimSpace(input.Term)
+	if term == "" {
+		return DueCard{}, errors.New("term is required")
+	}
+	existing, ok, err := a.store.GetActiveVocabByTerm(ctx, userID, term)
+	if err != nil {
+		return DueCard{}, err
+	}
+	if ok {
+		return DueCard{Item: existing.Item, State: existing.State}, nil
+	}
+
 	now := a.clock.Now()
 	card, err := intake.NewCapturedCard(userID, intake.CaptureInput{
 		Term:            input.Term,

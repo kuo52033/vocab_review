@@ -704,6 +704,43 @@ func TestCreateVocabSkipsDuplicateTerms(t *testing.T) {
 	}
 }
 
+func TestCreateCaptureSkipsDuplicateTerms(t *testing.T) {
+	repo := newFakeRepository()
+	app := NewApp(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
+	userID := "usr_test"
+
+	first, err := app.CreateCapture(context.Background(), userID, CaptureInput{
+		Term:    " Serendipity ",
+		Meaning: "a happy accident",
+		Chinese: "意外發現的美好事物",
+		PageURL: "https://example.com/first",
+	})
+	if err != nil {
+		t.Fatalf("create first capture: %v", err)
+	}
+
+	duplicate, err := app.CreateCapture(context.Background(), userID, CaptureInput{
+		Term:    "serendipity",
+		Meaning: "different",
+		PageURL: "https://example.com/second",
+	})
+	if err != nil {
+		t.Fatalf("create duplicate capture: %v", err)
+	}
+	if duplicate.Item.ID != first.Item.ID {
+		t.Fatalf("duplicate item ID: got %q want %q", duplicate.Item.ID, first.Item.ID)
+	}
+	if duplicate.Item.Chinese != "意外發現的美好事物" {
+		t.Fatalf("duplicate chinese: got %q", duplicate.Item.Chinese)
+	}
+	if len(repo.vocab) != 1 {
+		t.Fatalf("vocab count: got %d want 1", len(repo.vocab))
+	}
+	if len(repo.captures) != 1 {
+		t.Fatalf("capture count: got %d want 1", len(repo.captures))
+	}
+}
+
 func TestReviewScheduling(t *testing.T) {
 	app := newTestApp()
 	link, err := app.RequestMagicLink(context.Background(), "test@example.com", "http://localhost:8080", "")

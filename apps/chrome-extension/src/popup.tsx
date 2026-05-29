@@ -1,16 +1,6 @@
-import React, { FormEvent, useEffect, useRef, useState } from "react";
+import React, { FormEvent, useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import "./popup.css";
-
-type Draft = {
-  term: string;
-  meaning: string;
-  example_sentence: string;
-  part_of_speech: string;
-  selection: string;
-  page_title: string;
-  page_url: string;
-};
 
 type MagicLink = {
   message: string;
@@ -23,6 +13,7 @@ type QueuedCapture = {
   id: string;
   term: string;
   meaning?: string;
+  chinese?: string;
   example_sentence?: string;
   part_of_speech?: string;
   selection: string;
@@ -33,22 +24,8 @@ type QueuedCapture = {
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8080";
 const QUEUE_KEY = "queuedCaptures";
-const allowedPartsOfSpeech = new Set([
-  "",
-  "noun",
-  "verb",
-  "adjective",
-  "adverb",
-  "phrase",
-  "idiom",
-  "phrasal_verb",
-  "preposition",
-  "conjunction",
-  "interjection",
-  "determiner",
-  "pronoun",
-  "other"
-]);
+const AUTOCOMPLETE_RUNNING_KEY = "autocompleteQueueRunning";
+const IMPORT_RUNNING_KEY = "importQueueRunning";
 
 function newQueuedCapture(term: string, pageTitle = "", pageURL = ""): QueuedCapture {
   return {
@@ -61,50 +38,17 @@ function newQueuedCapture(term: string, pageTitle = "", pageURL = ""): QueuedCap
   };
 }
 
-const emptyDraft: Draft = {
-  term: "",
-  meaning: "",
-  example_sentence: "",
-  part_of_speech: "",
-  selection: "",
-  page_title: "",
-  page_url: ""
-};
-
-type AutocompleteItem = {
-  term: string;
-  meaning: string;
-  example_sentence: string;
-  part_of_speech: string;
-};
-
-type AutocompleteResult = AutocompleteItem & {
-  error: string;
-};
-
-type SelectionSnapshot = {
-  selection: string;
-  title: string;
-  url: string;
-};
-
-function normalizePartOfSpeech(value: string) {
-  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
-  if (allowedPartsOfSpeech.has(normalized)) return normalized;
-  return normalized ? "other" : "";
-}
-
 function Popup() {
-  const termInputRef = useRef<HTMLInputElement>(null);
-  const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [email, setEmail] = useState("");
   const [magicToken, setMagicToken] = useState("");
   const [magicLink, setMagicLink] = useState<MagicLink | null>(null);
   const [sessionToken, setSessionToken] = useState("");
   const [queuedCaptures, setQueuedCaptures] = useState<QueuedCapture[]>([]);
   const [status, setStatus] = useState("");
-  const [lastSavedTerm, setLastSavedTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isAutocompleteRunning, setIsAutocompleteRunning] = useState(false);
+  const [isImportRunning, setIsImportRunning] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   useEffect(() => {
     const tokenFromURL = new URLSearchParams(window.location.search).get("token");
@@ -114,47 +58,56 @@ function Popup() {
       window.history.replaceState({}, "", window.location.pathname);
     }
 
-    chrome.storage.local.get(["draftSelection", "draftPageURL", "draftPageTitle", "sessionToken", "email", QUEUE_KEY], async (stored) => {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      const response = tab.id ? await getSelectionFromActiveTab(tab.id).catch(() => null) : null;
-      const selection = stored.draftSelection || response?.selection || "";
+    chrome.storage.local.get(
+      ["draftSelection", "draftPageURL", "draftPageTitle", "sessionToken", "email", QUEUE_KEY, AUTOCOMPLETE_RUNNING_KEY, IMPORT_RUNNING_KEY],
+      async (stored) => {
+        if (!tokenFromURL) {
+          setSessionToken(stored.sessionToken || "");
+        }
+        setEmail(stored.email || "");
+        setIsAutocompleteRunning(Boolean(stored[AUTOCOMPLETE_RUNNING_KEY]));
+        setIsImportRunning(Boolean(stored[IMPORT_RUNNING_KEY]));
 
-      setDraft({
-        ...emptyDraft,
-        selection,
-        page_title: stored.draftPageTitle || response?.title || "",
-        page_url: stored.draftPageURL || response?.url || "",
-        term: selection
-      });
-      if (!tokenFromURL) {
-        setSessionToken(stored.sessionToken || "");
-      }
-      setEmail(stored.email || "");
-
-      const storedQueue = (stored[QUEUE_KEY] || []) as QueuedCapture[];
-      if (storedQueue.length === 0 && stored.draftSelection) {
-        const migratedQueue = [newQueuedCapture(stored.draftSelection, stored.draftPageTitle || "", stored.draftPageURL || "")];
-        await chrome.storage.local.set({ [QUEUE_KEY]: migratedQueue });
-        await chrome.action.setBadgeText({ text: "1" });
-        await chrome.action.setBadgeBackgroundColor({ color: "#ff9494" });
-        setQueuedCaptures(migratedQueue);
-      } else {
-        setQueuedCaptures(storedQueue);
-        await chrome.action.setBadgeText({ text: storedQueue.length ? String(Math.min(storedQueue.length, 99)) : "" });
-        if (storedQueue.length) {
+        const storedQueue = (stored[QUEUE_KEY] || []) as QueuedCapture[];
+        if (storedQueue.length === 0 && stored.draftSelection) {
+          const migratedQueue = [newQueuedCapture(stored.draftSelection, stored.draftPageTitle || "", stored.draftPageURL || "")];
+          await chrome.storage.local.set({ [QUEUE_KEY]: migratedQueue });
+          await chrome.storage.local.remove(["draftSelection", "draftPageURL", "draftPageTitle"]);
+          await chrome.action.setBadgeText({ text: "1" });
           await chrome.action.setBadgeBackgroundColor({ color: "#ff9494" });
+          setQueuedCaptures(migratedQueue);
+        } else {
+          setQueuedCaptures(storedQueue);
+          await chrome.action.setBadgeText({ text: storedQueue.length ? String(Math.min(storedQueue.length, 99)) : "" });
+          if (storedQueue.length) {
+            await chrome.action.setBadgeBackgroundColor({ color: "#ff9494" });
+          }
         }
       }
-    });
+    );
 
     const handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
-      if (areaName !== "local" || !changes[QUEUE_KEY]) return;
-      setQueuedCaptures(changes[QUEUE_KEY].newValue || []);
+      if (areaName !== "local") return;
+      if (changes[QUEUE_KEY]) {
+        setQueuedCaptures(changes[QUEUE_KEY].newValue || []);
+      }
+      if (changes[AUTOCOMPLETE_RUNNING_KEY]) {
+        setIsAutocompleteRunning(Boolean(changes[AUTOCOMPLETE_RUNNING_KEY].newValue));
+      }
+      if (changes[IMPORT_RUNNING_KEY]) {
+        setIsImportRunning(Boolean(changes[IMPORT_RUNNING_KEY].newValue));
+      }
     };
 
     chrome.storage.onChanged.addListener(handleStorageChange);
     return () => chrome.storage.onChanged.removeListener(handleStorageChange);
   }, []);
+
+  useEffect(() => {
+    if (!status) return;
+    const timeoutID = window.setTimeout(() => setStatus(""), 3000);
+    return () => window.clearTimeout(timeoutID);
+  }, [status]);
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`${API_URL}${path}`, {
@@ -170,18 +123,6 @@ function Popup() {
       throw new Error(error.error ?? "Request failed");
     }
     return response.json();
-  }
-
-  async function getSelectionFromActiveTab(tabID: number): Promise<SelectionSnapshot | null> {
-    const [result] = await chrome.scripting.executeScript({
-      target: { tabId: tabID },
-      func: () => ({
-        selection: window.getSelection()?.toString() ?? "",
-        title: document.title,
-        url: window.location.href
-      })
-    });
-    return result?.result ?? null;
   }
 
   async function handleRequestLink(event: FormEvent) {
@@ -221,41 +162,7 @@ function Popup() {
       setSessionToken(response.session.token);
       setMagicLink(null);
       setMagicToken("");
-      setStatus("Signed in. Ready to capture.");
-    } catch (error) {
-      setStatus((error as Error).message);
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    const savedTerm = draft.term.trim();
-    setStatus("Saving...");
-    setIsLoading(true);
-    try {
-      await request("/captures", {
-        method: "POST",
-        body: JSON.stringify({
-          term: draft.term,
-          meaning: draft.meaning,
-          example_sentence: draft.example_sentence,
-          part_of_speech: draft.part_of_speech,
-          selection: draft.selection,
-          page_title: draft.page_title,
-          page_url: draft.page_url
-        })
-      });
-      await chrome.storage.local.remove(["draftSelection", "draftPageURL", "draftPageTitle"]);
-      setLastSavedTerm(savedTerm);
-      setStatus(`Saved "${savedTerm}". Ready for another capture.`);
-      setDraft({
-        ...emptyDraft,
-        page_title: draft.page_title,
-        page_url: draft.page_url
-      });
-      requestAnimationFrame(() => termInputRef.current?.focus());
+      setStatus("Signed in. Ready to import queued captures.");
     } catch (error) {
       setStatus((error as Error).message);
     } finally {
@@ -266,36 +173,19 @@ function Popup() {
   async function handleImportQueue() {
     if (queuedCaptures.length === 0) return;
     setStatus(`Importing ${queuedCaptures.length} captures...`);
-    setIsLoading(true);
-    let importedCount = 0;
+    setIsImportRunning(true);
     try {
-      for (const capture of queuedCaptures) {
-        await request("/captures", {
-          method: "POST",
-          body: JSON.stringify({
-            term: capture.term,
-            meaning: capture.meaning ?? "",
-            example_sentence: capture.example_sentence ?? "",
-            part_of_speech: capture.part_of_speech ?? "",
-            selection: capture.selection,
-            page_title: capture.page_title,
-            page_url: capture.page_url
-          })
-        });
-        importedCount += 1;
+      const response = await chrome.runtime.sendMessage<{ type: string }, { ok: boolean; message?: string; error?: string }>({
+        type: "import-queue"
+      });
+      if (!response?.ok) {
+        throw new Error(response?.error ?? "Import failed");
       }
-      await chrome.storage.local.set({ [QUEUE_KEY]: [] });
-      await chrome.action.setBadgeText({ text: "" });
-      setQueuedCaptures([]);
-      setStatus(`Imported ${importedCount} ${importedCount === 1 ? "card" : "cards"}.`);
+      setStatus(response.message ?? "Imported queued captures.");
     } catch (error) {
-      const remaining = queuedCaptures.slice(importedCount);
-      await chrome.storage.local.set({ [QUEUE_KEY]: remaining });
-      await chrome.action.setBadgeText({ text: remaining.length ? String(Math.min(remaining.length, 99)) : "" });
-      setQueuedCaptures(remaining);
       setStatus((error as Error).message);
     } finally {
-      setIsLoading(false);
+      setIsImportRunning(false);
     }
   }
 
@@ -308,36 +198,20 @@ function Popup() {
 
   async function handleAutocompleteQueue() {
     if (queuedCaptures.length === 0) return;
-    setStatus(`Auto-completing ${queuedCaptures.length} queued captures...`);
-    setIsLoading(true);
+    setStatus(`Auto-filling ${queuedCaptures.length} queued captures...`);
+    setIsAutocompleteRunning(true);
     try {
-      const items: AutocompleteItem[] = queuedCaptures.map((capture) => ({
-        term: capture.term,
-        meaning: capture.meaning ?? "",
-        example_sentence: capture.example_sentence ?? "",
-        part_of_speech: capture.part_of_speech ?? ""
-      }));
-      const response = await request<{ items: AutocompleteResult[] }>("/vocab/autocomplete", {
-        method: "POST",
-        body: JSON.stringify({ items })
+      const response = await chrome.runtime.sendMessage<{ type: string }, { ok: boolean; message?: string; error?: string }>({
+        type: "autocomplete-queue"
       });
-      const enrichedQueue = queuedCaptures.map((capture, index) => {
-        const result = response.items[index];
-        if (!result) return capture;
-        return {
-          ...capture,
-          meaning: capture.meaning || result.meaning || "",
-          example_sentence: capture.example_sentence || result.example_sentence || "",
-          part_of_speech: capture.part_of_speech || normalizePartOfSpeech(result.part_of_speech || "")
-        };
-      });
-      await chrome.storage.local.set({ [QUEUE_KEY]: enrichedQueue });
-      setQueuedCaptures(enrichedQueue);
-      setStatus("Auto-completed queued captures. You can still edit later in the app.");
+      if (!response?.ok) {
+        throw new Error(response?.error ?? "Auto-fill failed");
+      }
+      setStatus(response.message ?? "Auto-filled queued captures.");
     } catch (error) {
       setStatus(`${(error as Error).message}. Queue import still works manually.`);
     } finally {
-      setIsLoading(false);
+      setIsAutocompleteRunning(false);
     }
   }
 
@@ -350,19 +224,68 @@ function Popup() {
 
   async function handleSignOut() {
     await chrome.storage.local.remove("sessionToken");
+    setIsUserMenuOpen(false);
     setSessionToken("");
     setStatus("Signed out.");
   }
 
+  function userInitial() {
+    return (email.trim()[0] || "U").toUpperCase();
+  }
+
+  function sourceLabel(capture: QueuedCapture) {
+    if (capture.page_url) {
+      try {
+        return new URL(capture.page_url).hostname;
+      } catch {
+        return capture.page_url;
+      }
+    }
+    return capture.page_title || "No source URL";
+  }
+
+  function isCaptureReady(capture: QueuedCapture) {
+    return Boolean(capture.meaning?.trim() && capture.chinese?.trim());
+  }
+
+  const isBusy = isLoading || isAutocompleteRunning || isImportRunning;
+
   return (
-    <main className="popup">
-      <section className="hero">
-        <p className="eyebrow">Vocab Review</p>
-        <h1>Capture a word while it is still warm.</h1>
-      </section>
+    <main className="popup-frame">
+      <header className="ext-header">
+        <div className="ext-logo">
+          <div className="ext-mark" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+              <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v17H6.5A2.5 2.5 0 0 0 4 22.5v-17Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+              <path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v17h4.5a2.5 2.5 0 0 1 2.5 2.5v-17Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div className="ext-name">VocabReview</div>
+        </div>
+        {sessionToken ? (
+          <div className="user-menu">
+            <button
+              type="button"
+              className="user-avatar"
+              onClick={() => setIsUserMenuOpen((isOpen) => !isOpen)}
+              aria-label="Open user menu"
+              aria-expanded={isUserMenuOpen}
+            >
+              {userInitial()}
+            </button>
+            {isUserMenuOpen ? (
+              <div className="user-dropdown">
+                <button type="button" onClick={handleSignOut}>
+                  Log out
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </header>
 
       {!sessionToken ? (
-        <section className="card">
+        <section className="signin-panel">
           <h2>Sign in</h2>
           <form onSubmit={handleRequestLink}>
             <label>
@@ -374,7 +297,7 @@ function Popup() {
                 onChange={(event) => setEmail(event.target.value)}
               />
             </label>
-            <button type="submit" disabled={isLoading || !email.trim()}>
+            <button type="submit" disabled={isBusy || !email.trim()}>
               {isLoading ? "Working..." : "Request magic link"}
             </button>
           </form>
@@ -395,103 +318,79 @@ function Popup() {
                 Verification token
                 <input value={magicToken} onChange={(event) => setMagicToken(event.target.value)} />
               </label>
-              <button type="submit" disabled={isLoading || !magicToken.trim()}>
+              <button type="submit" disabled={isBusy || !magicToken.trim()}>
                 Verify token
               </button>
             </form>
           ) : null}
         </section>
       ) : (
-        <section className="card">
-          <div className="capture-heading">
-            <div>
-              <h2>Quick capture</h2>
-              <p className="small">Only the word is required.</p>
-            </div>
-            <button type="button" className="text-button" onClick={handleSignOut}>
-              Sign out
-            </button>
-          </div>
-          <form onSubmit={handleSubmit}>
-            <label>
-              Word
-              <input ref={termInputRef} value={draft.term} onChange={(event) => setDraft({ ...draft, term: event.target.value })} />
-            </label>
-            <details className="optional-fields">
-              <summary>Meaning and example</summary>
-              <label>
-                Meaning
-                <textarea value={draft.meaning} onChange={(event) => setDraft({ ...draft, meaning: event.target.value })} />
-              </label>
-              <label>
-                Example sentence
-                <textarea
-                  value={draft.example_sentence}
-                  onChange={(event) => setDraft({ ...draft, example_sentence: event.target.value })}
-                />
-              </label>
-            </details>
-            <details className="optional-fields" open={Boolean(draft.selection)}>
-              <summary>Source context</summary>
-              <label>
-                Source selection
-                <textarea value={draft.selection} onChange={(event) => setDraft({ ...draft, selection: event.target.value })} />
-              </label>
-            </details>
-            {draft.page_title || draft.page_url ? (
-              <div className="source">
-                <strong>{draft.page_title || "Current page"}</strong>
-                <span>{draft.page_url}</span>
-              </div>
-            ) : null}
-            <button type="submit" disabled={isLoading || !draft.term.trim()}>
-              {isLoading ? "Saving..." : "Save + capture another"}
-            </button>
-            {lastSavedTerm ? <p className="saved-note">Last saved: {lastSavedTerm}</p> : null}
-          </form>
-
-          <section className="queue-panel">
-            <div className="queue-heading">
-              <div>
-                <h2>Bulk import queue</h2>
-                <p className="small">Right-click selected words on a page, then import them here once.</p>
-              </div>
-              <span className="queue-count">{queuedCaptures.length}</span>
-            </div>
-
-            {queuedCaptures.length === 0 ? (
-              <p className="empty-queue">No queued words yet.</p>
-            ) : (
-              <div className="queue-list">
-                {queuedCaptures.map((capture) => (
-                  <article className="queue-item" key={capture.id}>
-                    <div>
-                      <strong>{capture.term}</strong>
-                      <span>{capture.page_title || "Current page"}</span>
-                      {capture.meaning ? <span>{capture.meaning}</span> : null}
-                      {capture.part_of_speech ? <span className="pos-pill">{capture.part_of_speech.replace(/_/g, " ")}</span> : null}
-                    </div>
-                    <button type="button" className="text-button" onClick={() => removeQueuedCapture(capture.id)} disabled={isLoading}>
-                      Remove
-                    </button>
-                  </article>
-                ))}
-              </div>
-            )}
-
-            <div className="queue-actions">
-              <button type="button" className="secondary-button" onClick={handleAutocompleteQueue} disabled={isLoading || queuedCaptures.length === 0}>
-                {isLoading ? "Working..." : "Auto-complete"}
-              </button>
-              <button type="button" onClick={handleImportQueue} disabled={isLoading || queuedCaptures.length === 0}>
-                {isLoading ? "Importing..." : `Import ${queuedCaptures.length || ""} cards`}
-              </button>
-              <button type="button" className="secondary-button" onClick={clearQueue} disabled={isLoading || queuedCaptures.length === 0}>
-                Clear
-              </button>
-            </div>
+        <>
+          <section className="hint-bar">
+            <span>Right-click selected words to capture them here</span>
           </section>
-        </section>
+
+          <section className="ai-row">
+            <div className="ai-left">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3l1.88 5.76a1 1 0 0 0 .95.69H21l-4.94 3.58a1 1 0 0 0-.36 1.12L17.56 20 12 16.18 6.44 20l1.86-5.85a1 1 0 0 0-.36-1.12L3 9.45h6.17a1 1 0 0 0 .95-.69L12 3z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span>Auto-fill definitions</span>
+            </div>
+            <button type="button" className="ai-button" onClick={handleAutocompleteQueue} disabled={isBusy || queuedCaptures.length === 0}>
+              {isAutocompleteRunning ? "Working..." : "Fill missing"}
+            </button>
+          </section>
+
+          <section className="word-list">
+            {queuedCaptures.length === 0 ? (
+              <p className="empty-queue">No words captured yet</p>
+            ) : (
+              queuedCaptures.map((capture) => {
+                const ready = isCaptureReady(capture);
+                return (
+                  <article className="word-item" key={capture.id}>
+                    <div className="word-body">
+                      <div className="word-top">
+                        <strong className="word-term">{capture.term}</strong>
+                        {capture.part_of_speech ? <span className="pos-pill">{capture.part_of_speech.replace(/_/g, " ")}</span> : null}
+                      </div>
+                      {capture.meaning ? <p className="word-meaning">{capture.meaning}</p> : <p className="word-meaning word-missing">No definition yet</p>}
+                      {capture.chinese ? <p className="word-chinese">{capture.chinese}</p> : null}
+                      <p className="word-source">{sourceLabel(capture)}</p>
+                    </div>
+                    <div className="word-side">
+                      <button
+                        type="button"
+                        className="remove-button"
+                        onClick={() => removeQueuedCapture(capture.id)}
+                        disabled={isBusy}
+                        aria-label={`Remove ${capture.term}`}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path d="M3 6h18M9 6V4h6v2m4 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 5v6m4-6v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                      <span className={ready ? "word-status ready" : "word-status missing"}>{ready ? "Ready" : "Missing"}</span>
+                    </div>
+                  </article>
+                );
+              })
+            )}
+          </section>
+
+          <footer className="footer-actions">
+            <button type="button" className="clear-button" onClick={clearQueue} disabled={isBusy || queuedCaptures.length === 0}>
+              Clear all
+            </button>
+            <button type="button" className="import-button" onClick={handleImportQueue} disabled={isBusy || queuedCaptures.length === 0}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4m4-5 5 5 5-5M12 15V3" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span>{isImportRunning ? "Importing..." : `Import ${queuedCaptures.length || ""} cards`}</span>
+            </button>
+          </footer>
+        </>
       )}
 
       {status ? <p className="status">{status}</p> : null}
