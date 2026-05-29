@@ -496,7 +496,42 @@ func TestProductionDebugEmailIncludesTokenForExistingUserWithoutSendingEmail(t *
 	}
 }
 
-func TestProductionMagicLinkRateLimitSuppressesEmailAndDebugToken(t *testing.T) {
+func TestProductionMagicLinkRateLimitSuppressesEmail(t *testing.T) {
+	repo := newFakeRepository()
+	now := time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)
+	user := domain.User{ID: "usr_existing", Email: "test@example.com", CreatedAt: now.Add(-time.Hour)}
+	repo.users[user.ID] = user
+	repo.usersByEmail[user.Email] = user.ID
+	sender := &fakeMagicLinkSender{}
+	app := NewAppWithConfig(repo, stubClock{now: now}, nil, AuthConfig{
+		Environment:      "production",
+		TokenHashSecret:  "secret",
+		PublicWebBaseURL: "https://vocabreview.uk",
+	}, sender)
+
+	first, err := app.RequestMagicLink(context.Background(), "test@example.com", "http://evil.test", "")
+	if err != nil {
+		t.Fatalf("first request link: %v", err)
+	}
+	second, err := app.RequestMagicLink(context.Background(), "test@example.com", "http://evil.test", "")
+	if err != nil {
+		t.Fatalf("second request link: %v", err)
+	}
+	if first.Token != "" || first.VerificationURL != "" || first.ExpiresAt != "" {
+		t.Fatalf("expected first production response to hide token: %+v", first)
+	}
+	if second.Token != "" || second.VerificationURL != "" || second.ExpiresAt != "" {
+		t.Fatalf("expected generic rate-limited response, got %+v", second)
+	}
+	if len(sender.sends) != 1 {
+		t.Fatalf("email sends: got %d want 1", len(sender.sends))
+	}
+	if len(repo.magicLinks) != 1 {
+		t.Fatalf("magic links: got %d want 1", len(repo.magicLinks))
+	}
+}
+
+func TestProductionDebugEmailCanRequestTokenRepeatedlyWithoutSendingEmail(t *testing.T) {
 	repo := newFakeRepository()
 	now := time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)
 	user := domain.User{ID: "usr_existing", Email: "tester@example.com", CreatedAt: now.Add(-time.Hour)}
@@ -521,8 +556,11 @@ func TestProductionMagicLinkRateLimitSuppressesEmailAndDebugToken(t *testing.T) 
 	if first.Token == "" {
 		t.Fatalf("expected first debug response to include token: %+v", first)
 	}
-	if second.Token != "" || second.VerificationURL != "" || second.ExpiresAt != "" {
-		t.Fatalf("expected generic rate-limited response, got %+v", second)
+	if second.Token == "" || second.VerificationURL == "" || second.ExpiresAt == "" {
+		t.Fatalf("expected second debug response to include token: %+v", second)
+	}
+	if second.Token == first.Token {
+		t.Fatal("expected second debug request to issue a fresh token")
 	}
 	if len(sender.sends) != 0 {
 		t.Fatalf("email sends: got %d want 0", len(sender.sends))

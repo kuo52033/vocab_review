@@ -119,7 +119,7 @@ func (a *App) RequestMagicLink(ctx context.Context, email, baseURL, client strin
 		ExpiresAt: now.Add(15 * time.Minute),
 	}
 	minInterval := time.Duration(0)
-	if !isDevelopment {
+	if !isDevelopment && !isDebugEmail {
 		minInterval = productionMagicLinkMinInterval
 	}
 	issued, err := a.store.PutMagicLink(ctx, token, minInterval)
