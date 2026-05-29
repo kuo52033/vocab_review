@@ -17,6 +17,7 @@ struct ReviewListView: View {
     private let sessionLimit = 12
     private let focusedReviewTopPadding: CGFloat = 18
     private let focusedReviewBottomPadding: CGFloat = 18
+    private let focusedReviewActionInsetHeight: CGFloat = 72
 
     init(isReviewSessionActive: Binding<Bool> = .constant(false)) {
         _isReviewSessionActive = isReviewSessionActive
@@ -81,7 +82,8 @@ struct ReviewListView: View {
 
     private func focusedReviewSession(_ card: QuizCard) -> some View {
         GeometryReader { proxy in
-            let availableHeight = proxy.size.height
+            let actionInsetHeight = selectedOptionID.isEmpty ? 0 : focusedReviewActionInsetHeight
+            let availableHeight = max(proxy.size.height - actionInsetHeight, 0)
             let bottomPadding = max(focusedReviewBottomPadding, proxy.safeAreaInsets.bottom + focusedReviewBottomPadding)
             let hasOversizedOption = card.options.contains { option in
                 option.text.contains("\n") || option.text.count > 180
@@ -118,6 +120,11 @@ struct ReviewListView: View {
             .onPreferenceChange(FocusedReviewContentHeightKey.self) { focusedReviewContentHeight = $0 }
             .onChange(of: card.card.item.id) { _, _ in
                 focusedReviewContentHeight = 0
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !selectedOptionID.isEmpty {
+                    nextReviewAction
+                }
             }
             .refreshable {
                 await sessionStore.loadDueCards()
@@ -225,10 +232,6 @@ struct ReviewListView: View {
             .transition(.opacity.combined(with: .move(edge: .bottom)))
 
             quizFeedback(for: quizCard)
-
-            if !selectedOptionID.isEmpty {
-                nextReviewAction
-            }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
