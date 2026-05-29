@@ -15,6 +15,8 @@ struct ReviewListView: View {
     @State private var focusedReviewContentHeight: CGFloat = 0
 
     private let sessionLimit = 12
+    private let focusedReviewTopPadding: CGFloat = 18
+    private let focusedReviewBottomPadding: CGFloat = 18
 
     init(isReviewSessionActive: Binding<Bool> = .constant(false)) {
         _isReviewSessionActive = isReviewSessionActive
@@ -79,6 +81,13 @@ struct ReviewListView: View {
 
     private func focusedReviewSession(_ card: QuizCard) -> some View {
         GeometryReader { proxy in
+            let availableHeight = proxy.size.height
+            let bottomPadding = max(focusedReviewBottomPadding, proxy.safeAreaInsets.bottom + focusedReviewBottomPadding)
+            let hasOversizedOption = card.options.contains { option in
+                option.text.contains("\n") || option.text.count > 180
+            }
+            let shouldScroll = focusedReviewContentHeight > availableHeight + 1 || hasOversizedOption
+
             ScrollView {
                 VStack {
                     quizCard(card)
@@ -89,18 +98,27 @@ struct ReviewListView: View {
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
                 .padding(.horizontal, 18)
-                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .center)
+                .padding(.top, focusedReviewTopPadding)
+                .padding(.bottom, bottomPadding)
                 .background {
                     GeometryReader { contentProxy in
                         Color.clear
                             .preference(key: FocusedReviewContentHeightKey.self, value: contentProxy.size.height)
                     }
                 }
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: availableHeight,
+                    alignment: shouldScroll ? .top : .center
+                )
             }
             .scrollIndicators(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
-            .scrollDisabled(focusedReviewContentHeight <= proxy.size.height + 1)
+            .scrollBounceBehavior(.basedOnSize, axes: .vertical)
+            .scrollDisabled(!shouldScroll)
             .onPreferenceChange(FocusedReviewContentHeightKey.self) { focusedReviewContentHeight = $0 }
+            .onChange(of: card.card.item.id) { _, _ in
+                focusedReviewContentHeight = 0
+            }
             .refreshable {
                 await sessionStore.loadDueCards()
                 await sessionStore.loadReviewStats()
@@ -209,14 +227,7 @@ struct ReviewListView: View {
             quizFeedback(for: quizCard)
 
             if !selectedOptionID.isEmpty {
-                Button {
-                    advanceQuizCard()
-                } label: {
-                    Text(sessionIndex + 1 >= sessionDeck.count ? "Show summary" : "Next word")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(sessionStore.isGrading || isAdvancingQuizCard)
+                nextReviewAction
             }
         }
         .padding()
@@ -229,35 +240,56 @@ struct ReviewListView: View {
         .shadow(color: AppTheme.sageDark.opacity(0.12), radius: 24, x: 0, y: 14)
     }
 
+    private var nextReviewAction: some View {
+        Button {
+            advanceQuizCard()
+        } label: {
+            Text(sessionIndex + 1 >= sessionDeck.count ? "Show summary" : "Next word")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(sessionStore.isGrading || isAdvancingQuizCard)
+        .padding(.horizontal, 18)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+        .background(AppTheme.linen.opacity(0.96))
+    }
+
     private func answerOptionButton(_ option: QuizOption, index: Int) -> some View {
         let isSelected = selectedOptionID == option.id
         let showCorrect = !selectedOptionID.isEmpty && option.isCorrect
         let showWrong = isSelected && !option.isCorrect
 
-        return Button {
-            Task { await selectAnswer(option) }
-        } label: {
-            HStack(alignment: .top, spacing: 12) {
-                Text(String(UnicodeScalar(65 + index)!))
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(AppTheme.ink)
-                    .frame(width: 28, height: 28)
-                    .background(optionBadgeColor(showCorrect: showCorrect, showWrong: showWrong), in: Circle())
-                Text(option.text)
-                    .multilineTextAlignment(.leading)
-                    .foregroundStyle(AppTheme.ink)
-                Spacer()
-            }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(optionBackground(showCorrect: showCorrect, showWrong: showWrong), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(optionBorder(showCorrect: showCorrect, showWrong: showWrong), lineWidth: 1)
-            }
+        return HStack(alignment: .top, spacing: 12) {
+            Text(String(UnicodeScalar(65 + index)!))
+                .font(.caption.weight(.bold))
+                .foregroundStyle(AppTheme.ink)
+                .frame(width: 28, height: 28)
+                .background(optionBadgeColor(showCorrect: showCorrect, showWrong: showWrong), in: Circle())
+            Text(option.text)
+                .multilineTextAlignment(.leading)
+                .lineLimit(nil)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+                .foregroundStyle(AppTheme.ink)
         }
-        .buttonStyle(.plain)
-        .disabled(!selectedOptionID.isEmpty || sessionStore.isGrading)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(optionBackground(showCorrect: showCorrect, showWrong: showWrong), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(optionBorder(showCorrect: showCorrect, showWrong: showWrong), lineWidth: 1)
+        }
+        .onTapGesture {
+            guard selectedOptionID.isEmpty, !sessionStore.isGrading else { return }
+            Task { await selectAnswer(option) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("Option \(String(UnicodeScalar(65 + index)!)), \(option.text)")
         .scaleEffect(isSelected ? 0.985 : 1)
         .animation(.easeOut(duration: 0.16), value: selectedOptionID)
     }
@@ -301,14 +333,19 @@ struct ReviewListView: View {
                 if let correctAnswer {
                     Text("Correct answer: \(correctAnswer)")
                         .font(.footnote)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
                         .readingMuted()
                 }
                 if !item.example_sentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text(item.example_sentence)
                         .font(.footnote)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
                         .readingMuted()
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)

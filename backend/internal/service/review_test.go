@@ -468,17 +468,18 @@ func TestProductionMagicLinkForExistingUserSendsEmailWithoutTokenResponse(t *tes
 	}
 }
 
-func TestProductionDebugEmailIncludesTokenForExistingUser(t *testing.T) {
+func TestProductionDebugEmailIncludesTokenForExistingUserWithoutSendingEmail(t *testing.T) {
 	repo := newFakeRepository()
 	user := domain.User{ID: "usr_existing", Email: "tester@example.com", CreatedAt: time.Date(2026, 4, 25, 0, 0, 0, 0, time.UTC)}
 	repo.users[user.ID] = user
 	repo.usersByEmail[user.Email] = user.ID
+	sender := &fakeMagicLinkSender{}
 	app := NewAppWithConfig(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)}, nil, AuthConfig{
 		Environment:      "production",
 		TokenHashSecret:  "secret",
 		PublicWebBaseURL: "https://vocabreview.uk",
 		DebugEmails:      []string{"tester@example.com"},
-	}, nil)
+	}, sender)
 
 	response, err := app.RequestMagicLink(context.Background(), "tester@example.com", "http://evil.test", "")
 	if err != nil {
@@ -489,6 +490,9 @@ func TestProductionDebugEmailIncludesTokenForExistingUser(t *testing.T) {
 	}
 	if strings.Contains(response.VerificationURL, "evil.test") {
 		t.Fatalf("production used request base URL: %q", response.VerificationURL)
+	}
+	if len(sender.sends) != 0 {
+		t.Fatalf("expected debug email to skip sends, got %d", len(sender.sends))
 	}
 }
 
@@ -520,8 +524,8 @@ func TestProductionMagicLinkRateLimitSuppressesEmailAndDebugToken(t *testing.T) 
 	if second.Token != "" || second.VerificationURL != "" || second.ExpiresAt != "" {
 		t.Fatalf("expected generic rate-limited response, got %+v", second)
 	}
-	if len(sender.sends) != 1 {
-		t.Fatalf("email sends: got %d want 1", len(sender.sends))
+	if len(sender.sends) != 0 {
+		t.Fatalf("email sends: got %d want 0", len(sender.sends))
 	}
 	if len(repo.magicLinks) != 1 {
 		t.Fatalf("magic links: got %d want 1", len(repo.magicLinks))

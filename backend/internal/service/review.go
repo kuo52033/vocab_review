@@ -136,7 +136,7 @@ func (a *App) RequestMagicLink(ctx context.Context, email, baseURL, client strin
 		response.VerificationURL = verificationURL
 		response.ExpiresAt = token.ExpiresAt.Format(time.RFC3339)
 	}
-	if !isDevelopment && a.magicLinkSender != nil {
+	if !isDevelopment && !isDebugEmail && a.magicLinkSender != nil {
 		if err := a.magicLinkSender.SendMagicLink(ctx, email, verificationURL, rawToken, token.ExpiresAt); err != nil {
 			return response, nil
 		}
