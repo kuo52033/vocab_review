@@ -8,7 +8,7 @@ This repository is a small monorepo for the Vocab Review product.
 
 - `backend/`: Go API server. Entry point lives in `backend/cmd/api`, core logic in `backend/internal/{httpapi,service,repository,domain,clock}`, the Postgres implementation lives in `backend/internal/repository/postgres`, and SQL migrations live in `backend/migrations`.
 - `apps/web/`: React + TypeScript app built with Vite. Source files live in `apps/web/src`.
-- `apps/chrome-extension/`: React + TypeScript Chrome extension. Source files live in `apps/chrome-extension/src`, static manifest assets in `public/`, and build output in `dist/`.
+- `apps/chrome-extension/`: React + TypeScript Chrome extension. Source files live in `apps/chrome-extension/src`, static manifest assets in `public/`, build output in `dist/`, and Chrome Web Store zip output in `release/`.
 - `apps/ios/`: SwiftUI iOS app under `apps/ios/VocabReview`. The active Xcode project is `apps/ios/VocabReview/VocabReview/VocabReview.xcodeproj`, with source files in `apps/ios/VocabReview/VocabReview/VocabReview/{Models,ViewModels,Views}`.
 - `deploy/`: production runtime files copied to EC2 by GitHub Actions. Keep this directory small; it should contain deploy-only files such as `docker-compose.prod.yml` and `Caddyfile`, not application source or secrets.
 - `.github/workflows/ci.yml`: the single CI/deploy workflow. It runs backend tests, frontend builds, builds/pushes the backend image, and deploys through AWS SSM on pushes to `master`.
@@ -24,6 +24,7 @@ Prefer changes inside the existing layer for each feature rather than mixing HTT
 - `npm run dev:web` from the repo root: start the web app through the workspace.
 - `npm run build:web` from the repo root: create the production web bundle.
 - `npm run build:extension` from the repo root: build the Chrome extension into `apps/chrome-extension/dist`.
+- `npm run release:extension` from the repo root: build the production Chrome extension against `https://api.vocabreview.uk` and package `apps/chrome-extension/release/vocab-review-capture.zip`.
 - `gofmt -w cmd internal` from `backend/`: format Go sources before committing.
 - `xcodebuild -project apps/ios/VocabReview/VocabReview/VocabReview.xcodeproj -scheme VocabReview -destination 'generic/platform=iOS Simulator' -derivedDataPath .xcode-derived-data build`: verify the iOS app builds.
 - `APP_ENV_FILE=../.env.production docker compose --env-file .env.production -f deploy/docker-compose.prod.yml config --quiet`: validate the production Compose file locally with a temporary/safe env file. Do not commit `.env.production`.
@@ -33,7 +34,11 @@ Go code should follow `gofmt` defaults and keep packages focused. React and Type
 
 SwiftUI screens live in `Views/`, shared iOS visual tokens live in `Views/AppTheme.swift`, app state and API calls live in `ViewModels/SessionStore.swift`, and API DTOs live in `Models/APIModels.swift`. Keep the iOS `Review` tab focused on due cards and the `Library` tab focused on all active cards.
 
-Do not edit generated output in `dist/` or dependencies in `node_modules/`.
+Do not edit generated output in `dist/`, packaged release output in `release/`, or dependencies in `node_modules/`.
+
+Chrome extension popup documents are short-lived. Keep long-running queue work such as auto-fill and import in `apps/chrome-extension/src/background.ts`, persist progress in `chrome.storage.local`, and have `popup.tsx` trigger it through runtime messages so closing the popup does not cancel the operation.
+
+Production magic-link auth is intentionally strict: normal users get generic, throttled responses, while allowlisted `MAGIC_LINK_DEBUG_EMAILS` such as `tester@example.com` receive a fresh API-only token/link on every request and skip SES email delivery. Preserve that split across web, iOS, and Chrome extension clients.
 
 ## Deployment Workflow
 Production deployment is automated in `.github/workflows/ci.yml` and documented in `docs/deployment.md`.

@@ -686,7 +686,7 @@ export function App() {
       <main className="shell auth-shell">
         <section className="panel auth">
           <p className="eyebrow">Vocabulary review system</p>
-          <h1>Sign in with a magic link</h1>
+          <h1>Sign in with email</h1>
           <form onSubmit={handleRequestLink} className="stack">
             <input
               type="email"
@@ -823,7 +823,7 @@ export function App() {
             ) : (
               <div className="home-layout">
                 <article className="review-start-card">
-                  <div className="review-icon" aria-hidden="true" />
+                  <div className="review-icon" aria-hidden="true">📖</div>
                   <div className="review-card-copy">
                     <h1>{stats.due_now === 0 ? "Clear desk." : "Ready when you are."}</h1>
                     <span>
