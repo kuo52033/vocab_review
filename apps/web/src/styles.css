@@ -111,6 +111,82 @@ a {
   padding-top: 12px;
 }
 
+.app-shell.is-review-focused {
+  align-content: center;
+  padding-top: 24px;
+}
+
+.app-shell.is-review-focused .workspace {
+  align-content: center;
+  min-height: calc(100vh - 114px);
+}
+
+.app-shell.is-review-focused .review-dashboard {
+  align-content: center;
+  min-height: calc(100vh - 114px);
+  padding: 0;
+}
+
+.app-shell.is-review-focused .session-card {
+  width: min(100%, 760px);
+  animation: review-card-focus-in 680ms var(--ease-smooth-settle) both;
+}
+
+.app-shell.is-review-transitioning .app-header {
+  pointer-events: none;
+  animation: review-header-exit 640ms var(--ease-smooth-settle) both;
+}
+
+.app-shell.is-review-wiping .review-start-card {
+  pointer-events: none;
+  animation: review-home-card-exit 760ms var(--ease-smooth-settle) both;
+}
+
+.app-shell.is-review-wiping .home-stats {
+  pointer-events: none;
+  animation: review-stats-exit 780ms var(--ease-smooth-settle) both;
+}
+
+.review-transition-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  background: var(--cream);
+  clip-path: circle(0% at var(--review-wipe-x, 50%) var(--review-wipe-y, 50%));
+  animation: review-wipe 1450ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.cockatiel-runner {
+  position: fixed;
+  right: auto;
+  bottom: 10px;
+  left: 0;
+  z-index: 8;
+  width: clamp(74px, 9vw, 116px);
+  pointer-events: none;
+  transform: translateX(-120%);
+  animation: cockatiel-cross 84s linear both;
+}
+
+.cockatiel-runner.reverse {
+  right: 0;
+  left: auto;
+  animation-name: cockatiel-cross-reverse;
+}
+
+.cockatiel-runner img {
+  display: block;
+  width: 100%;
+  height: auto;
+  clip-path: inset(0 0 8% 0);
+  user-select: none;
+}
+
+.cockatiel-runner.reverse img {
+  transform: scaleX(-1);
+}
+
 .tokyo-sky {
   position: fixed;
   inset: auto 0 0;
@@ -186,6 +262,7 @@ a {
   margin: 0 auto;
   padding: 5px 0;
   animation: surface-in 420ms var(--ease-polished) both;
+  transition: opacity 300ms ease, transform 300ms var(--ease-polished);
 }
 
 .brand-button,
@@ -1703,12 +1780,101 @@ textarea {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .cockatiel-runner {
+    display: none;
+  }
+
   *,
   *::before,
   *::after {
     animation: none !important;
     scroll-behavior: auto !important;
     transition: none !important;
+  }
+}
+
+@keyframes cockatiel-cross {
+  0% {
+    transform: translateX(-120%);
+  }
+
+  100% {
+    transform: translateX(calc(100vw + 120%));
+  }
+}
+
+@keyframes cockatiel-cross-reverse {
+  0% {
+    transform: translateX(120%);
+  }
+
+  100% {
+    transform: translateX(calc(-100vw - 120%));
+  }
+}
+
+@keyframes review-wipe {
+  0% {
+    opacity: 1;
+    clip-path: circle(0% at var(--review-wipe-x, 50%) var(--review-wipe-y, 50%));
+  }
+
+  72% {
+    opacity: 1;
+    clip-path: circle(160% at var(--review-wipe-x, 50%) var(--review-wipe-y, 50%));
+  }
+
+  100% {
+    opacity: 0;
+    clip-path: circle(160% at var(--review-wipe-x, 50%) var(--review-wipe-y, 50%));
+  }
+}
+
+@keyframes review-header-exit {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-74px);
+  }
+}
+
+@keyframes review-home-card-exit {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.975);
+  }
+}
+
+@keyframes review-stats-exit {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(34px);
+  }
+}
+
+@keyframes review-card-focus-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
   }
 }
 

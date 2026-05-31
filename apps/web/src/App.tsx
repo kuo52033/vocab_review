@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { CSSProperties, FormEvent, MouseEvent, useEffect, useRef, useState } from "react";
 import {
   autocompleteVocab,
   AutocompleteItem,
@@ -21,6 +21,7 @@ import {
   VocabItem,
   VocabWithState
 } from "./api";
+import cockatielWalk from "./assets/cockatiel_walk.gif";
 
 type CardDraft = {
   term: string;
@@ -39,6 +40,19 @@ type AuthState = {
 
 type ActiveSection = "review" | "add" | "library";
 type AddMode = "single" | "bulk";
+type CockatielDirection = "forward" | "reverse";
+type ReviewTransitionPhase = "idle" | "exit" | "wipe";
+type ReviewTransition = {
+  key: number;
+  phase: ReviewTransitionPhase;
+  x: number;
+  y: number;
+};
+type PreparedReviewSession = {
+  deck: QuizCard[];
+  dueItems: VocabWithState[];
+  stats: ReviewStats;
+};
 type SessionSummary = {
   reviewed: number;
   correct: number;
@@ -306,6 +320,16 @@ export function App() {
   const [isGrading, setIsGrading] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isReviewIconLoaded, setIsReviewIconLoaded] = useState(false);
+  const [cockatielRun, setCockatielRun] = useState(0);
+  const [cockatielDirection, setCockatielDirection] = useState<CockatielDirection>(() => (
+    Math.random() < 0.15 ? "reverse" : "forward"
+  ));
+  const [reviewTransition, setReviewTransition] = useState<ReviewTransition>({
+    key: 0,
+    phase: "idle",
+    x: 50,
+    y: 50
+  });
   const [canScrollPreviewLeft, setCanScrollPreviewLeft] = useState(false);
   const [canScrollPreviewRight, setCanScrollPreviewRight] = useState(false);
   const [error, setError] = useState("");
@@ -329,6 +353,15 @@ export function App() {
     if (!auth.token) return;
     refresh(libraryPage, normalizedQuery);
   }, [auth.token, libraryPage, normalizedQuery]);
+
+  useEffect(() => {
+    if (!auth.token) return;
+    const interval = window.setInterval(() => {
+      setCockatielDirection(Math.random() < 0.15 ? "reverse" : "forward");
+      setCockatielRun((run) => run + 1);
+    }, 90_000);
+    return () => window.clearInterval(interval);
+  }, [auth.token]);
 
   const visibleVocab = [...vocab]
     .sort((left, right) => new Date(right.item.created_at).getTime() - new Date(left.item.created_at).getTime());
@@ -628,7 +661,7 @@ export function App() {
     }
   }
 
-  async function startReviewSession() {
+  async function prepareReviewSession(): Promise<PreparedReviewSession | null> {
     setIsStartingReview(true);
     try {
       const [freshDueResponse, vocabResponse, statsResponse] = await Promise.all([
@@ -636,31 +669,76 @@ export function App() {
         listVocab({ limit: 100, offset: 0 }),
         getReviewStats()
       ]);
-      setDue(freshDueResponse.items);
-      setStats(statsResponse.stats);
 
       if (freshDueResponse.items.length === 0) {
+        setDue(freshDueResponse.items);
+        setStats(statsResponse.stats);
         setError("");
-        return;
+        return null;
       }
 
       const deck = buildQuizDeck(freshDueResponse.items, vocabResponse.items, reviewSessionSize);
       if (deck.length === 0) {
+        setDue(freshDueResponse.items);
+        setStats(statsResponse.stats);
         setError("Start Review needs at least one due card with a meaning and one other active card with a meaning.");
-        return;
+        return null;
       }
-      setSessionDeck(deck);
-      setSessionIndex(0);
-      setSessionCorrectCount(0);
-      setSessionWrongCount(0);
-      setSessionSummary(null);
-      setSelectedOptionID("");
       setError("");
+      return {
+        deck,
+        dueItems: freshDueResponse.items,
+        stats: statsResponse.stats
+      };
     } catch (err) {
       handleRequestError(err);
+      return null;
     } finally {
       setIsStartingReview(false);
     }
+  }
+
+  function startPreparedReviewSession(prepared: PreparedReviewSession) {
+    setDue(prepared.dueItems);
+    setStats(prepared.stats);
+    setSessionDeck(prepared.deck);
+    setSessionIndex(0);
+    setSessionCorrectCount(0);
+    setSessionWrongCount(0);
+    setSessionSummary(null);
+    setSelectedOptionID("");
+    setError("");
+  }
+
+  async function handleStartReviewClick(event: MouseEvent<HTMLButtonElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = ((rect.left + rect.width / 2) / window.innerWidth) * 100;
+    const y = ((rect.top + rect.height / 2) / window.innerHeight) * 100;
+
+    setReviewTransition((current) => ({
+      key: current.key + 1,
+      phase: "exit",
+      x,
+      y
+    }));
+
+    const prepared = await prepareReviewSession();
+    if (!prepared) {
+      setReviewTransition((current) => ({ ...current, phase: "idle" }));
+      return;
+    }
+
+    window.setTimeout(() => {
+      setReviewTransition((current) => ({ ...current, phase: "wipe" }));
+    }, 260);
+
+    window.setTimeout(() => {
+      startPreparedReviewSession(prepared);
+    }, 980);
+
+    window.setTimeout(() => {
+      setReviewTransition((current) => ({ ...current, phase: "idle" }));
+    }, 1680);
   }
 
   function endReviewSession() {
@@ -767,8 +845,12 @@ export function App() {
     );
   }
 
+  const isReviewFocused = activeSection === "review" && sessionActive;
+  const isReviewExitingHome = activeSection === "review" && reviewTransition.phase !== "idle";
+  const isReviewWiping = activeSection === "review" && reviewTransition.phase === "wipe";
+
   return (
-    <main className={`app-shell mode-${activeSection}`}>
+    <main className={`app-shell mode-${activeSection}${isReviewFocused ? " is-review-focused" : ""}${isReviewExitingHome ? " is-review-transitioning" : ""}${isReviewWiping ? " is-review-wiping" : ""}`}>
       <div className="tokyo-sky" aria-hidden="true">
         <span className="skyline tower" />
         <span className="skyline block-a" />
@@ -777,7 +859,16 @@ export function App() {
         <span className="neon-orb orb-cyan" />
         <span className="neon-orb orb-rose" />
       </div>
-      {activeSection !== "library" ? (
+      {!isReviewFocused ? (
+        <div
+          key={cockatielRun}
+          className={`cockatiel-runner ${cockatielDirection === "reverse" ? "reverse" : "forward"}`}
+          aria-hidden="true"
+        >
+          <img src={cockatielWalk} alt="" draggable={false} />
+        </div>
+      ) : null}
+      {activeSection !== "library" && !isReviewFocused ? (
         <header className="app-header">
           <button
             type="button"
@@ -948,7 +1039,7 @@ export function App() {
                     </span>
                   </div>
                   {stats.due_now > 0 ? (
-                    <button type="button" className="start-review-button" onClick={startReviewSession} disabled={due.length === 0 || isStartingReview}>
+                    <button type="button" className="start-review-button" onClick={handleStartReviewClick} disabled={due.length === 0 || isStartingReview || reviewTransition.phase !== "idle"}>
                       {isStartingReview ? "Preparing..." : "Start Review"}
                     </button>
                   ) : null}
@@ -1242,6 +1333,17 @@ export function App() {
 
         {error ? <p className="error floating-error">{error}</p> : null}
       </section>
+      {isReviewWiping ? (
+        <div
+          key={reviewTransition.key}
+          className="review-transition-overlay"
+          style={{
+            "--review-wipe-x": `${reviewTransition.x}%`,
+            "--review-wipe-y": `${reviewTransition.y}%`
+          } as CSSProperties}
+          aria-hidden="true"
+        />
+      ) : null}
     </main>
   );
 }
