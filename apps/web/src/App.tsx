@@ -38,6 +38,7 @@ type AuthState = {
 };
 
 type ActiveSection = "review" | "add" | "library";
+type AddMode = "single" | "bulk";
 type SessionSummary = {
   reviewed: number;
   correct: number;
@@ -268,6 +269,7 @@ function formatBulkImportCards(cards: ParsedImportCard[]) {
 
 export function App() {
   const termInputRef = useRef<HTMLInputElement>(null);
+  const importPreviewRef = useRef<HTMLDivElement>(null);
   const bulkTextRef = useRef("");
   const refreshRequestIDRef = useRef(0);
   const [auth, setAuth] = useState<AuthState>({ email: "", token: localStorage.getItem("session_token") ?? "" });
@@ -285,6 +287,7 @@ export function App() {
   const [editDraft, setEditDraft] = useState<CardDraft>(emptyForm);
   const [query, setQuery] = useState("");
   const [activeSection, setActiveSection] = useState<ActiveSection>("review");
+  const [addMode, setAddMode] = useState<AddMode>("bulk");
   const [libraryPage, setLibraryPage] = useState(1);
   const [sessionDeck, setSessionDeck] = useState<QuizCard[]>([]);
   const [sessionIndex, setSessionIndex] = useState(0);
@@ -301,6 +304,10 @@ export function App() {
   const [isStartingReview, setIsStartingReview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isReviewIconLoaded, setIsReviewIconLoaded] = useState(false);
+  const [canScrollPreviewLeft, setCanScrollPreviewLeft] = useState(false);
+  const [canScrollPreviewRight, setCanScrollPreviewRight] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -337,6 +344,50 @@ export function App() {
   const paginatedVocab = visibleVocab;
   const rawImportCards = parseBulkImport(bulkText);
   const parsedImportCards = enrichedCards ?? rawImportCards;
+
+  function updateImportPreviewScrollState() {
+    const scroller = importPreviewRef.current;
+    if (!scroller) {
+      setCanScrollPreviewLeft(false);
+      setCanScrollPreviewRight(false);
+      return;
+    }
+    const edgeTolerance = 24;
+    const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
+    setCanScrollPreviewLeft(scroller.scrollLeft > edgeTolerance);
+    setCanScrollPreviewRight(maxScrollLeft - scroller.scrollLeft > edgeTolerance);
+  }
+
+  function scrollImportPreview(direction: "left" | "right") {
+    const scroller = importPreviewRef.current;
+    if (!scroller) return;
+    scroller.scrollBy({
+      left: direction === "right" ? scroller.clientWidth * 0.82 : -scroller.clientWidth * 0.82,
+      behavior: "smooth"
+    });
+  }
+
+  useEffect(() => {
+    if (addMode !== "bulk") return;
+    const frame = window.requestAnimationFrame(updateImportPreviewScrollState);
+    window.addEventListener("resize", updateImportPreviewScrollState);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updateImportPreviewScrollState);
+    };
+  }, [addMode, parsedImportCards.length]);
+
+  useEffect(() => {
+    if (addMode !== "bulk") return;
+    const frame = window.requestAnimationFrame(() => {
+      const scroller = importPreviewRef.current;
+      if (scroller) {
+        scroller.scrollLeft = 0;
+      }
+      updateImportPreviewScrollState();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [addMode, parsedImportCards.length]);
 
   async function refresh(page = libraryPage, searchQuery = normalizedQuery) {
     const requestID = refreshRequestIDRef.current + 1;
@@ -394,6 +445,7 @@ export function App() {
     setIsStartingReview(false);
     setIsSaving(false);
     setIsGrading(false);
+    setIsUserMenuOpen(false);
   }
 
   function handleRequestError(error: unknown) {
@@ -678,7 +730,13 @@ export function App() {
   function openLibrary() {
     setQuery("");
     setLibraryPage(1);
+    setIsUserMenuOpen(false);
     setActiveSection("library");
+  }
+
+  function handleSignOut() {
+    clearAuthenticatedState();
+    setError("");
   }
 
   if (!auth.token) {
@@ -721,7 +779,15 @@ export function App() {
       </div>
       {activeSection !== "library" ? (
         <header className="app-header">
-          <button type="button" className="brand-button" onClick={() => setActiveSection("review")} aria-label="Go to review dashboard">
+          <button
+            type="button"
+            className="brand-button"
+            onClick={() => {
+              setIsUserMenuOpen(false);
+              setActiveSection("review");
+            }}
+            aria-label="Go to review dashboard"
+          >
             <span className="brand-mark" aria-hidden="true">✦</span>
             <span>VocabReview</span>
           </button>
@@ -735,10 +801,51 @@ export function App() {
               <span aria-hidden="true">▦</span>
               Manage Cards
             </button>
-            <button type="button" className="primary-action" onClick={() => setActiveSection("add")}>
+            <button
+              type="button"
+              className="primary-action"
+              onClick={() => {
+                setIsUserMenuOpen(false);
+                setAddMode("bulk");
+                setActiveSection("add");
+              }}
+            >
               <span aria-hidden="true">+</span>
               Quick Add
             </button>
+            <div className="user-menu">
+              <button
+                type="button"
+                className="user-avatar"
+                aria-label="Open user menu"
+                aria-expanded={isUserMenuOpen}
+                onClick={() => setIsUserMenuOpen((isOpen) => !isOpen)}
+              >
+                <span aria-hidden="true">☰</span>
+                Account
+              </button>
+              {isUserMenuOpen ? (
+                <div className="user-dropdown" role="menu">
+                  <button
+                    type="button"
+                    className="sign-out-menu-item"
+                    role="menuitem"
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      handleSignOut();
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      handleSignOut();
+                    }}
+                  >
+                    Sign out
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </nav>
         </header>
       ) : null}
@@ -823,7 +930,17 @@ export function App() {
             ) : (
               <div className="home-layout">
                 <article className="review-start-card">
-                  <div className="review-icon" aria-hidden="true">📖</div>
+                  <div
+                    className={`review-icon${isReviewIconLoaded ? " is-loaded" : ""}`}
+                    aria-hidden="true"
+                    onAnimationEnd={(event) => {
+                      if (event.animationName === "gentle-content-in") {
+                        setIsReviewIconLoaded(true);
+                      }
+                    }}
+                  >
+                    📖
+                  </div>
                   <div className="review-card-copy">
                     <h1>{stats.due_now === 0 ? "Clear desk." : "Ready when you are."}</h1>
                     <span>
@@ -877,112 +994,154 @@ export function App() {
         ) : null}
 
         {activeSection === "add" ? (
-          <section className="panel quick-add page-panel">
-            <form className="capture-card stack" onSubmit={handleCreateVocab}>
-              <div className="section-heading">
-                <div>
-                  <p className="eyebrow">Capture</p>
-                  <h2>Quick add</h2>
-                  <small>Add one card fast. Only the word is required.</small>
-                </div>
-              </div>
-              <label className="field-label">
-                <span>Word</span>
-                <div className="quick-capture-line">
-                  <input
-                    ref={termInputRef}
-                    value={form.term}
-                    placeholder="e.g. meticulous"
-                    onChange={(event) => setForm({ ...form, term: event.target.value })}
-                  />
-                </div>
-              </label>
-              <div className="optional-grid">
-                <label className="field-label">
-                  <span>Meaning</span>
-                  <textarea value={form.meaning} placeholder="Short definition" onChange={(event) => setForm({ ...form, meaning: event.target.value })} />
-                </label>
-                <label className="field-label">
-                  <span>Chinese</span>
-                  <textarea value={form.chinese} placeholder="中文意思" onChange={(event) => setForm({ ...form, chinese: event.target.value })} />
-                </label>
-                <label className="field-label">
-                  <span>Example sentence</span>
-                  <textarea
-                    value={form.example_sentence}
-                    placeholder="Use it in context"
-                    onChange={(event) => setForm({ ...form, example_sentence: event.target.value })}
-                  />
-                </label>
-                <label className="field-label">
-                  <span>Notes</span>
-                  <textarea value={form.notes} placeholder="Memory hint or source" onChange={(event) => setForm({ ...form, notes: event.target.value })} />
-                </label>
-              </div>
-              <div className="action-row quick-actions">
-                <button type="submit" disabled={isSaving || !form.term.trim()}>
-                  {isSaving ? "Saving..." : "Save"}
-                </button>
-              </div>
-              {lastCreatedTerm ? <p className="save-confirmation">Saved "{lastCreatedTerm}". Ready for the next one.</p> : null}
-              {lastSkippedDuplicateTerm ? <p className="save-confirmation skipped">Skipped duplicate "{lastSkippedDuplicateTerm}".</p> : null}
-            </form>
+          <section className="quick-add-page page-panel">
+            <header className="add-page-header">
+              <h1>{addMode === "single" ? "Quick add" : "Bulk import"}</h1>
+            </header>
 
-            <form className="capture-card bulk-import" onSubmit={handleBulkImport}>
-              <div className="section-heading import-heading">
-                <div>
-                  <p className="eyebrow">Batch capture</p>
-                  <h2>Bulk import</h2>
-                </div>
-                <button
-                  type="button"
-                  className="ghost-button compact-button ai-button"
-                  disabled={isEnriching || rawImportCards.length === 0}
-                  onClick={handleAutocompleteBulk}
-                >
-                  <span className="gpt-mark" aria-hidden="true">✦</span>
-                  {isEnriching ? "Working..." : "GPT Auto-complete"}
-                </button>
-              </div>
-              <textarea
-                className="bulk-textarea"
-                value={bulkText}
-                placeholder={"abandon - to leave behind\nmeticulous: very careful\nmake up"}
-                onChange={(event) => handleBulkTextChange(event.target.value)}
-              />
-              {parsedImportCards.length > 0 ? (
-                <div className="import-preview">
-                  {parsedImportCards.slice(0, 8).map((card, index) => (
-                    <article key={`${card.term}-${index}`} className="import-preview-card">
-                      <strong>{card.term}</strong>
-                      {card.part_of_speech ? <span className="pos-pill">{card.part_of_speech}</span> : null}
-                      <span>{card.meaning || "Meaning can be added later."}</span>
-                      {card.chinese ? <span>{card.chinese}</span> : null}
-                      {card.example_sentence ? <span>{card.example_sentence}</span> : null}
-                      {card.error ? <span className="form-error">{card.error}</span> : null}
-                    </article>
-                  ))}
-                  {parsedImportCards.length > 8 ? <span className="muted">+ {parsedImportCards.length - 8} more</span> : null}
-                </div>
-              ) : null}
-              {enrichmentError ? <p className="form-error">{enrichmentError}</p> : null}
-              <div className="action-row bulk-actions">
-                <button type="submit" disabled={isSaving || parsedImportCards.length === 0}>
-                  {isSaving ? "Saving..." : "Save"}
-                </button>
-              </div>
-              {lastImportCount ? (
-                <p className="save-confirmation">
-                  Imported {lastImportCount} card{lastImportCount === 1 ? "" : "s"}.
-                  {lastSkippedDuplicateCount ? ` Skipped ${lastSkippedDuplicateCount} duplicate${lastSkippedDuplicateCount === 1 ? "" : "s"}.` : ""}
-                </p>
-              ) : null}
-              {!lastImportCount && lastSkippedDuplicateCount ? (
-                <p className="save-confirmation skipped">
-                  Skipped {lastSkippedDuplicateCount} duplicate{lastSkippedDuplicateCount === 1 ? "" : "s"}.
-                </p>
-              ) : null}
-            </form>
+            <div className={`add-mode-toggle mode-${addMode}`} role="tablist" aria-label="Add mode">
+              <span className="toggle-indicator" aria-hidden="true" />
+              <button
+                type="button"
+                className={addMode === "single" ? "active" : ""}
+                role="tab"
+                aria-selected={addMode === "single"}
+                onClick={() => setAddMode("single")}
+              >
+                Single card
+              </button>
+              <button
+                type="button"
+                className={addMode === "bulk" ? "active" : ""}
+                role="tab"
+                aria-selected={addMode === "bulk"}
+                onClick={() => setAddMode("bulk")}
+              >
+                Bulk import
+              </button>
+            </div>
+
+            <div className="add-form-shell">
+              {addMode === "single" ? (
+                <form className="add-form-panel anim-right" onSubmit={handleCreateVocab}>
+                  <label className="field-label">
+                    <span>Word</span>
+                    <input
+                      ref={termInputRef}
+                      value={form.term}
+                      placeholder="e.g. meticulous"
+                      onChange={(event) => setForm({ ...form, term: event.target.value })}
+                    />
+                  </label>
+                  <div className="form-divider" />
+                  <div className="optional-grid">
+                    <label className="field-label">
+                      <span>Meaning</span>
+                      <textarea value={form.meaning} placeholder="Short definition" onChange={(event) => setForm({ ...form, meaning: event.target.value })} />
+                    </label>
+                    <label className="field-label">
+                      <span>Chinese</span>
+                      <textarea value={form.chinese} placeholder="中文意思" onChange={(event) => setForm({ ...form, chinese: event.target.value })} />
+                    </label>
+                  </div>
+                  <label className="field-label">
+                    <span>Example sentence</span>
+                    <textarea
+                      value={form.example_sentence}
+                      placeholder="Use it in context"
+                      onChange={(event) => setForm({ ...form, example_sentence: event.target.value })}
+                    />
+                  </label>
+                  <label className="field-label">
+                    <span>Notes</span>
+                    <textarea value={form.notes} placeholder="Memory hint or source" onChange={(event) => setForm({ ...form, notes: event.target.value })} />
+                  </label>
+                  <button type="submit" className="add-save-button" disabled={isSaving || !form.term.trim()}>
+                    {isSaving ? "Saving..." : "Save Card"}
+                  </button>
+                  {lastCreatedTerm ? <p className="save-confirmation">Saved "{lastCreatedTerm}". Ready for the next one.</p> : null}
+                  {lastSkippedDuplicateTerm ? <p className="save-confirmation skipped">Skipped duplicate "{lastSkippedDuplicateTerm}".</p> : null}
+                </form>
+              ) : (
+                <form className="add-form-panel anim-left" onSubmit={handleBulkImport}>
+                  <label className="field-label">
+                    <span className="field-label-row">
+                      <span>Paste your words</span>
+                      <button
+                        type="button"
+                        className="gpt-badge"
+                        disabled={isEnriching || rawImportCards.length === 0}
+                        onClick={handleAutocompleteBulk}
+                      >
+                        <span className="gpt-dot" aria-hidden="true" />
+                        {isEnriching ? "Working..." : "GPT Auto-complete"}
+                      </button>
+                    </span>
+                    <textarea
+                      className="bulk-textarea"
+                      value={bulkText}
+                      placeholder="abandon | to leave behind | 放棄 | She had to abandon the plan. | verb"
+                      onChange={(event) => handleBulkTextChange(event.target.value)}
+                    />
+                  </label>
+                  <div className="bulk-hint">
+                    One card per line. Full format: <code>word | definition | 中文 | example sentence | part_of_speech</code>.
+                  </div>
+                  {parsedImportCards.length > 0 ? (
+                    <div className="import-preview-frame">
+                      {canScrollPreviewLeft ? (
+                        <button
+                          type="button"
+                          className="preview-arrow preview-arrow-left"
+                          aria-label="Slide preview left"
+                          onClick={() => scrollImportPreview("left")}
+                        >
+                          <span aria-hidden="true">‹</span>
+                        </button>
+                      ) : null}
+                      <div className="import-preview" ref={importPreviewRef} onScroll={updateImportPreviewScrollState}>
+                        {parsedImportCards.slice(0, 12).map((card, index) => (
+                          <article key={`${card.term}-${index}`} className="import-preview-card">
+                            <strong>{card.term}</strong>
+                            {card.part_of_speech ? <span className="pos-pill">{card.part_of_speech}</span> : null}
+                            <span>{card.meaning || "Meaning can be added later."}</span>
+                            {card.chinese ? <span>{card.chinese}</span> : null}
+                            {card.example_sentence ? <span>{card.example_sentence}</span> : null}
+                            {card.error ? <span className="form-error">{card.error}</span> : null}
+                          </article>
+                        ))}
+                        {parsedImportCards.length > 12 ? <span className="import-preview-more">+ {parsedImportCards.length - 12} more</span> : null}
+                      </div>
+                      {canScrollPreviewRight ? (
+                        <button
+                          type="button"
+                          className="preview-arrow preview-arrow-right"
+                          aria-label="Slide preview right"
+                          onClick={() => scrollImportPreview("right")}
+                        >
+                          <span aria-hidden="true">›</span>
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {enrichmentError ? <p className="form-error">{enrichmentError}</p> : null}
+                  <button type="submit" className="add-save-button" disabled={isSaving || parsedImportCards.length === 0}>
+                    {isSaving ? "Saving..." : `Import ${parsedImportCards.length} Card${parsedImportCards.length === 1 ? "" : "s"}`}
+                  </button>
+                  {lastImportCount ? (
+                    <p className="save-confirmation">
+                      Imported {lastImportCount} card{lastImportCount === 1 ? "" : "s"}.
+                      {lastSkippedDuplicateCount ? ` Skipped ${lastSkippedDuplicateCount} duplicate${lastSkippedDuplicateCount === 1 ? "" : "s"}.` : ""}
+                    </p>
+                  ) : null}
+                  {!lastImportCount && lastSkippedDuplicateCount ? (
+                    <p className="save-confirmation skipped">
+                      Skipped {lastSkippedDuplicateCount} duplicate{lastSkippedDuplicateCount === 1 ? "" : "s"}.
+                    </p>
+                  ) : null}
+                </form>
+              )}
+            </div>
           </section>
         ) : null}
 
