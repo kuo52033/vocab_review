@@ -4,12 +4,12 @@ struct AddVocabView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @Environment(\.dismiss) private var dismiss
     private let existingItem: VocabItem?
+    private let presentation: AddCardsPresentation
     @State private var term = ""
     @State private var meaning = ""
     @State private var chinese = ""
     @State private var exampleSentence = ""
     @State private var notes = ""
-    @State private var lastSavedTerm = ""
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -20,8 +20,9 @@ struct AddVocabView: View {
         case notes
     }
 
-    init(item: VocabItem? = nil) {
+    init(item: VocabItem? = nil, presentation: AddCardsPresentation = .standalone) {
         self.existingItem = item
+        self.presentation = presentation
         _term = State(initialValue: item?.term ?? "")
         _meaning = State(initialValue: item?.meaning ?? "")
         _chinese = State(initialValue: item?.chinese ?? "")
@@ -30,112 +31,117 @@ struct AddVocabView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                ReadingDeskBackground()
+        switch presentation {
+        case .standalone:
+            NavigationStack {
+                ZStack {
+                    ReadingDeskBackground()
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(existingItem == nil ? "Add a card" : "Edit card")
-                                .readingTitle()
-                            Text(existingItem == nil ? "Only the term is required. Add details now, or keep moving." : "Keep the wording plain and useful for review later.")
-                                .readingMuted()
-                        }
-
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Word")
-                                .font(.caption.weight(.bold))
-                                .textCase(.uppercase)
-                                .foregroundStyle(AppTheme.sageDark)
-                            TextField("e.g. meticulous", text: $term)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .readingInputField()
-                                .focused($focusedField, equals: .term)
-
-                            HStack(alignment: .top, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("Meaning")
-                                        .font(.caption.weight(.bold))
-                                        .textCase(.uppercase)
-                                        .foregroundStyle(AppTheme.sageDark)
-                                    TextField("Short definition", text: $meaning, axis: .vertical)
-                                        .lineLimit(2...4)
-                                        .readingInputField()
-                                        .focused($focusedField, equals: .meaning)
-                                }
-
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("Chinese")
-                                        .font(.caption.weight(.bold))
-                                        .textCase(.uppercase)
-                                        .foregroundStyle(AppTheme.sageDark)
-                                    TextField("中文意思", text: $chinese, axis: .vertical)
-                                        .lineLimit(2...4)
-                                        .readingInputField()
-                                        .focused($focusedField, equals: .chinese)
-                                }
-                            }
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Example sentence")
-                                    .font(.caption.weight(.bold))
-                                    .textCase(.uppercase)
-                                    .foregroundStyle(AppTheme.sageDark)
-                                TextField("Use it in context", text: $exampleSentence, axis: .vertical)
-                                    .lineLimit(2...4)
-                                    .readingInputField()
-                                    .focused($focusedField, equals: .exampleSentence)
-                            }
-
-                            Text("Notes")
-                                .font(.caption.weight(.bold))
-                                .textCase(.uppercase)
-                                .foregroundStyle(AppTheme.sageDark)
-                            TextField("Memory hint or source", text: $notes, axis: .vertical)
-                                .lineLimit(2...4)
-                                .readingInputField()
-                                .focused($focusedField, equals: .notes)
-
-                            Button {
-                                Task {
-                                    if existingItem == nil {
-                                        await saveAndAddAnother()
-                                    } else {
-                                        await saveAndClose()
-                                    }
-                                }
-                            } label: {
-                                if sessionStore.isCreatingVocab {
-                                    ProgressView()
-                                        .frame(maxWidth: .infinity)
-                                } else {
-                                    Text("Save")
-                                }
-                            }
-                            .readingPrimaryButton()
-                            .disabled(sessionStore.isCreatingVocab || trimmedTerm.isEmpty)
-                        }
-                        .readingCard()
-
-                        if !lastSavedTerm.isEmpty {
-                            Text("Saved \"\(lastSavedTerm)\". Ready for the next one.")
-                                .foregroundStyle(AppTheme.sageDark)
-                                .readingCard()
-                        }
-
-                        if !sessionStore.errorMessage.isEmpty {
-                            Text(sessionStore.errorMessage)
-                                .foregroundStyle(AppTheme.danger)
-                                .readingCard()
-                        }
+                    ScrollView {
+                        formContent(showHeader: true)
+                            .padding()
                     }
-                    .padding()
+                }
+                .toolbar(.hidden, for: .navigationBar)
+                .dismissKeyboardOnTapOutside()
+            }
+        case .embedded:
+            formContent(showHeader: false)
+        }
+    }
+
+    private func formContent(showHeader: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if showHeader {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(existingItem == nil ? "Add a card" : "Edit card")
+                        .readingTitle()
+                    Text(existingItem == nil ? "Only the term is required. Add details now, or keep moving." : "Keep the wording plain and useful for review later.")
+                        .readingMuted()
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
-            .dismissKeyboardOnTapOutside()
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Word")
+                    .font(.caption.weight(.bold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(AppTheme.sageDark)
+                TextField("e.g. meticulous", text: $term)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .readingInputField()
+                    .focused($focusedField, equals: .term)
+
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Meaning")
+                            .font(.caption.weight(.bold))
+                            .textCase(.uppercase)
+                            .foregroundStyle(AppTheme.sageDark)
+                        TextField("Short definition", text: $meaning, axis: .vertical)
+                            .lineLimit(2...4)
+                            .readingInputField()
+                            .focused($focusedField, equals: .meaning)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Chinese")
+                            .font(.caption.weight(.bold))
+                            .textCase(.uppercase)
+                            .foregroundStyle(AppTheme.sageDark)
+                        TextField("中文意思", text: $chinese, axis: .vertical)
+                            .lineLimit(2...4)
+                            .readingInputField()
+                            .focused($focusedField, equals: .chinese)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Example sentence")
+                        .font(.caption.weight(.bold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(AppTheme.sageDark)
+                    TextField("Use it in context", text: $exampleSentence, axis: .vertical)
+                        .lineLimit(2...4)
+                        .readingInputField()
+                        .focused($focusedField, equals: .exampleSentence)
+                }
+
+                Text("Notes")
+                    .font(.caption.weight(.bold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(AppTheme.sageDark)
+                TextField("Memory hint or source", text: $notes, axis: .vertical)
+                    .lineLimit(2...4)
+                    .readingInputField()
+                    .focused($focusedField, equals: .notes)
+
+                Button {
+                    Task {
+                        if existingItem == nil {
+                            await saveAndAddAnother()
+                        } else {
+                            await saveAndClose()
+                        }
+                    }
+                } label: {
+                    if sessionStore.isCreatingVocab {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Text("Save")
+                    }
+                }
+                .readingPrimaryButton()
+                .disabled(sessionStore.isCreatingVocab || trimmedTerm.isEmpty)
+            }
+            .readingCard()
+
+            if !sessionStore.errorMessage.isEmpty {
+                Text(sessionStore.errorMessage)
+                    .foregroundStyle(AppTheme.danger)
+                    .readingCard()
+            }
         }
     }
 
@@ -169,7 +175,6 @@ struct AddVocabView: View {
     }
 
     private func saveAndAddAnother() async {
-        let savedTerm = trimmedTerm
         let saved = await sessionStore.createVocab(
             term: term,
             meaning: meaning,
@@ -178,7 +183,6 @@ struct AddVocabView: View {
             notes: notes
         )
         guard saved else { return }
-        lastSavedTerm = savedTerm
         term = ""
         meaning = ""
         chinese = ""

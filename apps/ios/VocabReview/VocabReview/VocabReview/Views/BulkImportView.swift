@@ -3,6 +3,7 @@ import SwiftUI
 struct BulkImportView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @Environment(\.dismiss) private var dismiss
+    private let presentation: AddCardsPresentation
     @State private var rawText = ""
     @State private var parsedCards: [VocabDraftInput] = []
     @State private var sharedCaptures: [SharedQueuedCapture] = []
@@ -19,78 +20,86 @@ struct BulkImportView: View {
         enrichedCards ?? (sharedCards + parsedCards)
     }
 
+    init(presentation: AddCardsPresentation = .standalone) {
+        self.presentation = presentation
+    }
+
     var body: some View {
-        NavigationStack {
-            ZStack {
-                ReadingDeskBackground()
+        switch presentation {
+        case .standalone:
+            NavigationStack {
+                ZStack {
+                    ReadingDeskBackground()
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Bulk import")
-                                .readingTitle()
-                            Text("Import shared selections or paste one card per line.")
-                                .readingMuted()
-                        }
-
-                        sharedQueueSection
-
-                        VStack(alignment: .leading, spacing: 12) {
-                            TextEditor(text: $rawText)
-                                .frame(minHeight: 190)
-                                .scrollContentBackground(.hidden)
-                                .foregroundStyle(AppTheme.ink)
-                                .tint(AppTheme.coral)
-                                .focused($isImportTextFocused)
-                                .padding(10)
-                                .background(AppTheme.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
-                                }
-
-                            Text("Examples: abandon - to leave behind, meticulous: very careful, take off")
-                                .font(.footnote)
-                                .readingMuted()
-                        }
-                        .readingCard()
-
-                        previewSection
-
-                        Button {
-                            Task { await importCards() }
-                        } label: {
-                            if sessionStore.isCreatingVocab {
-                                ProgressView()
-                                    .frame(maxWidth: .infinity)
-                            } else {
-                                Text("Import")
-                            }
-                        }
-                        .readingPrimaryButton()
-                        .disabled(sessionStore.isCreatingVocab || importCandidates.isEmpty)
-
-                        if !sessionStore.errorMessage.isEmpty {
-                            Text(sessionStore.errorMessage)
-                                .foregroundStyle(AppTheme.danger)
-                                .readingCard()
-                        }
+                    ScrollView {
+                        importContent(showHeader: true)
+                            .padding()
                     }
-                    .padding()
+                }
+                .toolbar(.hidden, for: .navigationBar)
+                .dismissKeyboardOnTapOutside()
+            }
+            .task { loadSharedCaptures() }
+            .onChange(of: rawText) { _, newValue in syncParsedCards(with: newValue) }
+        case .embedded:
+            importContent(showHeader: false)
+                .task { loadSharedCaptures() }
+                .onChange(of: rawText) { _, newValue in syncParsedCards(with: newValue) }
+        }
+    }
+
+    private func importContent(showHeader: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if showHeader {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Bulk import")
+                        .readingTitle()
+                    Text("Import shared selections or paste one card per line.")
+                        .readingMuted()
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
-            .dismissKeyboardOnTapOutside()
-            .task {
-                sharedCaptures = SharedCaptureQueue.load()
-                enrichedCards = nil
+
+            sharedQueueSection
+
+            VStack(alignment: .leading, spacing: 12) {
+                TextEditor(text: $rawText)
+                    .frame(minHeight: 190)
+                    .scrollContentBackground(.hidden)
+                    .foregroundStyle(AppTheme.ink)
+                    .tint(AppTheme.coral)
+                    .focused($isImportTextFocused)
+                    .padding(10)
+                    .background(AppTheme.paper.opacity(0.82), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
+                    }
+
+                Text("Examples: abandon - to leave behind, meticulous: very careful, take off")
+                    .font(.footnote)
+                    .readingMuted()
             }
-            .onChange(of: rawText) { _, newValue in
-                parsedCards = parseBulkInput(newValue)
-                if let enrichedCards, formatBulkInput(enrichedCards) == newValue {
-                    return
+            .readingCard()
+
+            previewSection
+
+            Button {
+                Task { await importCards() }
+            } label: {
+                if sessionStore.isCreatingVocab {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Text("Import")
                 }
-                enrichedCards = nil
+            }
+            .readingPrimaryButton()
+            .disabled(sessionStore.isCreatingVocab || importCandidates.isEmpty)
+
+            if !sessionStore.errorMessage.isEmpty {
+                Text(sessionStore.errorMessage)
+                    .foregroundStyle(AppTheme.danger)
+                    .readingCard()
             }
         }
     }
@@ -214,7 +223,14 @@ struct BulkImportView: View {
             if !sharedCaptures.isEmpty {
                 SharedCaptureQueue.clear()
             }
-            dismiss()
+            if presentation == .standalone {
+                dismiss()
+            } else {
+                rawText = ""
+                parsedCards = []
+                sharedCaptures = []
+                enrichedCards = nil
+            }
         }
     }
 
@@ -282,5 +298,18 @@ struct BulkImportView: View {
                 return fields.joined(separator: " | ")
             }
             .joined(separator: "\n")
+    }
+
+    private func loadSharedCaptures() {
+        sharedCaptures = SharedCaptureQueue.load()
+        enrichedCards = nil
+    }
+
+    private func syncParsedCards(with newValue: String) {
+        parsedCards = parseBulkInput(newValue)
+        if let enrichedCards, formatBulkInput(enrichedCards) == newValue {
+            return
+        }
+        enrichedCards = nil
     }
 }

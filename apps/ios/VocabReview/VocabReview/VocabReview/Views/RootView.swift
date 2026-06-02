@@ -5,10 +5,9 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var email = ""
     @State private var magicToken = ""
-    @State private var isAddingVocab = false
-    @State private var isImportingVocab = false
     @State private var selectedTab: AppTab = .review
     @State private var isReviewSessionActive = false
+    @Namespace private var tabSelectionNamespace
     @FocusState private var signInFocusedField: SignInField?
 
     var body: some View {
@@ -21,14 +20,6 @@ struct RootView: View {
         }
         .tint(AppTheme.sage)
         .dismissKeyboardOnTapOutside()
-        .sheet(isPresented: $isAddingVocab) {
-            AddVocabView()
-                .environmentObject(sessionStore)
-        }
-        .sheet(isPresented: $isImportingVocab) {
-            BulkImportView()
-                .environmentObject(sessionStore)
-        }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active, sessionStore.isAuthenticated else { return }
             Task { await sessionStore.refreshAuthenticatedData() }
@@ -44,7 +35,7 @@ struct RootView: View {
                     authenticatedActionBar
                         .padding(.horizontal)
                         .padding(.top, 8)
-                        .padding(.bottom, 10)
+                        .padding(.bottom, 8)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
@@ -58,6 +49,11 @@ struct RootView: View {
                         .opacity(selectedTab == .library ? 1 : 0)
                         .allowsHitTesting(selectedTab == .library)
                         .accessibilityHidden(selectedTab != .library)
+
+                    AddCardsView()
+                        .opacity(selectedTab == .add ? 1 : 0)
+                        .allowsHitTesting(selectedTab == .add)
+                        .accessibilityHidden(selectedTab != .add)
                 }
             }
         }
@@ -65,11 +61,10 @@ struct RootView: View {
         .safeAreaInset(edge: .bottom) {
             if !isReviewSessionActive {
                 authenticatedTabBar
-                    .padding(.bottom, 8)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
-        .animation(.easeOut(duration: 0.18), value: selectedTab)
+        .animation(.spring(response: 0.34, dampingFraction: 0.86), value: selectedTab)
         .animation(.easeOut(duration: 0.22), value: isReviewSessionActive)
         .task { await sessionStore.refreshAuthenticatedData() }
     }
@@ -178,54 +173,71 @@ struct RootView: View {
     }
 
     private var authenticatedActionBar: some View {
-        HStack(spacing: 4) {
-            topActionButton("Add") {
-                isAddingVocab = true
+        HStack {
+            Spacer()
+
+            HStack(spacing: 8) {
+                topActionButton("Notify") {
+                    Task { await sessionStore.registerNotifications() }
+                }
+                topActionButton("Sign out") {
+                    sessionStore.signOut()
+                }
             }
-            topActionButton("Import") {
-                isImportingVocab = true
+            .padding(5)
+            .background(AppTheme.paper.opacity(0.78), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(AppTheme.line, lineWidth: 1)
             }
-            topActionButton("Notify") {
-                Task { await sessionStore.registerNotifications() }
-            }
-            topActionButton("Sign out") {
-                sessionStore.signOut()
-            }
+            .shadow(color: AppTheme.shadow.opacity(0.08), radius: 14, x: 0, y: 8)
+
+            Spacer()
         }
-        .padding(6)
-        .background(AppTheme.paper.opacity(0.9), in: Capsule())
-        .overlay {
-            Capsule()
-                .stroke(AppTheme.coral.opacity(0.16), lineWidth: 1)
-        }
-        .shadow(color: AppTheme.ink.opacity(0.08), radius: 14, x: 0, y: 8)
     }
 
     private var authenticatedTabBar: some View {
         HStack(spacing: 0) {
             tabButton(.review, title: "Review", systemImage: "rectangle.stack.fill")
+            tabButton(.add, title: "Add", systemImage: "plus.square.fill")
             tabButton(.library, title: "Library", systemImage: "books.vertical.fill")
         }
-        .padding(6)
-        .background(AppTheme.paper.opacity(0.94), in: Capsule())
-        .overlay {
-            Capsule()
-                .stroke(AppTheme.coral.opacity(0.16), lineWidth: 1)
+        .padding(.horizontal, 18)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity)
+        .background(AppTheme.blush.opacity(0.96))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(AppTheme.coral.opacity(0.28))
+                .frame(height: 1.5)
         }
-        .shadow(color: AppTheme.ink.opacity(0.12), radius: 18, x: 0, y: 10)
     }
 
     private func tabButton(_ tab: AppTab, title: String, systemImage: String) -> some View {
         Button {
-            selectedTab = tab
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                selectedTab = tab
+            }
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: systemImage)
-                    .font(.title2.weight(.semibold))
+                    .font(AppTheme.uiFont(size: 20, weight: .semibold, relativeTo: .title3))
+                    .frame(width: 50, height: 42)
+                    .background {
+                        if selectedTab == tab {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(AppTheme.rose100.opacity(0.92))
+                                .matchedGeometryEffect(id: "selectedTabBackground", in: tabSelectionNamespace)
+                        }
+                    }
+                    .scaleEffect(selectedTab == tab ? 1.06 : 1.0)
+                    .shadow(color: selectedTab == tab ? AppTheme.shadow.opacity(0.12) : .clear, radius: 10, x: 0, y: 5)
                 Text(title)
-                    .font(.caption.weight(.semibold))
+                    .font(AppTheme.uiFont(size: 12, weight: .semibold, relativeTo: .caption))
+                    .opacity(selectedTab == tab ? 1 : 0.78)
             }
-            .frame(width: 122, height: 54)
+            .frame(maxWidth: .infinity, minHeight: 64)
         }
         .buttonStyle(ReadingTabButtonStyle(isSelected: selectedTab == tab))
         .accessibilityLabel(title)
@@ -235,7 +247,7 @@ struct RootView: View {
     private func topActionButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.callout.weight(.medium))
+                .font(AppTheme.uiFont(size: 16, weight: .medium, relativeTo: .callout))
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
                 .frame(minWidth: 64, minHeight: 36)
@@ -260,6 +272,7 @@ struct RootView: View {
 
 private enum AppTab: Hashable {
     case review
+    case add
     case library
 }
 
@@ -273,7 +286,7 @@ private struct ReadingToolbarButtonStyle: ButtonStyle {
         configuration.label
             .foregroundStyle(AppTheme.coral)
             .background(
-                AppTheme.blush.opacity(configuration.isPressed ? 0.42 : 0.0),
+                AppTheme.rose100.opacity(configuration.isPressed ? 0.36 : 0.0),
                 in: Capsule()
             )
             .opacity(configuration.isPressed ? 0.82 : 1.0)
@@ -286,11 +299,7 @@ private struct ReadingTabButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(isSelected ? AppTheme.coral : AppTheme.ink)
-            .background(
-                AppTheme.blush.opacity(isSelected ? 0.48 : (configuration.isPressed ? 0.24 : 0.0)),
-                in: Capsule()
-            )
+            .foregroundStyle(isSelected ? AppTheme.coral : AppTheme.muted)
             .opacity(configuration.isPressed ? 0.82 : 1.0)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
             .animation(.easeOut(duration: 0.18), value: isSelected)

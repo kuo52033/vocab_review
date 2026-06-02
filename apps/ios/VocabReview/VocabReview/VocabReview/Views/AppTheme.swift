@@ -2,31 +2,69 @@ import SwiftUI
 import UIKit
 
 enum AppTheme {
-    static let linen = Color(red: 1.0, green: 0.89, blue: 0.88)
-    static let paper = Color(red: 1.0, green: 0.96, blue: 0.89)
-    static let blush = Color(red: 1.0, green: 0.82, blue: 0.82)
-    static let coral = Color(red: 1.0, green: 0.58, blue: 0.58)
-    static let ink = Color(red: 0.26, green: 0.15, blue: 0.16)
-    static let muted = Color(red: 0.46, green: 0.34, blue: 0.35)
+    static let displayFontName = "Cormorant Garamond"
+    static let uiFontName = "DM Sans"
+
+    static let linen = Color(red: 0.96, green: 0.94, blue: 0.88)
+    static let paper = Color(red: 1.0, green: 1.0, blue: 0.98)
+    static let paperStrong = Color(red: 1.0, green: 1.0, blue: 0.98)
+    static let blush = Color(red: 0.98, green: 0.95, blue: 0.89)
+    static let coral = Color(red: 0.55, green: 0.39, blue: 0.29)
+    static let sand = Color(red: 0.77, green: 0.66, blue: 0.51)
+    static let ink = Color(red: 0.17, green: 0.09, blue: 0.06)
+    static let muted = Color(red: 0.55, green: 0.45, blue: 0.33)
+    static let line = Color(red: 0.70, green: 0.55, blue: 0.45).opacity(0.22)
+    static let lineStrong = Color(red: 0.55, green: 0.39, blue: 0.29).opacity(0.72)
+    static let surfaceGlow = Color(red: 0.91, green: 0.84, blue: 0.70)
+    static let shadow = Color(red: 0.44, green: 0.32, blue: 0.24)
     static let sage = coral
-    static let sageDark = Color(red: 0.65, green: 0.30, blue: 0.32)
+    static let sageDark = Color(red: 0.55, green: 0.42, blue: 0.33)
     static let clay = coral
-    static let success = Color(red: 0.34, green: 0.72, blue: 0.48)
-    static let successDark = Color(red: 0.16, green: 0.45, blue: 0.27)
-    static let danger = Color(red: 0.78, green: 0.26, blue: 0.29)
+    static let rose100 = Color(red: 0.92, green: 0.84, blue: 0.74)
+    static let success = Color(red: 0.49, green: 0.69, blue: 0.51)
+    static let successDark = Color(red: 0.31, green: 0.50, blue: 0.34)
+    static let successPale = Color(red: 0.80, green: 0.91, blue: 0.81)
+    static let successWash = Color(red: 0.91, green: 0.97, blue: 0.91)
+    static let danger = Color(red: 0.71, green: 0.35, blue: 0.28)
+    static let reviewGradientStart = Color(red: 0.55, green: 0.38, blue: 0.28)
+    static let reviewGradientEnd = Color(red: 0.77, green: 0.66, blue: 0.51)
+
+    static func displayFont(size: CGFloat, weight: Font.Weight = .semibold, relativeTo textStyle: Font.TextStyle = .largeTitle) -> Font {
+        .custom(displayFontName, size: size, relativeTo: textStyle).weight(weight)
+    }
+
+    static func uiFont(size: CGFloat, weight: Font.Weight = .regular, relativeTo textStyle: Font.TextStyle = .body) -> Font {
+        .custom(uiFontName, size: size, relativeTo: textStyle).weight(weight)
+    }
 }
 
 struct ReadingDeskBackground: View {
     var body: some View {
-        LinearGradient(
-            colors: [
-                AppTheme.paper,
-                AppTheme.linen,
-                AppTheme.paper
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        ZStack {
+            LinearGradient(
+                colors: [
+                    AppTheme.linen,
+                    AppTheme.blush,
+                    AppTheme.linen
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            RadialGradient(
+                colors: [AppTheme.surfaceGlow.opacity(0.42), .clear],
+                center: UnitPoint(x: 0.14, y: 0.1),
+                startRadius: 8,
+                endRadius: 240
+            )
+
+            RadialGradient(
+                colors: [AppTheme.linen.opacity(0.76), .clear],
+                center: UnitPoint(x: 0.84, y: 0.18),
+                startRadius: 12,
+                endRadius: 260
+            )
+        }
         .ignoresSafeArea()
     }
 }
@@ -35,12 +73,25 @@ struct ReadingCard: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding()
-            .background(AppTheme.paper.opacity(0.88), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .background {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                AppTheme.paperStrong,
+                                AppTheme.paper.opacity(0.96)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(AppTheme.coral.opacity(0.18), lineWidth: 1)
+                    .stroke(AppTheme.line, lineWidth: 1)
             }
-            .shadow(color: AppTheme.sageDark.opacity(0.12), radius: 22, x: 0, y: 12)
+            .shadow(color: AppTheme.shadow.opacity(0.14), radius: 20, x: 0, y: 12)
+            .shadow(color: AppTheme.coral.opacity(0.12), radius: 2, x: 0, y: 1)
     }
 }
 
@@ -48,16 +99,18 @@ struct ReadingInputField: ViewModifier {
     func body(content: Content) -> some View {
         content
             .textFieldStyle(.plain)
-            .font(.body.weight(.medium))
+            .font(AppTheme.uiFont(size: 17, weight: .medium))
             .foregroundStyle(AppTheme.ink)
+            .colorScheme(.light)
             .tint(AppTheme.coral)
             .padding(.horizontal, 12)
             .padding(.vertical, 11)
-            .background(AppTheme.paper.opacity(0.96), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(AppTheme.paper.opacity(0.9), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(AppTheme.ink.opacity(0.1), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(AppTheme.line, lineWidth: 1)
             }
+            .shadow(color: AppTheme.shadow.opacity(0.06), radius: 10, x: 0, y: 6)
     }
 }
 
@@ -66,19 +119,19 @@ struct ReadingPrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.body.weight(.bold))
-            .foregroundStyle(isEnabled ? Color.white : AppTheme.muted.opacity(0.72))
+            .font(AppTheme.uiFont(size: 17, weight: .bold))
+            .foregroundStyle(isEnabled ? AppTheme.paper : AppTheme.muted.opacity(0.72))
             .padding(.vertical, 13)
             .frame(maxWidth: .infinity)
             .background(
                 isEnabled
                     ? AppTheme.coral.opacity(configuration.isPressed ? 0.78 : 1.0)
-                    : AppTheme.blush.opacity(0.42),
+                    : AppTheme.rose100.opacity(0.42),
                 in: RoundedRectangle(cornerRadius: 16, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(isEnabled ? Color.white.opacity(0.28) : AppTheme.ink.opacity(0.06), lineWidth: 1)
+                    .stroke(isEnabled ? AppTheme.lineStrong : AppTheme.ink.opacity(0.06), lineWidth: 1)
             }
             .shadow(color: isEnabled ? AppTheme.coral.opacity(0.22) : .clear, radius: 10, x: 0, y: 6)
             .opacity(configuration.isPressed ? 0.92 : 1)
@@ -101,12 +154,12 @@ extension View {
     }
 
     func readingTitle() -> some View {
-        font(.system(.largeTitle, design: .serif, weight: .semibold))
+        font(AppTheme.displayFont(size: 38, weight: .semibold))
             .foregroundStyle(AppTheme.ink)
     }
 
     func readingTerm() -> some View {
-        font(.system(.title, design: .serif, weight: .semibold))
+        font(AppTheme.displayFont(size: 28, weight: .semibold, relativeTo: .title2))
             .foregroundStyle(AppTheme.ink)
     }
 

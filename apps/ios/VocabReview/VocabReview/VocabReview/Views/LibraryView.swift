@@ -16,7 +16,7 @@ struct LibraryView: View {
         ZStack {
             ReadingDeskBackground()
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: 16) {
                     searchField
                     loadingIndicator
 
@@ -34,7 +34,7 @@ struct LibraryView: View {
                 await loadCurrentPage()
             }
         }
-        .navigationTitle("Library")
+        .navigationTitle("")
         .onSubmit(of: .search) {
             searchTask?.cancel()
             Task { await resetAndLoad() }
@@ -100,11 +100,12 @@ struct LibraryView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(AppTheme.paper.opacity(0.9), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(AppTheme.paper, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
+                .stroke(AppTheme.line, lineWidth: 1)
         }
+        .shadow(color: AppTheme.shadow.opacity(0.08), radius: 14, x: 0, y: 6)
     }
 
     @ViewBuilder
@@ -126,13 +127,11 @@ struct LibraryView: View {
     }
 
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(searchQuery.isEmpty ? "No cards yet" : "No matching cards")
-                .readingTitle()
-            Text(searchQuery.isEmpty ? "Use Add to create your first vocabulary card." : "Try a different term or meaning.")
-                .readingMuted()
-        }
-        .readingCard()
+        Text(searchQuery.isEmpty ? "No cards yet." : "No matching cards.")
+            .font(AppTheme.displayFont(size: 38, weight: .semibold))
+            .foregroundStyle(AppTheme.ink)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, minHeight: 220)
         .transition(.opacity)
     }
 
@@ -201,12 +200,15 @@ private struct LibraryCardRow: View {
                     }
                 } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(AppTheme.muted)
+                        Image(systemName: "chevron.down")
+                            .font(AppTheme.uiFont(size: 13, weight: .black, relativeTo: .caption))
+                            .frame(width: 38, height: 38)
+                            .background(isExpanded ? AppTheme.coral : AppTheme.blush.opacity(0.55), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .foregroundStyle(isExpanded ? AppTheme.paper : AppTheme.coral)
+                            .rotationEffect(.degrees(isExpanded ? 180 : 0))
                         Text(card.item.term)
-                            .font(.system(.title3, design: .default, weight: .medium))
-                            .foregroundStyle(AppTheme.sageDark)
+                            .font(AppTheme.displayFont(size: 22, weight: .semibold, relativeTo: .title3))
+                            .foregroundStyle(AppTheme.ink)
                         Spacer()
                     }
                     .contentShape(Rectangle())
@@ -231,7 +233,8 @@ private struct LibraryCardRow: View {
                 .disabled(isBusy)
                 .accessibilityLabel("Delete \(card.item.term)")
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.vertical, 18)
 
             if isExpanded {
                 details
@@ -242,12 +245,12 @@ private struct LibraryCardRow: View {
         }
         .animation(.spring(response: 0.32, dampingFraction: 0.9), value: isExpanded)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppTheme.paper.opacity(0.88), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(AppTheme.paper, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(isExpanded ? AppTheme.lineStrong : AppTheme.line, lineWidth: isExpanded ? 2 : 1)
         }
-        .shadow(color: AppTheme.ink.opacity(0.06), radius: 14, x: 0, y: 8)
+        .shadow(color: isExpanded ? AppTheme.coral.opacity(0.2) : AppTheme.shadow.opacity(0.08), radius: isExpanded ? 24 : 15, x: 0, y: isExpanded ? 12 : 4)
     }
 
     private var details: some View {
@@ -272,7 +275,17 @@ private struct LibraryCardRow: View {
             if !card.item.example_sentence.isEmpty {
                 Text(card.item.example_sentence)
                     .font(.callout)
+                    .italic()
                     .readingMuted()
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(AppTheme.blush.opacity(0.58), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(AppTheme.coral)
+                            .frame(width: 3)
+                            .padding(.vertical, 10)
+                    }
             }
 
             if !card.item.notes.isEmpty {
@@ -302,7 +315,7 @@ private struct LibraryRowActionButtonStyle: ButtonStyle {
         configuration.label
             .foregroundStyle(isEnabled ? AppTheme.coral : AppTheme.muted.opacity(0.45))
             .background(
-                AppTheme.blush.opacity(configuration.isPressed ? 0.5 : 0.32),
+                AppTheme.rose100.opacity(configuration.isPressed ? 0.5 : 0.32),
                 in: Circle()
             )
             .opacity(isEnabled ? 1 : 0.55)

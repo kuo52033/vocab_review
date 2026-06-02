@@ -1260,8 +1260,12 @@ export function App() {
 
             <div className="library" key={`library-${libraryPage}-${query}`}>
               {isRefreshing && paginatedVocab.length === 0 ? (
-                <div className="empty-state spacious">
+                <div className="library-empty-text">
                   <strong>Loading cards...</strong>
+                </div>
+              ) : !isRefreshing && vocabTotal === 0 ? (
+                <div className="library-empty-text">
+                  <strong>{stats.active_cards === 0 ? "No cards yet." : "No matching cards."}</strong>
                 </div>
               ) : paginatedVocab.map(({ item, state }) => (
                 <article className={editingID === item.id ? "library-card editing" : "library-card"} key={item.id}>
@@ -1321,13 +1325,6 @@ export function App() {
               ))}
             </div>
             <Pagination label="Active cards" page={libraryPage} totalPages={libraryPageCount} onPageChange={setLibraryPage} />
-
-            {vocabTotal === 0 ? (
-              <div className="empty-state spacious">
-                <strong>{stats.active_cards === 0 ? "No cards yet." : "No matching cards."}</strong>
-                <span>{stats.active_cards === 0 ? "Add your first word above." : "Try another search."}</span>
-              </div>
-            ) : null}
           </section>
         ) : null}
 

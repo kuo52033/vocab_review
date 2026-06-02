@@ -12,6 +12,7 @@ struct ReviewListView: View {
     @State private var sessionSummary: ReviewSessionSummary?
     @State private var isStartingReview = false
     @State private var isAdvancingQuizCard = false
+    @State private var isReviewHomePresented = false
     @State private var focusedReviewContentHeight: CGFloat = 0
 
     private let sessionLimit = 12
@@ -39,6 +40,9 @@ struct ReviewListView: View {
             if let card = currentQuizCard {
                 focusedReviewSession(card)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else if let summary = sessionSummary {
+                finalReviewPage(summary)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else {
                 reviewHome
                     .transition(.opacity)
@@ -57,26 +61,26 @@ struct ReviewListView: View {
 
     private var reviewHome: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Start Review")
-                        .readingTitle()
-                    Text("Answer one card at a time. Each session uses up to \(sessionLimit) due words.")
-                        .readingMuted()
-                }
-
+            VStack(alignment: .leading, spacing: 24) {
                 startReviewCard
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .opacity(isReviewHomePresented ? 1 : 0)
+                    .scaleEffect(isReviewHomePresented ? 1 : 0.985)
+                    .offset(y: isReviewHomePresented ? 0 : 24)
+                    .transition(.opacity.combined(with: .scale(scale: 0.985)))
 
-                if let summary = sessionSummary {
-                    sessionSummaryCard(summary)
-                }
+                homeStats
             }
             .padding()
         }
         .refreshable {
             await sessionStore.loadDueCards()
             await sessionStore.loadReviewStats()
+        }
+        .onAppear {
+            isReviewHomePresented = false
+            withAnimation(.spring(response: 0.88, dampingFraction: 0.82).delay(0.12)) {
+                isReviewHomePresented = true
+            }
         }
     }
 
@@ -134,27 +138,28 @@ struct ReviewListView: View {
     }
 
     private var startReviewCard: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 28) {
             HStack {
                 Text("Quiz Mode")
                     .font(.caption.weight(.bold))
                     .textCase(.uppercase)
-                    .foregroundStyle(AppTheme.sageDark)
+                    .foregroundStyle(AppTheme.paper.opacity(0.74))
                 Spacer()
                 Text("\(sessionStore.reviewStats.due_now) due now")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(AppTheme.clay)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(AppTheme.clay.opacity(0.12), in: Capsule())
+                    .foregroundStyle(AppTheme.paper)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(AppTheme.paper.opacity(0.2), in: Capsule())
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 14) {
                 Text(sessionStore.reviewStats.due_now == 0 ? "Clear desk." : "Ready when you are.")
-                    .font(.system(.largeTitle, design: .serif, weight: .semibold))
-                    .foregroundStyle(AppTheme.ink)
+                    .font(AppTheme.displayFont(size: 44, weight: .semibold))
+                    .foregroundStyle(AppTheme.paper)
+                    .lineSpacing(6)
                 Text(sessionStore.reviewStats.due_now == 0 ? "No due cards right now." : "A short multiple-choice sprint is waiting.")
-                    .readingMuted()
+                    .foregroundStyle(AppTheme.paper.opacity(0.78))
             }
 
             if sessionStore.reviewStats.due_now > 0 {
@@ -165,29 +170,110 @@ struct ReviewListView: View {
                         ProgressView()
                             .frame(maxWidth: .infinity)
                     } else {
-                        Text("Start Review")
+                        Text("Start Review ->")
                             .frame(maxWidth: .infinity)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(ReviewHeroButtonStyle())
                 .disabled(sessionStore.dueCards.isEmpty || isStartingReview)
             }
         }
-        .padding()
+        .padding(28)
+        .frame(minHeight: 344)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(
-                colors: [AppTheme.paper.opacity(0.96), AppTheme.linen.opacity(0.78)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 28, style: .continuous)
-        )
+        .background {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [AppTheme.reviewGradientStart, AppTheme.reviewGradientEnd],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(alignment: .topTrailing) {
+                    Circle()
+                        .fill(AppTheme.paper.opacity(0.08))
+                        .frame(width: 210, height: 210)
+                        .offset(x: 74, y: -70)
+                }
+                .overlay(alignment: .bottomLeading) {
+                    Circle()
+                        .fill(AppTheme.paper.opacity(0.08))
+                        .frame(width: 180, height: 180)
+                        .offset(x: -72, y: 72)
+                }
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
+                .stroke(AppTheme.paper.opacity(0.12), lineWidth: 1)
         }
-        .shadow(color: AppTheme.ink.opacity(0.1), radius: 24, x: 0, y: 14)
+        .shadow(color: AppTheme.reviewGradientStart.opacity(0.38), radius: 34, x: 0, y: 24)
+    }
+
+    private var homeStats: some View {
+        HStack(spacing: 14) {
+            reviewStatTile("flame.fill", "\(max(sessionStore.reviewStats.reviewed_today, 0))", "Day streak", .orange)
+            reviewStatTile("books.vertical.fill", "\(sessionStore.reviewStats.due_now)", "Due today", AppTheme.coral)
+            reviewStatTile("checkmark.square.fill", "\(sessionStore.reviewStats.active_cards)", "Mastered", AppTheme.success)
+        }
+    }
+
+    private func reviewStatTile(_ systemImage: String, _ value: String, _ label: String, _ iconColor: Color) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(iconColor)
+            Text(value)
+                .font(AppTheme.uiFont(size: 32, weight: .black, relativeTo: .title))
+                .foregroundStyle(AppTheme.ink)
+            Text(label)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(AppTheme.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 136)
+        .background(AppTheme.paper, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(AppTheme.line, lineWidth: 1)
+        }
+        .shadow(color: AppTheme.shadow.opacity(0.08), radius: 15, x: 0, y: 4)
+    }
+
+    private func finalReviewPage(_ summary: ReviewSessionSummary) -> some View {
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 46) {
+                    Spacer(minLength: max(proxy.size.height * 0.12, 72))
+
+                    ReviewAccuracyRing(summary: summary)
+
+                    Text(summary.resultMessage)
+                        .font(AppTheme.displayFont(size: 42, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
+                        .multilineTextAlignment(.center)
+
+                    Button {
+                        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                            sessionSummary = nil
+                        }
+                    } label: {
+                        Text("Back to Home")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(ReviewResultButtonStyle())
+                    .frame(maxWidth: 300)
+
+                    Spacer(minLength: 120)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: proxy.size.height)
+                .padding(.horizontal, 24)
+            }
+            .scrollIndicators(.hidden)
+        }
     }
 
     private func quizCard(_ quizCard: QuizCard) -> some View {
@@ -214,7 +300,7 @@ struct ReviewListView: View {
                     .textCase(.uppercase)
                     .foregroundStyle(AppTheme.sageDark)
                 Text(quizCard.card.item.term)
-                    .font(.system(size: 46, weight: .regular, design: .rounded))
+                    .font(AppTheme.displayFont(size: 52, weight: .semibold))
                     .foregroundStyle(AppTheme.ink)
                     .multilineTextAlignment(.center)
                     .tracking(0)
@@ -233,14 +319,8 @@ struct ReviewListView: View {
 
             quizFeedback(for: quizCard)
         }
-        .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppTheme.paper.opacity(0.94), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(AppTheme.coral.opacity(0.18), lineWidth: 1)
-        }
-        .shadow(color: AppTheme.sageDark.opacity(0.12), radius: 24, x: 0, y: 14)
+        .readingCard()
     }
 
     private var nextReviewAction: some View {
@@ -250,7 +330,7 @@ struct ReviewListView: View {
             Text(sessionIndex + 1 >= sessionDeck.count ? "Show summary" : "Next word")
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
+        .readingPrimaryButton()
         .disabled(sessionStore.isGrading || isAdvancingQuizCard)
         .padding(.horizontal, 18)
         .padding(.top, 8)
@@ -266,9 +346,23 @@ struct ReviewListView: View {
         return HStack(alignment: .top, spacing: 12) {
             Text(String(UnicodeScalar(65 + index)!))
                 .font(.caption.weight(.bold))
-                .foregroundStyle(AppTheme.ink)
+                .foregroundStyle(showCorrect ? AppTheme.paper : AppTheme.ink)
                 .frame(width: 28, height: 28)
-                .background(optionBadgeColor(showCorrect: showCorrect, showWrong: showWrong), in: Circle())
+                .background {
+                    if showCorrect {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [AppTheme.success, AppTheme.successDark],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    } else {
+                        Circle()
+                            .fill(optionBadgeColor(showWrong: showWrong))
+                    }
+                }
             Text(option.text)
                 .multilineTextAlignment(.leading)
                 .lineLimit(nil)
@@ -281,7 +375,20 @@ struct ReviewListView: View {
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .background(optionBackground(showCorrect: showCorrect, showWrong: showWrong), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+            if showCorrect {
+                shape.fill(
+                    LinearGradient(
+                        colors: [AppTheme.successWash.opacity(0.98), AppTheme.successPale.opacity(0.88)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            } else {
+                shape.fill(optionBackground(showWrong: showWrong))
+            }
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(optionBorder(showCorrect: showCorrect, showWrong: showWrong), lineWidth: 1)
@@ -397,7 +504,7 @@ struct ReviewListView: View {
 
                 VStack(alignment: .trailing, spacing: 3) {
                     Text("\(summary.accuracy)%")
-                        .font(.system(.title, design: .rounded, weight: .bold))
+                        .font(AppTheme.uiFont(size: 32, weight: .bold, relativeTo: .title))
                         .foregroundStyle(AppTheme.ink)
                     Text("accuracy")
                         .font(.caption.weight(.bold))
@@ -454,20 +561,18 @@ struct ReviewListView: View {
             }
     }
 
-    private func optionBackground(showCorrect: Bool, showWrong: Bool) -> Color {
-        if showCorrect { return AppTheme.success.opacity(0.18) }
+    private func optionBackground(showWrong: Bool) -> Color {
         if showWrong { return AppTheme.danger.opacity(0.12) }
         return AppTheme.paper.opacity(0.82)
     }
 
     private func optionBorder(showCorrect: Bool, showWrong: Bool) -> Color {
-        if showCorrect { return AppTheme.successDark.opacity(0.42) }
+        if showCorrect { return AppTheme.successDark.opacity(0.62) }
         if showWrong { return AppTheme.danger.opacity(0.45) }
         return AppTheme.coral.opacity(0.18)
     }
 
-    private func optionBadgeColor(showCorrect: Bool, showWrong: Bool) -> Color {
-        if showCorrect { return AppTheme.success }
+    private func optionBadgeColor(showWrong: Bool) -> Color {
         if showWrong { return AppTheme.danger }
         return AppTheme.blush
     }
@@ -590,6 +695,23 @@ private struct ReviewSessionSummary {
     var accuracy: Int {
         Int((Double(correct) / Double(max(reviewed, 1)) * 100).rounded())
     }
+
+    var accuracyFraction: Double {
+        Double(correct) / Double(max(reviewed, 1))
+    }
+
+    var resultMessage: String {
+        switch accuracy {
+        case 100:
+            return "Perfect! ✨"
+        case 80...99:
+            return "Great work! 🎉"
+        case 50...79:
+            return "Nice progress! 👍"
+        default:
+            return "Keep going! 💪"
+        }
+    }
 }
 
 private struct FocusedReviewContentHeightKey: PreferenceKey {
@@ -597,6 +719,92 @@ private struct FocusedReviewContentHeightKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+private struct ReviewHeroButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(AppTheme.uiFont(size: 17, weight: .black))
+            .foregroundStyle(isEnabled ? AppTheme.coral : AppTheme.muted.opacity(0.65))
+            .padding(.vertical, 18)
+            .background(AppTheme.paper.opacity(configuration.isPressed ? 0.9 : 1.0), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: Color.black.opacity(isEnabled ? 0.15 : 0), radius: 18, x: 0, y: 10)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.14), value: isEnabled)
+    }
+}
+
+private struct ReviewResultButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(AppTheme.uiFont(size: 20, weight: .black, relativeTo: .title3))
+            .foregroundStyle(isEnabled ? AppTheme.paper : AppTheme.muted.opacity(0.65))
+            .padding(.vertical, 22)
+            .background(AppTheme.coral.opacity(configuration.isPressed ? 0.86 : 1.0), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .shadow(color: AppTheme.shadow.opacity(isEnabled ? 0.16 : 0), radius: 18, x: 0, y: 10)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.14), value: isEnabled)
+    }
+}
+
+private struct ReviewAccuracyRing: View {
+    let summary: ReviewSessionSummary
+    @State private var displayedFraction = 0.0
+    private let ringSize: CGFloat = 156
+    private let ringLineWidth: CGFloat = 20
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(AppTheme.line.opacity(0.45), lineWidth: 3)
+                .frame(width: 176, height: 176)
+
+            Circle()
+                .stroke(AppTheme.paper.opacity(0.42), lineWidth: ringLineWidth)
+                .frame(width: ringSize, height: ringSize)
+
+            Circle()
+                .trim(from: 0, to: displayedFraction)
+                .stroke(
+                    AppTheme.coral,
+                    style: StrokeStyle(lineWidth: ringLineWidth, lineCap: .round)
+                )
+                .frame(width: ringSize, height: ringSize)
+                .rotationEffect(.degrees(-90))
+
+            VStack(spacing: 6) {
+                Text("\(summary.correct)/\(summary.reviewed)")
+                    .font(AppTheme.uiFont(size: 44, weight: .black, relativeTo: .largeTitle))
+                    .foregroundStyle(AppTheme.coral)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.62)
+                    .allowsTightening(true)
+                Text("correct")
+                    .font(.callout.weight(.black))
+                    .foregroundStyle(AppTheme.muted)
+            }
+            .frame(width: 118)
+        }
+        .frame(width: 190, height: 190)
+        .shadow(color: AppTheme.shadow.opacity(0.08), radius: 24, x: 0, y: 12)
+        .onAppear {
+            displayedFraction = 0
+            withAnimation(.easeOut(duration: 0.72).delay(0.12)) {
+                displayedFraction = summary.accuracyFraction
+            }
+        }
+        .onChange(of: summary.accuracyFraction) { _, newValue in
+            withAnimation(.easeOut(duration: 0.72)) {
+                displayedFraction = newValue
+            }
+        }
     }
 }
 

@@ -1517,6 +1517,21 @@ textarea {
   border-radius: 14px;
 }
 
+.library-empty-text {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  color: var(--ink);
+  text-align: center;
+}
+
+.library-empty-text strong {
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 3vw, 2.35rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
 .library-card.editing {
   padding: 20px;
 }
@@ -2168,13 +2183,15 @@ button:hover:not(:disabled),
 
 .answer-option.correct {
   background:
-    linear-gradient(135deg, rgba(255, 255, 250, 0.98), rgba(255, 251, 233, 0.9)),
-    radial-gradient(circle at 100% 0%, rgba(127, 108, 61, 0.14), transparent 44%);
-  box-shadow: 0 14px 30px rgba(127, 108, 61, 0.12);
+    linear-gradient(135deg, rgba(232, 247, 232, 0.98), rgba(204, 232, 207, 0.88)),
+    radial-gradient(circle at 100% 0%, rgba(84, 139, 91, 0.18), transparent 44%);
+  border-color: rgba(84, 139, 91, 0.62);
+  box-shadow: 0 14px 30px rgba(84, 139, 91, 0.14);
 }
 
 .answer-option.correct span {
-  background: linear-gradient(135deg, #d9bf96, #8b6b55);
+  color: #fffdf5;
+  background: linear-gradient(135deg, #7eaf82, #4f8056);
 }
 
 .answer-option.wrong span,
@@ -2298,8 +2315,8 @@ body::after {
 
 .review-start-card {
   animation:
-    main-card-enter 1450ms var(--ease-smooth-settle) 180ms both,
-    focal-float 9800ms ease-in-out 2100ms infinite;
+    review-home-appear 880ms var(--ease-smooth-settle) 120ms both,
+    focal-float 9800ms ease-in-out 1400ms infinite;
   will-change: transform, opacity;
 }
 
@@ -2313,13 +2330,11 @@ body::after {
 
 .review-icon {
   border-radius: 20px;
-  animation: gentle-content-in 760ms var(--ease-smooth-settle) 540ms both;
   transition: transform 280ms var(--ease-press), background 240ms ease, box-shadow 240ms ease;
 }
 
 .review-icon.is-loaded {
   opacity: 1;
-  animation: none;
 }
 
 .review-icon.is-loaded:hover {
@@ -2334,7 +2349,6 @@ body::after {
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 0.95;
-  animation: gentle-content-in 820ms var(--ease-smooth-settle) 700ms both;
 }
 
 .review-card-copy span {
@@ -2342,7 +2356,6 @@ body::after {
   font-size: 0.9rem;
   font-weight: 700;
   letter-spacing: 0.02em;
-  animation: gentle-content-in 780ms var(--ease-smooth-settle) 820ms both;
 }
 
 .home-stats {
@@ -2424,6 +2437,23 @@ body::after {
   58% {
     opacity: 1;
     transform: translate3d(0, -3px, 0) scale(1.003);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes review-home-appear {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 24px, 0) scale(0.985);
+  }
+
+  58% {
+    opacity: 1;
+    transform: translate3d(0, -2px, 0) scale(1.002);
   }
 
   100% {

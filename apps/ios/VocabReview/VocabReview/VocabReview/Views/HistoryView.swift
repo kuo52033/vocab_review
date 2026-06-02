@@ -82,7 +82,7 @@ struct HistoryView: View {
                     } label: {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(entry.item.term)
-                                .font(.system(.title3, design: .serif, weight: .semibold))
+                                .font(AppTheme.displayFont(size: 25, weight: .semibold, relativeTo: .title3))
                                 .foregroundStyle(AppTheme.ink)
                                 .lineLimit(2)
 
@@ -150,7 +150,7 @@ private struct StatCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("\(value)")
-                .font(.system(.title, design: .serif, weight: .semibold))
+                .font(AppTheme.uiFont(size: 32, weight: .bold, relativeTo: .title))
                 .foregroundStyle(AppTheme.sageDark)
             Text(label)
                 .font(.caption.weight(.semibold))
@@ -174,7 +174,7 @@ private struct HistoryDetailSheet: View {
                     VStack(alignment: .leading, spacing: 18) {
                         VStack(alignment: .leading, spacing: 16) {
                             Text(entry.item.term)
-                                .font(.system(size: 42, weight: .semibold, design: .serif))
+                                .font(AppTheme.displayFont(size: 46, weight: .semibold))
                                 .lineSpacing(4)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .foregroundStyle(AppTheme.ink)
