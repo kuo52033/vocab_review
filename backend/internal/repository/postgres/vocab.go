@@ -11,7 +11,7 @@ import (
 	"vocabreview/backend/internal/repository"
 )
 
-func (s *Store) CreateVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, job *domain.NotificationJob) error {
+func (s *Store) CreateVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, job *domain.NotificationJob, audioJob *domain.VocabAudioJob) error {
 	return withTx(ctx, s.pool, func(tx pgx.Tx) error {
 		if err := insertVocab(ctx, tx, item); err != nil {
 			return err
@@ -19,11 +19,14 @@ func (s *Store) CreateVocab(ctx context.Context, item domain.VocabItem, state do
 		if err := insertReviewState(ctx, tx, state); err != nil {
 			return err
 		}
-		return insertNotificationJob(ctx, tx, job)
+		if err := insertNotificationJob(ctx, tx, job); err != nil {
+			return err
+		}
+		return upsertVocabAudioJob(ctx, tx, audioJob)
 	})
 }
 
-func (s *Store) CreateCapturedVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, capture domain.CaptureSource, job *domain.NotificationJob) error {
+func (s *Store) CreateCapturedVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, capture domain.CaptureSource, job *domain.NotificationJob, audioJob *domain.VocabAudioJob) error {
 	return withTx(ctx, s.pool, func(tx pgx.Tx) error {
 		if err := insertVocab(ctx, tx, item); err != nil {
 			return err
@@ -39,16 +42,24 @@ func (s *Store) CreateCapturedVocab(ctx context.Context, item domain.VocabItem, 
 		`, capture.ID, capture.UserID, capture.VocabItemID, capture.Source, capture.Selection, capture.PageTitle, capture.PageURL, capture.CreatedAt.UTC()); err != nil {
 			return err
 		}
-		return insertNotificationJob(ctx, tx, job)
+		if err := insertNotificationJob(ctx, tx, job); err != nil {
+			return err
+		}
+		return upsertVocabAudioJob(ctx, tx, audioJob)
 	})
 }
 
 func (s *Store) GetVocab(ctx context.Context, id string) (domain.VocabItem, bool, error) {
 	item, err := scanVocab(
 		s.pool.QueryRow(ctx, `
-			SELECT id, user_id, term, meaning, chinese, example_sentence, part_of_speech, source_text, source_url, notes, created_at, updated_at, archived_at
-			FROM vocab_items
-			WHERE id = $1
+			SELECT
+				v.id, v.user_id, v.term, v.meaning, v.chinese, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes,
+				COALESCE(a.id, ''), COALESCE(a.storage_key, ''), COALESCE(a.status, j.status, ''), COALESCE(a.provider, j.provider, ''), COALESCE(a.model, j.model, ''), COALESCE(a.voice, j.voice, ''), COALESCE(a.speed, j.speed, 0), COALESCE(a.output_format, j.output_format, ''),
+				v.created_at, v.updated_at, v.archived_at
+			FROM vocab_items v
+			LEFT JOIN vocab_audios a ON a.id = v.audio_id
+			LEFT JOIN vocab_audio_jobs j ON j.vocab_item_id = v.id
+			WHERE v.id = $1
 		`, id),
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -63,10 +74,14 @@ func (s *Store) GetVocab(ctx context.Context, id string) (domain.VocabItem, bool
 func (s *Store) GetActiveVocabByTerm(ctx context.Context, userID string, term string) (repository.VocabWithState, bool, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT
-			v.id, v.user_id, v.term, v.meaning, v.chinese, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes, v.created_at, v.updated_at, v.archived_at,
+			v.id, v.user_id, v.term, v.meaning, v.chinese, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes,
+			COALESCE(a.id, ''), COALESCE(a.storage_key, ''), COALESCE(a.status, j.status, ''), COALESCE(a.provider, j.provider, ''), COALESCE(a.model, j.model, ''), COALESCE(a.voice, j.voice, ''), COALESCE(a.speed, j.speed, 0), COALESCE(a.output_format, j.output_format, ''),
+			v.created_at, v.updated_at, v.archived_at,
 			r.vocab_item_id, r.user_id, r.status, r.ease_factor, r.interval_days, r.repetition_count, r.last_reviewed_at, r.next_due_at, r.consecutive_again
 		FROM vocab_items v
 		JOIN review_states r ON r.vocab_item_id = v.id
+		LEFT JOIN vocab_audios a ON a.id = v.audio_id
+		LEFT JOIN vocab_audio_jobs j ON j.vocab_item_id = v.id
 		WHERE v.user_id = $1
 		  AND v.archived_at IS NULL
 		  AND lower(btrim(v.term)) = lower(btrim($2))
@@ -87,22 +102,35 @@ func (s *Store) GetActiveVocabByTerm(ctx context.Context, userID string, term st
 	return items[0], true, nil
 }
 
-func (s *Store) UpdateVocab(ctx context.Context, item domain.VocabItem) error {
-	_, err := s.pool.Exec(ctx, `
-		UPDATE vocab_items
-		SET term = $2,
-		    meaning = $3,
-		    chinese = $4,
-		    example_sentence = $5,
-		    part_of_speech = $6,
-		    source_text = $7,
-		    source_url = $8,
-		    notes = $9,
-		    updated_at = $10,
-		    archived_at = $11
-		WHERE id = $1
-	`, item.ID, item.Term, item.Meaning, item.Chinese, item.ExampleSentence, item.PartOfSpeech, item.SourceText, item.SourceURL, item.Notes, item.UpdatedAt.UTC(), nullableTime(item.ArchivedAt))
-	return err
+func (s *Store) UpdateVocab(ctx context.Context, item domain.VocabItem, audioJob *domain.VocabAudioJob) error {
+	return withTx(ctx, s.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `
+			UPDATE vocab_items
+			SET term = $2,
+			    meaning = $3,
+			    chinese = $4,
+			    example_sentence = $5,
+			    part_of_speech = $6,
+			    source_text = $7,
+			    source_url = $8,
+			    notes = $9,
+			    audio_id = NULLIF($10, ''),
+			    updated_at = $11,
+			    archived_at = $12
+			WHERE id = $1
+		`, item.ID, item.Term, item.Meaning, item.Chinese, item.ExampleSentence, item.PartOfSpeech, item.SourceText, item.SourceURL, item.Notes, item.AudioID, item.UpdatedAt.UTC(), nullableTime(item.ArchivedAt)); err != nil {
+			return err
+		}
+		if audioJob == nil && (item.Audio == nil || item.AudioID != "") {
+			if _, err := tx.Exec(ctx, `
+				DELETE FROM vocab_audio_jobs
+				WHERE vocab_item_id = $1
+			`, item.ID); err != nil {
+				return err
+			}
+		}
+		return upsertVocabAudioJob(ctx, tx, audioJob)
+	})
 }
 
 func (s *Store) ArchiveVocabForUser(ctx context.Context, userID string, vocabID string, archivedAt time.Time) (domain.VocabItem, error) {
@@ -113,7 +141,7 @@ func (s *Store) ArchiveVocabForUser(ctx context.Context, userID string, vocabID 
 			    archived_at = $3
 			WHERE id = $1
 			  AND user_id = $2
-			RETURNING id, user_id, term, meaning, chinese, example_sentence, part_of_speech, source_text, source_url, notes, created_at, updated_at, archived_at
+			RETURNING id, user_id, term, meaning, chinese, example_sentence, part_of_speech, source_text, source_url, notes, COALESCE(audio_id, ''), '', '', '', '', '', 0::numeric, '', created_at, updated_at, archived_at
 		`, vocabID, userID, archivedAt.UTC()),
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -150,10 +178,14 @@ func (s *Store) ListVocabByUser(ctx context.Context, userID string, options repo
 
 	rows, err := s.pool.Query(ctx, `
 		SELECT
-			v.id, v.user_id, v.term, v.meaning, v.chinese, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes, v.created_at, v.updated_at, v.archived_at,
+			v.id, v.user_id, v.term, v.meaning, v.chinese, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes,
+			COALESCE(a.id, ''), COALESCE(a.storage_key, ''), COALESCE(a.status, j.status, ''), COALESCE(a.provider, j.provider, ''), COALESCE(a.model, j.model, ''), COALESCE(a.voice, j.voice, ''), COALESCE(a.speed, j.speed, 0), COALESCE(a.output_format, j.output_format, ''),
+			v.created_at, v.updated_at, v.archived_at,
 			r.vocab_item_id, r.user_id, r.status, r.ease_factor, r.interval_days, r.repetition_count, r.last_reviewed_at, r.next_due_at, r.consecutive_again
 		FROM vocab_items v
 		JOIN review_states r ON r.vocab_item_id = v.id
+		LEFT JOIN vocab_audios a ON a.id = v.audio_id
+		LEFT JOIN vocab_audio_jobs j ON j.vocab_item_id = v.id
 		WHERE v.user_id = $1
 		  AND v.archived_at IS NULL
 		  AND ($2 = '' OR r.status = $2)

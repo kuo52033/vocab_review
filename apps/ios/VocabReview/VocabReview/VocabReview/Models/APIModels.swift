@@ -90,6 +90,7 @@ struct VocabItem: Codable {
     let source_text: String
     let source_url: String
     let notes: String
+    let audio: VocabAudio?
     let created_at: String
     let updated_at: String
     let archived_at: String?
@@ -105,6 +106,7 @@ struct VocabItem: Codable {
         case source_text
         case source_url
         case notes
+        case audio
         case created_at
         case updated_at
         case archived_at
@@ -122,10 +124,22 @@ struct VocabItem: Codable {
         source_text = try container.decode(String.self, forKey: .source_text)
         source_url = try container.decode(String.self, forKey: .source_url)
         notes = try container.decode(String.self, forKey: .notes)
+        audio = try container.decodeIfPresent(VocabAudio.self, forKey: .audio)
         created_at = try container.decode(String.self, forKey: .created_at)
         updated_at = try container.decode(String.self, forKey: .updated_at)
         archived_at = try container.decodeIfPresent(String.self, forKey: .archived_at)
     }
+}
+
+struct VocabAudio: Codable {
+    let status: String
+    let storage_key: String?
+    let url: String?
+    let provider: String?
+    let model: String?
+    let voice: String?
+    let speed: Double?
+    let output_format: String?
 }
 
 struct ReviewState: Codable {

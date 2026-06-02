@@ -15,6 +15,8 @@ type scanner interface {
 
 func scanVocab(row scanner) (domain.VocabItem, error) {
 	var item domain.VocabItem
+	var audioID, audioStorageKey, audioStatus, audioProvider, audioModel, audioVoice, audioFormat string
+	var audioSpeed float64
 	if err := row.Scan(
 		&item.ID,
 		&item.UserID,
@@ -26,12 +28,22 @@ func scanVocab(row scanner) (domain.VocabItem, error) {
 		&item.SourceText,
 		&item.SourceURL,
 		&item.Notes,
+		&audioID,
+		&audioStorageKey,
+		&audioStatus,
+		&audioProvider,
+		&audioModel,
+		&audioVoice,
+		&audioSpeed,
+		&audioFormat,
 		&item.CreatedAt,
 		&item.UpdatedAt,
 		&item.ArchivedAt,
 	); err != nil {
 		return domain.VocabItem{}, err
 	}
+	item.AudioID = audioID
+	item.Audio = audioFromScan(audioID, audioStorageKey, audioStatus, audioProvider, audioModel, audioVoice, audioSpeed, audioFormat)
 	return item, nil
 }
 
@@ -58,6 +70,8 @@ func scanVocabWithStates(rows pgx.Rows) ([]repository.VocabWithState, error) {
 	for rows.Next() {
 		var item domain.VocabItem
 		var state domain.ReviewState
+		var audioID, audioStorageKey, audioStatus, audioProvider, audioModel, audioVoice, audioFormat string
+		var audioSpeed float64
 		if err := rows.Scan(
 			&item.ID,
 			&item.UserID,
@@ -69,6 +83,14 @@ func scanVocabWithStates(rows pgx.Rows) ([]repository.VocabWithState, error) {
 			&item.SourceText,
 			&item.SourceURL,
 			&item.Notes,
+			&audioID,
+			&audioStorageKey,
+			&audioStatus,
+			&audioProvider,
+			&audioModel,
+			&audioVoice,
+			&audioSpeed,
+			&audioFormat,
 			&item.CreatedAt,
 			&item.UpdatedAt,
 			&item.ArchivedAt,
@@ -84,9 +106,27 @@ func scanVocabWithStates(rows pgx.Rows) ([]repository.VocabWithState, error) {
 		); err != nil {
 			return nil, err
 		}
+		item.AudioID = audioID
+		item.Audio = audioFromScan(audioID, audioStorageKey, audioStatus, audioProvider, audioModel, audioVoice, audioSpeed, audioFormat)
 		result = append(result, repository.VocabWithState{Item: item, State: state})
 	}
 	return result, rows.Err()
+}
+
+func audioFromScan(id, storageKey, status, provider, model, voice string, speed float64, outputFormat string) *domain.VocabAudio {
+	if status == "" {
+		return nil
+	}
+	return &domain.VocabAudio{
+		ID:           id,
+		Provider:     provider,
+		Model:        model,
+		Voice:        voice,
+		Speed:        speed,
+		OutputFormat: outputFormat,
+		StorageKey:   storageKey,
+		Status:       status,
+	}
 }
 
 func nullableTime(value *time.Time) any {

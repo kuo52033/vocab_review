@@ -69,9 +69,52 @@ type VocabItem struct {
 	SourceText      string       `json:"source_text"`
 	SourceURL       string       `json:"source_url"`
 	Notes           string       `json:"notes"`
+	AudioID         string       `json:"-"`
+	Audio           *VocabAudio  `json:"audio,omitempty"`
 	CreatedAt       time.Time    `json:"created_at"`
 	UpdatedAt       time.Time    `json:"updated_at"`
 	ArchivedAt      *time.Time   `json:"archived_at,omitempty"`
+}
+
+type VocabAudio struct {
+	ID              string    `json:"-"`
+	Provider        string    `json:"provider,omitempty"`
+	Model           string    `json:"model,omitempty"`
+	Voice           string    `json:"voice,omitempty"`
+	Speed           float64   `json:"speed,omitempty"`
+	OutputFormat    string    `json:"output_format,omitempty"`
+	InputText       string    `json:"-"`
+	InputHash       string    `json:"-"`
+	StorageProvider string    `json:"-"`
+	StorageBucket   string    `json:"-"`
+	StorageKey      string    `json:"storage_key,omitempty"`
+	ContentType     string    `json:"-"`
+	FileSizeBytes   int64     `json:"-"`
+	DurationMS      *int      `json:"-"`
+	Status          string    `json:"status"`
+	URL             string    `json:"url,omitempty"`
+	CreatedAt       time.Time `json:"-"`
+	UpdatedAt       time.Time `json:"-"`
+}
+
+type VocabAudioJob struct {
+	ID            string    `json:"id"`
+	VocabItemID   string    `json:"vocab_item_id"`
+	Provider      string    `json:"provider"`
+	Model         string    `json:"model"`
+	Voice         string    `json:"voice"`
+	Speed         float64   `json:"speed"`
+	OutputFormat  string    `json:"output_format"`
+	InputText     string    `json:"input_text"`
+	InputHash     string    `json:"input_hash"`
+	Status        string    `json:"status"`
+	AttemptCount  int       `json:"attempt_count"`
+	MaxAttempts   int       `json:"max_attempts"`
+	NextAttemptAt time.Time `json:"next_attempt_at"`
+	LastError     string    `json:"-"`
+	AudioID       string    `json:"audio_id"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type ReviewState struct {

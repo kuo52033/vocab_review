@@ -60,7 +60,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	app := service.NewAppWithConfig(store, clock.RealClock{}, newVocabEnricherFromEnv(), authConfig, magicLinkSender)
+	app := service.NewAppWithVocabAudioConfig(store, clock.RealClock{}, newVocabEnricherFromEnv(), authConfig, magicLinkSender, newVocabAudioConfigFromEnv())
 	server := httpapi.NewServer(app, logger)
 
 	log.Printf("listening on %s", addr)
@@ -209,6 +209,39 @@ func newVocabEnricherFromEnv() service.VocabEnricher {
 	}
 	provider := enrichment.NewOpenAIProvider(baseURL, apiKey, model, &http.Client{Timeout: 15 * time.Second})
 	return enrichment.New(provider, 20)
+}
+
+func newVocabAudioConfigFromEnv() service.VocabAudioConfig {
+	apiKey := strings.TrimSpace(os.Getenv("TTS_OPENAI_API_KEY"))
+	bucket := strings.TrimSpace(os.Getenv("TTS_S3_BUCKET"))
+	region := strings.TrimSpace(os.Getenv("TTS_S3_REGION"))
+	if region == "" {
+		region = strings.TrimSpace(os.Getenv("AWS_REGION"))
+	}
+	if apiKey == "" || bucket == "" || region == "" {
+		return service.VocabAudioConfig{}
+	}
+	model := strings.TrimSpace(os.Getenv("TTS_OPENAI_MODEL"))
+	if model == "" {
+		model = "gpt-4o-mini-tts"
+	}
+	voice := strings.TrimSpace(os.Getenv("TTS_OPENAI_VOICE"))
+	if voice == "" {
+		voice = "alloy"
+	}
+	outputFormat := strings.TrimSpace(os.Getenv("TTS_OUTPUT_FORMAT"))
+	if outputFormat == "" {
+		outputFormat = "mp3"
+	}
+	return service.VocabAudioConfig{
+		Enabled:       true,
+		Provider:      "openai",
+		Model:         model,
+		Voice:         voice,
+		Speed:         1,
+		OutputFormat:  outputFormat,
+		PublicBaseURL: os.Getenv("TTS_AUDIO_PUBLIC_BASE_URL"),
+	}
 }
 
 func newAuthConfigFromEnv() (service.AuthConfig, error) {

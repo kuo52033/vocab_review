@@ -8,6 +8,14 @@ services:
       - "8080"
     restart: unless-stopped
 
+  audio-worker:
+    image: ${BACKEND_IMAGE}
+    env_file: ${APP_ENV_FILE:-.env.production}
+    command: ["/app/audio-worker"]
+    depends_on:
+      - api
+    restart: unless-stopped
+
   migrate:
     image: ${BACKEND_IMAGE}
     env_file: ${APP_ENV_FILE:-.env.production}

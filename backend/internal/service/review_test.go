@@ -27,6 +27,8 @@ type fakeRepository struct {
 	reviewStates     map[string]domain.ReviewState
 	reviewLogs       map[string]domain.ReviewLog
 	captures         map[string]domain.CaptureSource
+	audios           map[string]domain.VocabAudio
+	audioJobs        map[string]domain.VocabAudioJob
 	deviceTokens     map[string]domain.DeviceToken
 	notificationJobs map[string]domain.NotificationJob
 	seenContextValue any
@@ -42,6 +44,8 @@ func newFakeRepository() *fakeRepository {
 		reviewStates:     map[string]domain.ReviewState{},
 		reviewLogs:       map[string]domain.ReviewLog{},
 		captures:         map[string]domain.CaptureSource{},
+		audios:           map[string]domain.VocabAudio{},
+		audioJobs:        map[string]domain.VocabAudioJob{},
 		deviceTokens:     map[string]domain.DeviceToken{},
 		notificationJobs: map[string]domain.NotificationJob{},
 	}
@@ -116,18 +120,21 @@ func (f *fakeRepository) GetSessionUser(_ context.Context, tokenHash string) (do
 	return session, user, true, nil
 }
 
-func (f *fakeRepository) CreateVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, job *domain.NotificationJob) error {
+func (f *fakeRepository) CreateVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, job *domain.NotificationJob, audioJob *domain.VocabAudioJob) error {
 	f.seenContextValue = ctx.Value(testContextKey{})
 	f.vocab[item.ID] = item
 	f.reviewStates[state.VocabItemID] = state
 	if job != nil {
 		f.notificationJobs[job.ID] = *job
 	}
+	if audioJob != nil {
+		f.audioJobs[audioJob.VocabItemID] = *audioJob
+	}
 	return nil
 }
 
-func (f *fakeRepository) CreateCapturedVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, capture domain.CaptureSource, job *domain.NotificationJob) error {
-	if err := f.CreateVocab(ctx, item, state, job); err != nil {
+func (f *fakeRepository) CreateCapturedVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, capture domain.CaptureSource, job *domain.NotificationJob, audioJob *domain.VocabAudioJob) error {
+	if err := f.CreateVocab(ctx, item, state, job, audioJob); err != nil {
 		return err
 	}
 	f.captures[capture.ID] = capture
@@ -139,8 +146,11 @@ func (f *fakeRepository) GetVocab(_ context.Context, id string) (domain.VocabIte
 	return item, ok, nil
 }
 
-func (f *fakeRepository) UpdateVocab(_ context.Context, item domain.VocabItem) error {
+func (f *fakeRepository) UpdateVocab(_ context.Context, item domain.VocabItem, audioJob *domain.VocabAudioJob) error {
 	f.vocab[item.ID] = item
+	if audioJob != nil {
+		f.audioJobs[audioJob.VocabItemID] = *audioJob
+	}
 	return nil
 }
 
@@ -218,6 +228,46 @@ func (f *fakeRepository) ListDueVocab(_ context.Context, userID string, now time
 func (f *fakeRepository) GetReviewState(_ context.Context, vocabID string) (domain.ReviewState, bool, error) {
 	state, ok := f.reviewStates[vocabID]
 	return state, ok, nil
+}
+
+func (f *fakeRepository) GetReadyVocabAudio(_ context.Context, provider, model, voice string, speed float64, outputFormat, inputHash string) (domain.VocabAudio, bool, error) {
+	for _, audio := range f.audios {
+		if audio.Provider == provider && audio.Model == model && audio.Voice == voice && audio.Speed == speed && audio.OutputFormat == outputFormat && audio.InputHash == inputHash && audio.Status == "ready" {
+			return audio, true, nil
+		}
+	}
+	return domain.VocabAudio{}, false, nil
+}
+
+func (f *fakeRepository) ClaimPendingVocabAudioJobs(_ context.Context, _ time.Time, _ int) ([]domain.VocabAudioJob, error) {
+	return nil, nil
+}
+
+func (f *fakeRepository) CompleteVocabAudioJob(_ context.Context, job domain.VocabAudioJob, audio domain.VocabAudio) (domain.VocabAudio, bool, error) {
+	f.audios[audio.ID] = audio
+	item := f.vocab[job.VocabItemID]
+	item.AudioID = audio.ID
+	f.vocab[item.ID] = item
+	job.Status = "ready"
+	job.AudioID = audio.ID
+	f.audioJobs[job.VocabItemID] = job
+	return audio, true, nil
+}
+
+func (f *fakeRepository) MarkVocabAudioJobFailed(_ context.Context, jobID string, nextAttemptAt time.Time, lastError string) error {
+	for vocabID, job := range f.audioJobs {
+		if job.ID != jobID {
+			continue
+		}
+		job.Status = "failed"
+		if job.AttemptCount < job.MaxAttempts {
+			job.Status = "pending"
+		}
+		job.NextAttemptAt = nextAttemptAt
+		job.LastError = lastError
+		f.audioJobs[vocabID] = job
+	}
+	return nil
 }
 
 func (f *fakeRepository) RecordReview(_ context.Context, state domain.ReviewState, log domain.ReviewLog, job *domain.NotificationJob) error {
@@ -366,6 +416,18 @@ func (f *fakeRepository) MarkNotificationPending(_ context.Context, jobID string
 
 func newTestApp() *App {
 	return NewApp(newFakeRepository(), stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
+}
+
+func testAudioConfig() VocabAudioConfig {
+	return VocabAudioConfig{
+		Enabled:       true,
+		Provider:      "openai",
+		Model:         "gpt-4o-mini-tts",
+		Voice:         "alloy",
+		Speed:         1,
+		OutputFormat:  "mp3",
+		PublicBaseURL: "https://cdn.example.com",
+	}
 }
 
 type sentMagicLink struct {
@@ -739,6 +801,91 @@ func TestCreateVocabSkipsDuplicateTerms(t *testing.T) {
 	}
 	if listed.Total != 1 {
 		t.Fatalf("listed total: got %d want 1", listed.Total)
+	}
+}
+
+func TestCreateVocabReturnsUnavailableAudioWhenTTSDisabled(t *testing.T) {
+	app := NewApp(newFakeRepository(), stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)})
+
+	result, err := app.CreateVocab(context.Background(), "usr_test", CreateVocabInput{Term: "Serendipity"})
+	if err != nil {
+		t.Fatalf("create vocab: %v", err)
+	}
+	if result.Item.Audio == nil || result.Item.Audio.Status != "unavailable" {
+		t.Fatalf("audio status: %+v", result.Item.Audio)
+	}
+}
+
+func TestCreateVocabEnqueuesAudioWhenConfigured(t *testing.T) {
+	repo := newFakeRepository()
+	now := time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)
+	app := NewAppWithVocabAudioConfig(repo, stubClock{now: now}, nil, AuthConfig{Environment: "development"}, nil, testAudioConfig())
+
+	result, err := app.CreateVocab(context.Background(), "usr_test", CreateVocabInput{Term: " Serendipity "})
+	if err != nil {
+		t.Fatalf("create vocab: %v", err)
+	}
+	job, ok := repo.audioJobs[result.Item.ID]
+	if !ok {
+		t.Fatal("expected audio job")
+	}
+	if job.InputText != "serendipity" || job.Status != "pending" || job.Speed != 1 {
+		t.Fatalf("unexpected audio job: %+v", job)
+	}
+	if result.Item.Audio == nil || result.Item.Audio.Status != "pending" {
+		t.Fatalf("audio response: %+v", result.Item.Audio)
+	}
+}
+
+func TestCreateVocabReusesReadyAudio(t *testing.T) {
+	repo := newFakeRepository()
+	config := testAudioConfig()
+	inputHash := vocabAudioHash(config.Provider, config.Model, config.Voice, config.Speed, config.OutputFormat, "serendipity")
+	repo.audios["aud_existing"] = domain.VocabAudio{
+		ID:           "aud_existing",
+		Provider:     config.Provider,
+		Model:        config.Model,
+		Voice:        config.Voice,
+		Speed:        config.Speed,
+		OutputFormat: config.OutputFormat,
+		InputHash:    inputHash,
+		StorageKey:   "audio/openai/gpt-4o-mini-tts/alloy/" + inputHash + ".mp3",
+		Status:       "ready",
+	}
+	app := NewAppWithVocabAudioConfig(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)}, nil, AuthConfig{Environment: "development"}, nil, config)
+
+	result, err := app.CreateVocab(context.Background(), "usr_test", CreateVocabInput{Term: "Serendipity"})
+	if err != nil {
+		t.Fatalf("create vocab: %v", err)
+	}
+	if result.Item.AudioID != "aud_existing" || result.Item.Audio == nil || result.Item.Audio.Status != "ready" {
+		t.Fatalf("audio response: item=%+v audio=%+v", result.Item, result.Item.Audio)
+	}
+	if len(repo.audioJobs) != 0 {
+		t.Fatalf("expected no audio jobs, got %+v", repo.audioJobs)
+	}
+}
+
+func TestUpdateVocabEnqueuesNewAudioWhenTermChanges(t *testing.T) {
+	repo := newFakeRepository()
+	config := testAudioConfig()
+	now := time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)
+	app := NewAppWithVocabAudioConfig(repo, stubClock{now: now}, nil, AuthConfig{Environment: "development"}, nil, config)
+	created, err := app.CreateVocab(context.Background(), "usr_test", CreateVocabInput{Term: "first"})
+	if err != nil {
+		t.Fatalf("create vocab: %v", err)
+	}
+
+	updated, err := app.UpdateVocab(context.Background(), "usr_test", created.Item.ID, CreateVocabInput{Term: "second"})
+	if err != nil {
+		t.Fatalf("update vocab: %v", err)
+	}
+	job := repo.audioJobs[created.Item.ID]
+	if job.InputText != "second" {
+		t.Fatalf("audio job input: got %q want second", job.InputText)
+	}
+	if updated.Audio == nil || updated.Audio.Status != "pending" {
+		t.Fatalf("updated audio: %+v", updated.Audio)
 	}
 }
 

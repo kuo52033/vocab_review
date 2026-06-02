@@ -55,11 +55,11 @@ type AuthRepository interface {
 }
 
 type VocabRepository interface {
-	CreateVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, job *domain.NotificationJob) error
-	CreateCapturedVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, capture domain.CaptureSource, job *domain.NotificationJob) error
+	CreateVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, job *domain.NotificationJob, audioJob *domain.VocabAudioJob) error
+	CreateCapturedVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, capture domain.CaptureSource, job *domain.NotificationJob, audioJob *domain.VocabAudioJob) error
 	GetVocab(ctx context.Context, id string) (domain.VocabItem, bool, error)
 	GetActiveVocabByTerm(ctx context.Context, userID string, term string) (VocabWithState, bool, error)
-	UpdateVocab(ctx context.Context, item domain.VocabItem) error
+	UpdateVocab(ctx context.Context, item domain.VocabItem, audioJob *domain.VocabAudioJob) error
 	ArchiveVocabForUser(ctx context.Context, userID string, vocabID string, archivedAt time.Time) (domain.VocabItem, error)
 	ListVocabByUser(ctx context.Context, userID string, options ListVocabOptions) ([]VocabWithState, int, error)
 	ListDueVocab(ctx context.Context, userID string, now time.Time) ([]VocabWithState, error)
@@ -82,10 +82,18 @@ type NotificationRepository interface {
 	MarkNotificationFailed(ctx context.Context, jobID string) error
 }
 
+type VocabAudioRepository interface {
+	GetReadyVocabAudio(ctx context.Context, provider, model, voice string, speed float64, outputFormat, inputHash string) (domain.VocabAudio, bool, error)
+	ClaimPendingVocabAudioJobs(ctx context.Context, now time.Time, limit int) ([]domain.VocabAudioJob, error)
+	CompleteVocabAudioJob(ctx context.Context, job domain.VocabAudioJob, audio domain.VocabAudio) (domain.VocabAudio, bool, error)
+	MarkVocabAudioJobFailed(ctx context.Context, jobID string, nextAttemptAt time.Time, lastError string) error
+}
+
 type AppRepository interface {
 	AuthRepository
 	VocabRepository
 	DeviceRepository
 	NotificationRepository
+	VocabAudioRepository
 	HealthChecker
 }

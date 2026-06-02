@@ -19,9 +19,21 @@ export interface VocabItem {
   source_text: string;
   source_url: string;
   notes: string;
+  audio?: VocabAudio;
   created_at: string;
   updated_at: string;
   archived_at?: string;
+}
+
+export interface VocabAudio {
+  status: "unavailable" | "pending" | "processing" | "ready" | "failed";
+  storage_key?: string;
+  url?: string;
+  provider?: string;
+  model?: string;
+  voice?: string;
+  speed?: number;
+  output_format?: string;
 }
 
 export interface AutocompleteItem {

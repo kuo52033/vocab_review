@@ -8,7 +8,7 @@ include $(ENV_FILE)
 export
 endif
 
-.PHONY: db-up db-down db-wait db-reset db-reset-test migrate migrate-test backend-run notifications-run test test-integration
+.PHONY: db-up db-down db-wait db-reset db-reset-test migrate migrate-test backend-run notifications-run audio-worker-run test test-integration
 
 db-up:
 	docker compose up -d postgres
@@ -43,6 +43,10 @@ backend-run:
 notifications-run:
 	test -n "$(DATABASE_URL)"
 	cd backend && DATABASE_URL="$(DATABASE_URL)" go run ./cmd/notifications
+
+audio-worker-run:
+	test -n "$(DATABASE_URL)"
+	cd backend && DATABASE_URL="$(DATABASE_URL)" go run ./cmd/audio-worker
 
 test:
 	cd backend && go test ./...

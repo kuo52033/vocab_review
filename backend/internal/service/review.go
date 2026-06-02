@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/mail"
 	"strings"
 	"time"
@@ -35,6 +36,7 @@ type App struct {
 	clock           clock.Clock
 	enricher        VocabEnricher
 	authConfig      AuthConfig
+	audioConfig     VocabAudioConfig
 	debugEmails     map[string]struct{}
 	magicLinkSender MagicLinkSender
 }
@@ -44,6 +46,16 @@ type AuthConfig struct {
 	TokenHashSecret  string
 	PublicWebBaseURL string
 	DebugEmails      []string
+}
+
+type VocabAudioConfig struct {
+	Enabled       bool
+	Provider      string
+	Model         string
+	Voice         string
+	Speed         float64
+	OutputFormat  string
+	PublicBaseURL string
 }
 
 func NewApp(store repository.AppRepository, appClock clock.Clock) *App {
@@ -58,6 +70,10 @@ func NewAppWithEnricher(store repository.AppRepository, appClock clock.Clock, en
 }
 
 func NewAppWithConfig(store repository.AppRepository, appClock clock.Clock, enricher VocabEnricher, config AuthConfig, sender MagicLinkSender) *App {
+	return NewAppWithVocabAudioConfig(store, appClock, enricher, config, sender, VocabAudioConfig{})
+}
+
+func NewAppWithVocabAudioConfig(store repository.AppRepository, appClock clock.Clock, enricher VocabEnricher, config AuthConfig, sender MagicLinkSender, audioConfig VocabAudioConfig) *App {
 	config.Environment = strings.ToLower(strings.TrimSpace(config.Environment))
 	if config.Environment == "" {
 		config.Environment = "production"
@@ -72,7 +88,14 @@ func NewAppWithConfig(store repository.AppRepository, appClock clock.Clock, enri
 			debugEmails[normalized] = struct{}{}
 		}
 	}
-	return &App{store: store, clock: appClock, enricher: enricher, authConfig: config, debugEmails: debugEmails, magicLinkSender: sender}
+	audioConfig.Provider = strings.TrimSpace(audioConfig.Provider)
+	audioConfig.Model = strings.TrimSpace(audioConfig.Model)
+	audioConfig.Voice = strings.TrimSpace(audioConfig.Voice)
+	audioConfig.OutputFormat = strings.TrimSpace(audioConfig.OutputFormat)
+	if audioConfig.Speed == 0 {
+		audioConfig.Speed = 1
+	}
+	return &App{store: store, clock: appClock, enricher: enricher, authConfig: config, audioConfig: audioConfig, debugEmails: debugEmails, magicLinkSender: sender}
 }
 
 type AuthResult struct {
@@ -255,6 +278,7 @@ func (a *App) CreateVocab(ctx context.Context, userID string, input CreateVocabI
 		return CreateVocabResult{}, err
 	}
 	if ok {
+		existing.Item = a.decorateAudio(existing.Item)
 		return CreateVocabResult{
 			Item:             existing.Item,
 			State:            existing.State,
@@ -271,9 +295,14 @@ func (a *App) CreateVocab(ctx context.Context, userID string, input CreateVocabI
 	if err != nil {
 		return CreateVocabResult{}, err
 	}
-	if err := a.store.CreateVocab(ctx, card.Item, card.State, card.NotificationJob); err != nil {
+	audioJob, err := a.prepareAudioJob(ctx, &card.Item, term, now)
+	if err != nil {
 		return CreateVocabResult{}, err
 	}
+	if err := a.store.CreateVocab(ctx, card.Item, card.State, card.NotificationJob, audioJob); err != nil {
+		return CreateVocabResult{}, err
+	}
+	card.Item = a.decorateAudio(card.Item)
 	return CreateVocabResult{Item: card.Item, State: card.State, Created: true}, nil
 }
 
@@ -292,6 +321,7 @@ func (a *App) UpdateVocab(ctx context.Context, userID, id string, input CreateVo
 	if !ok || item.UserID != userID {
 		return domain.VocabItem{}, errors.New("vocab not found")
 	}
+	previousTerm := normalizeAudioInput(item.Term)
 	item.Term = updatedString(input.Term, item.Term)
 	item.Meaning = updatedString(input.Meaning, item.Meaning)
 	item.Chinese = updatedString(input.Chinese, item.Chinese)
@@ -303,10 +333,17 @@ func (a *App) UpdateVocab(ctx context.Context, userID, id string, input CreateVo
 	item.SourceURL = updatedString(input.SourceURL, item.SourceURL)
 	item.Notes = updatedString(input.Notes, item.Notes)
 	item.UpdatedAt = a.clock.Now()
-	if err := a.store.UpdateVocab(ctx, item); err != nil {
+	var audioJob *domain.VocabAudioJob
+	if normalizeAudioInput(item.Term) != previousTerm {
+		audioJob, err = a.prepareAudioJob(ctx, &item, item.Term, item.UpdatedAt)
+		if err != nil {
+			return domain.VocabItem{}, err
+		}
+	}
+	if err := a.store.UpdateVocab(ctx, item, audioJob); err != nil {
 		return domain.VocabItem{}, err
 	}
-	return item, nil
+	return a.decorateAudio(item), nil
 }
 
 func (a *App) ArchiveVocab(ctx context.Context, userID, id string) (domain.VocabItem, error) {
@@ -378,7 +415,7 @@ func (a *App) ListVocab(ctx context.Context, userID string, input ListVocabInput
 		return VocabPage{}, err
 	}
 	return VocabPage{
-		Items:  vocabWithStates(items),
+		Items:  a.vocabWithStates(items),
 		Total:  total,
 		Limit:  input.Limit,
 		Offset: input.Offset,
@@ -421,7 +458,7 @@ func (a *App) DueCards(ctx context.Context, userID string) ([]DueCard, error) {
 	if err != nil {
 		return nil, err
 	}
-	return dueCards(states), nil
+	return a.dueCards(states), nil
 }
 
 func (a *App) GradeReview(ctx context.Context, userID, vocabID string, grade domain.ReviewGrade) (domain.ReviewState, error) {
@@ -462,7 +499,7 @@ func (a *App) ReviewHistory(ctx context.Context, userID string, input PageInput)
 		return ReviewHistoryPage{}, err
 	}
 	return ReviewHistoryPage{
-		Items:  reviewHistoryEntries(entries),
+		Items:  a.reviewHistoryEntries(entries),
 		Total:  total,
 		Limit:  input.Limit,
 		Offset: input.Offset,
@@ -505,6 +542,7 @@ func (a *App) CreateCapture(ctx context.Context, userID string, input CaptureInp
 		return DueCard{}, err
 	}
 	if ok {
+		existing.Item = a.decorateAudio(existing.Item)
 		return DueCard{Item: existing.Item, State: existing.State}, nil
 	}
 
@@ -527,10 +565,15 @@ func (a *App) CreateCapture(ctx context.Context, userID string, input CaptureInp
 	if err != nil {
 		return DueCard{}, err
 	}
-	if err := a.store.CreateCapturedVocab(ctx, card.Item, card.State, card.Capture, card.NotificationJob); err != nil {
+	audioJob, err := a.prepareAudioJob(ctx, &card.Item, term, now)
+	if err != nil {
+		return DueCard{}, err
+	}
+	if err := a.store.CreateCapturedVocab(ctx, card.Item, card.State, card.Capture, card.NotificationJob, audioJob); err != nil {
 		return DueCard{}, err
 	}
 
+	card.Item = a.decorateAudio(card.Item)
 	return DueCard{Item: card.Item, State: card.State}, nil
 }
 
@@ -560,25 +603,28 @@ func (a *App) HealthCheck(ctx context.Context) error {
 	return a.store.HealthCheck(ctx)
 }
 
-func vocabWithStates(items []repository.VocabWithState) []VocabWithState {
+func (a *App) vocabWithStates(items []repository.VocabWithState) []VocabWithState {
 	result := make([]VocabWithState, 0, len(items))
 	for _, item := range items {
+		item.Item = a.decorateAudio(item.Item)
 		result = append(result, VocabWithState{Item: item.Item, State: item.State})
 	}
 	return result
 }
 
-func dueCards(items []repository.VocabWithState) []DueCard {
+func (a *App) dueCards(items []repository.VocabWithState) []DueCard {
 	result := make([]DueCard, 0, len(items))
 	for _, item := range items {
+		item.Item = a.decorateAudio(item.Item)
 		result = append(result, DueCard{Item: item.Item, State: item.State})
 	}
 	return result
 }
 
-func reviewHistoryEntries(entries []repository.ReviewHistoryEntry) []ReviewHistoryEntry {
+func (a *App) reviewHistoryEntries(entries []repository.ReviewHistoryEntry) []ReviewHistoryEntry {
 	result := make([]ReviewHistoryEntry, 0, len(entries))
 	for _, entry := range entries {
+		entry.Item = a.decorateAudio(entry.Item)
 		result = append(result, ReviewHistoryEntry{Log: entry.Log, Item: entry.Item, State: entry.State})
 	}
 	return result
@@ -593,4 +639,78 @@ func reviewReminderJob(id, userID, vocabID string, scheduledAt time.Time) *domai
 		Status:      "pending",
 		Message:     "Time to review your vocabulary.",
 	}
+}
+
+func (a *App) prepareAudioJob(ctx context.Context, item *domain.VocabItem, term string, now time.Time) (*domain.VocabAudioJob, error) {
+	item.AudioID = ""
+	item.Audio = nil
+	if !a.audioConfig.Enabled {
+		return nil, nil
+	}
+	inputText := normalizeAudioInput(term)
+	if inputText == "" {
+		return nil, nil
+	}
+	inputHash := vocabAudioHash(a.audioConfig.Provider, a.audioConfig.Model, a.audioConfig.Voice, a.audioConfig.Speed, a.audioConfig.OutputFormat, inputText)
+	audio, ok, err := a.store.GetReadyVocabAudio(ctx, a.audioConfig.Provider, a.audioConfig.Model, a.audioConfig.Voice, a.audioConfig.Speed, a.audioConfig.OutputFormat, inputHash)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		item.AudioID = audio.ID
+		item.Audio = &audio
+		return nil, nil
+	}
+	item.Audio = &domain.VocabAudio{
+		Provider:     a.audioConfig.Provider,
+		Model:        a.audioConfig.Model,
+		Voice:        a.audioConfig.Voice,
+		Speed:        a.audioConfig.Speed,
+		OutputFormat: a.audioConfig.OutputFormat,
+		Status:       "pending",
+	}
+	return &domain.VocabAudioJob{
+		ID:            newID("audjob"),
+		VocabItemID:   item.ID,
+		Provider:      a.audioConfig.Provider,
+		Model:         a.audioConfig.Model,
+		Voice:         a.audioConfig.Voice,
+		Speed:         a.audioConfig.Speed,
+		OutputFormat:  a.audioConfig.OutputFormat,
+		InputText:     inputText,
+		InputHash:     inputHash,
+		Status:        "pending",
+		MaxAttempts:   3,
+		NextAttemptAt: now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}, nil
+}
+
+func (a *App) decorateAudio(item domain.VocabItem) domain.VocabItem {
+	if item.Audio == nil {
+		item.Audio = &domain.VocabAudio{Status: "unavailable"}
+		return item
+	}
+	if item.Audio.StorageKey != "" && strings.TrimSpace(a.audioConfig.PublicBaseURL) != "" {
+		item.Audio.URL = strings.TrimRight(a.audioConfig.PublicBaseURL, "/") + "/" + strings.TrimLeft(item.Audio.StorageKey, "/")
+	}
+	return item
+}
+
+func normalizeAudioInput(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func vocabAudioHash(provider, model, voice string, speed float64, outputFormat, inputText string) string {
+	parts := []string{
+		strings.TrimSpace(provider),
+		strings.TrimSpace(model),
+		strings.TrimSpace(voice),
+		fmt.Sprintf("%.2f", speed),
+		strings.TrimSpace(outputFormat),
+		inputText,
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
+	return hex.EncodeToString(sum[:])
 }

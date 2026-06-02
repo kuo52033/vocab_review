@@ -28,10 +28,10 @@ func withTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) erro
 func insertVocab(ctx context.Context, tx pgx.Tx, item domain.VocabItem) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO vocab_items (
-			id, user_id, term, meaning, chinese, example_sentence, part_of_speech, source_text, source_url, notes, created_at, updated_at, archived_at
+			id, user_id, term, meaning, chinese, example_sentence, part_of_speech, source_text, source_url, notes, audio_id, created_at, updated_at, archived_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-	`, item.ID, item.UserID, item.Term, item.Meaning, item.Chinese, item.ExampleSentence, item.PartOfSpeech, item.SourceText, item.SourceURL, item.Notes, item.CreatedAt.UTC(), item.UpdatedAt.UTC(), nullableTime(item.ArchivedAt))
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''), $12, $13, $14)
+	`, item.ID, item.UserID, item.Term, item.Meaning, item.Chinese, item.ExampleSentence, item.PartOfSpeech, item.SourceText, item.SourceURL, item.Notes, item.AudioID, item.CreatedAt.UTC(), item.UpdatedAt.UTC(), nullableTime(item.ArchivedAt))
 	return err
 }
 
@@ -42,6 +42,36 @@ func insertReviewState(ctx context.Context, tx pgx.Tx, state domain.ReviewState)
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`, state.VocabItemID, state.UserID, state.Status, state.EaseFactor, state.IntervalDays, state.RepetitionCount, nullableTime(state.LastReviewedAt), state.NextDueAt.UTC(), state.ConsecutiveAgain)
+	return err
+}
+
+func upsertVocabAudioJob(ctx context.Context, tx pgx.Tx, job *domain.VocabAudioJob) error {
+	if job == nil {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `
+		INSERT INTO vocab_audio_jobs (
+			id, vocab_item_id, provider, model, voice, speed, output_format, input_text, input_hash,
+			status, attempt_count, max_attempts, next_attempt_at, last_error, audio_id, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NULLIF($14, ''), NULLIF($15, ''), $16, $17)
+		ON CONFLICT (vocab_item_id) DO UPDATE
+		SET id = EXCLUDED.id,
+		    provider = EXCLUDED.provider,
+		    model = EXCLUDED.model,
+		    voice = EXCLUDED.voice,
+		    speed = EXCLUDED.speed,
+		    output_format = EXCLUDED.output_format,
+		    input_text = EXCLUDED.input_text,
+		    input_hash = EXCLUDED.input_hash,
+		    status = EXCLUDED.status,
+		    attempt_count = EXCLUDED.attempt_count,
+		    max_attempts = EXCLUDED.max_attempts,
+		    next_attempt_at = EXCLUDED.next_attempt_at,
+		    last_error = EXCLUDED.last_error,
+		    audio_id = EXCLUDED.audio_id,
+		    updated_at = EXCLUDED.updated_at
+	`, job.ID, job.VocabItemID, job.Provider, job.Model, job.Voice, job.Speed, job.OutputFormat, job.InputText, job.InputHash, job.Status, job.AttemptCount, job.MaxAttempts, job.NextAttemptAt.UTC(), job.LastError, job.AudioID, job.CreatedAt.UTC(), job.UpdatedAt.UTC())
 	return err
 }
 

@@ -95,7 +95,7 @@ func TestStoreLifecycle(t *testing.T) {
 		Status:      "pending",
 		Message:     "Review now",
 	}
-	if err := store.CreateVocab(ctx, item, state, job); err != nil {
+	if err := store.CreateVocab(ctx, item, state, job, nil); err != nil {
 		t.Fatalf("create vocab: %v", err)
 	}
 
@@ -348,7 +348,7 @@ func TestArchiveVocabForUserScopesArchiveByOwner(t *testing.T) {
 		RepetitionCount: 0,
 		NextDueAt:       now,
 	}
-	if err := store.CreateVocab(ctx, item, state, nil); err != nil {
+	if err := store.CreateVocab(ctx, item, state, nil, nil); err != nil {
 		t.Fatalf("create vocab: %v", err)
 	}
 
@@ -405,7 +405,7 @@ func TestNotificationWorkerOperations(t *testing.T) {
 			IntervalDays:    0,
 			RepetitionCount: 0,
 			NextDueAt:       now,
-		}, nil); err != nil {
+		}, nil, nil); err != nil {
 			t.Fatalf("create vocab %s: %v", item.ID, err)
 		}
 	}
@@ -507,7 +507,7 @@ func TestStorePersistsPartOfSpeech(t *testing.T) {
 		RepetitionCount: 0,
 		NextDueAt:       now,
 	}
-	if err := store.CreateVocab(ctx, item, state, nil); err != nil {
+	if err := store.CreateVocab(ctx, item, state, nil, nil); err != nil {
 		t.Fatalf("create vocab: %v", err)
 	}
 
@@ -532,7 +532,7 @@ func TestStorePersistsPartOfSpeech(t *testing.T) {
 		IntervalDays:    0,
 		RepetitionCount: 0,
 		NextDueAt:       now,
-	}, nil)
+	}, nil, nil)
 	if err == nil {
 		t.Fatal("expected invalid part_of_speech constraint error")
 	}

@@ -14,10 +14,14 @@ import (
 func (s *Store) ListDueVocab(ctx context.Context, userID string, now time.Time) ([]repository.VocabWithState, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT
-			v.id, v.user_id, v.term, v.meaning, v.chinese, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes, v.created_at, v.updated_at, v.archived_at,
+			v.id, v.user_id, v.term, v.meaning, v.chinese, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes,
+			COALESCE(a.id, ''), COALESCE(a.storage_key, ''), COALESCE(a.status, j.status, ''), COALESCE(a.provider, j.provider, ''), COALESCE(a.model, j.model, ''), COALESCE(a.voice, j.voice, ''), COALESCE(a.speed, j.speed, 0), COALESCE(a.output_format, j.output_format, ''),
+			v.created_at, v.updated_at, v.archived_at,
 			r.vocab_item_id, r.user_id, r.status, r.ease_factor, r.interval_days, r.repetition_count, r.last_reviewed_at, r.next_due_at, r.consecutive_again
 		FROM review_states r
 		JOIN vocab_items v ON v.id = r.vocab_item_id
+		LEFT JOIN vocab_audios a ON a.id = v.audio_id
+		LEFT JOIN vocab_audio_jobs j ON j.vocab_item_id = v.id
 		WHERE r.user_id = $1
 		  AND r.next_due_at <= $2
 		  AND v.archived_at IS NULL
@@ -85,11 +89,15 @@ func (s *Store) ListReviewHistory(ctx context.Context, userID string, pagination
 	rows, err := s.pool.Query(ctx, `
 		SELECT
 			l.id, l.user_id, l.vocab_item_id, l.grade, l.reviewed_at,
-			v.id, v.user_id, v.term, v.meaning, v.chinese, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes, v.created_at, v.updated_at, v.archived_at,
+			v.id, v.user_id, v.term, v.meaning, v.chinese, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes,
+			COALESCE(a.id, ''), COALESCE(a.storage_key, ''), COALESCE(a.status, j.status, ''), COALESCE(a.provider, j.provider, ''), COALESCE(a.model, j.model, ''), COALESCE(a.voice, j.voice, ''), COALESCE(a.speed, j.speed, 0), COALESCE(a.output_format, j.output_format, ''),
+			v.created_at, v.updated_at, v.archived_at,
 			r.vocab_item_id, r.user_id, r.status, r.ease_factor, r.interval_days, r.repetition_count, r.last_reviewed_at, r.next_due_at, r.consecutive_again
 		FROM review_logs l
 		JOIN vocab_items v ON v.id = l.vocab_item_id
 		JOIN review_states r ON r.vocab_item_id = l.vocab_item_id
+		LEFT JOIN vocab_audios a ON a.id = v.audio_id
+		LEFT JOIN vocab_audio_jobs j ON j.vocab_item_id = v.id
 		WHERE l.user_id = $1
 		ORDER BY l.reviewed_at DESC
 		LIMIT NULLIF($2, 0)
@@ -103,6 +111,8 @@ func (s *Store) ListReviewHistory(ctx context.Context, userID string, pagination
 	result := make([]repository.ReviewHistoryEntry, 0)
 	for rows.Next() {
 		var entry repository.ReviewHistoryEntry
+		var audioStorageKey, audioStatus, audioProvider, audioModel, audioVoice, audioFormat string
+		var audioSpeed float64
 		if err := rows.Scan(
 			&entry.Log.ID,
 			&entry.Log.UserID,
@@ -119,6 +129,14 @@ func (s *Store) ListReviewHistory(ctx context.Context, userID string, pagination
 			&entry.Item.SourceText,
 			&entry.Item.SourceURL,
 			&entry.Item.Notes,
+			&entry.Item.AudioID,
+			&audioStorageKey,
+			&audioStatus,
+			&audioProvider,
+			&audioModel,
+			&audioVoice,
+			&audioSpeed,
+			&audioFormat,
 			&entry.Item.CreatedAt,
 			&entry.Item.UpdatedAt,
 			&entry.Item.ArchivedAt,
@@ -134,6 +152,7 @@ func (s *Store) ListReviewHistory(ctx context.Context, userID string, pagination
 		); err != nil {
 			return nil, 0, err
 		}
+		entry.Item.Audio = audioFromScan(entry.Item.AudioID, audioStorageKey, audioStatus, audioProvider, audioModel, audioVoice, audioSpeed, audioFormat)
 		result = append(result, entry)
 	}
 	return result, total, rows.Err()
