@@ -299,11 +299,30 @@ struct ReviewListView: View {
                     .font(.caption.weight(.bold))
                     .textCase(.uppercase)
                     .foregroundStyle(AppTheme.sageDark)
-                Text(quizCard.card.item.term)
-                    .font(AppTheme.displayFont(size: 52, weight: .semibold))
-                    .foregroundStyle(AppTheme.ink)
-                    .multilineTextAlignment(.center)
-                    .tracking(0)
+                HStack(alignment: .center, spacing: 10) {
+                    Text(quizCard.card.item.term)
+                        .font(AppTheme.displayFont(size: 52, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
+                        .multilineTextAlignment(.center)
+                        .tracking(0)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.72)
+                        .layoutPriority(1)
+                    if quizCard.card.item.hasPlayableAudio {
+                        AudioPlayButton(
+                            isPlaying: sessionStore.playingAudioVocabID == quizCard.card.item.id,
+                            action: {
+                                Task { await sessionStore.toggleAudioPlayback(for: quizCard.card.item) }
+                            }
+                        )
+                        .accessibilityLabel(
+                            sessionStore.playingAudioVocabID == quizCard.card.item.id
+                                ? "Pause pronunciation for \(quizCard.card.item.term)"
+                                : "Play pronunciation for \(quizCard.card.item.term)"
+                        )
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .center)
             .id("prompt-\(quizCard.card.item.id)")
@@ -628,6 +647,7 @@ struct ReviewListView: View {
 
     private func advanceQuizCard() {
         guard !isAdvancingQuizCard else { return }
+        sessionStore.stopAudioPlayback()
 
         let reviewed = sessionIndex + 1
         if reviewed >= sessionDeck.count {
@@ -658,6 +678,7 @@ struct ReviewListView: View {
     }
 
     private func endReviewSession() {
+        sessionStore.stopAudioPlayback()
         withAnimation(.easeOut(duration: 0.24)) {
             sessionDeck = []
             sessionIndex = 0

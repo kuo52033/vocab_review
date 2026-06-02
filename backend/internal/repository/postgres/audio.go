@@ -10,6 +10,83 @@ import (
 	"vocabreview/backend/internal/domain"
 )
 
+func (s *Store) ListVocabItemsMissingAudio(ctx context.Context, limit int) ([]domain.VocabItem, error) {
+	query := `
+		SELECT id, user_id, term, meaning, chinese, example_sentence, part_of_speech, source_text, source_url, notes, COALESCE(audio_id, ''), '', '', '', '', '', 0::numeric, '', created_at, updated_at, archived_at
+		FROM vocab_items v
+		WHERE v.archived_at IS NULL
+		  AND v.audio_id IS NULL
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM vocab_audio_jobs j
+		    WHERE j.vocab_item_id = v.id
+		  )
+		ORDER BY v.created_at ASC
+	`
+	args := []any{}
+	if limit > 0 {
+		query += " LIMIT $1"
+		args = append(args, limit)
+	}
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.VocabItem, 0)
+	for rows.Next() {
+		item, err := scanVocab(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Store) AttachReadyVocabAudio(ctx context.Context, vocabItemID, audioID string, now time.Time) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE vocab_items
+		SET audio_id = $2,
+		    updated_at = $3
+		WHERE id = $1
+		  AND audio_id IS NULL
+		  AND archived_at IS NULL
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM vocab_audio_jobs j
+		    WHERE j.vocab_item_id = vocab_items.id
+		  )
+	`, vocabItemID, audioID, now.UTC())
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+func (s *Store) EnqueueVocabAudioJob(ctx context.Context, job domain.VocabAudioJob) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		INSERT INTO vocab_audio_jobs (
+			id, vocab_item_id, provider, model, voice, speed, output_format, input_text, input_hash,
+			status, attempt_count, max_attempts, next_attempt_at, last_error, audio_id, created_at, updated_at
+		)
+		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NULLIF($14, ''), NULLIF($15, ''), $16, $17
+		WHERE EXISTS (
+			SELECT 1
+			FROM vocab_items v
+			WHERE v.id = $2
+			  AND v.audio_id IS NULL
+			  AND v.archived_at IS NULL
+		)
+		ON CONFLICT (vocab_item_id) DO NOTHING
+	`, job.ID, job.VocabItemID, job.Provider, job.Model, job.Voice, job.Speed, job.OutputFormat, job.InputText, job.InputHash, job.Status, job.AttemptCount, job.MaxAttempts, job.NextAttemptAt.UTC(), job.LastError, job.AudioID, job.CreatedAt.UTC(), job.UpdatedAt.UTC())
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 func (s *Store) GetReadyVocabAudio(ctx context.Context, provider, model, voice string, speed float64, outputFormat, inputHash string) (domain.VocabAudio, bool, error) {
 	audio, err := scanVocabAudio(s.pool.QueryRow(ctx, `
 		SELECT id, provider, model, voice, speed, output_format, input_text, input_hash, storage_provider, storage_bucket, storage_key, content_type, COALESCE(file_size_bytes, 0), duration_ms, status, COALESCE(error_message, ''), created_at, updated_at

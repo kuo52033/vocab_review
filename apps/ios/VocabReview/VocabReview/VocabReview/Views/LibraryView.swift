@@ -141,8 +141,12 @@ struct LibraryView: View {
             LibraryCardRow(
                 card: card,
                 isBusy: sessionStore.isCreatingVocab || sessionStore.isDeletingVocab,
+                isAudioPlaying: sessionStore.playingAudioVocabID == card.item.id,
                 onEdit: { editingCard = card },
-                onDelete: { deletingCard = card }
+                onDelete: { deletingCard = card },
+                onPlayAudio: {
+                    Task { await sessionStore.toggleAudioPlayback(for: card.item) }
+                }
             )
         }
 
@@ -187,8 +191,10 @@ struct LibraryView: View {
 private struct LibraryCardRow: View {
     let card: DueCard
     let isBusy: Bool
+    let isAudioPlaying: Bool
     let onEdit: () -> Void
     let onDelete: () -> Void
+    let onPlayAudio: () -> Void
     @State private var isExpanded = false
 
     var body: some View {
@@ -209,11 +215,19 @@ private struct LibraryCardRow: View {
                         Text(card.item.term)
                             .font(AppTheme.displayFont(size: 22, weight: .semibold, relativeTo: .title3))
                             .foregroundStyle(AppTheme.ink)
-                        Spacer()
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+
+                if card.item.hasPlayableAudio {
+                    AudioPlayButton(isPlaying: isAudioPlaying, action: onPlayAudio)
+                        .accessibilityLabel(isAudioPlaying ? "Pause pronunciation for \(card.item.term)" : "Play pronunciation for \(card.item.term)")
+                }
+
+                Spacer()
 
                 Button(action: onEdit) {
                     Image(systemName: "pencil")

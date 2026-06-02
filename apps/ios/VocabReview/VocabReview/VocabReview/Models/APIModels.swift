@@ -142,6 +142,10 @@ struct VocabAudio: Codable {
     let output_format: String?
 }
 
+struct VocabAudioURLResponse: Codable {
+    let url: String
+}
+
 struct ReviewState: Codable {
     let vocab_item_id: String
     let status: String

@@ -182,6 +182,10 @@ export async function deleteVocab(vocabID: string) {
   });
 }
 
+export async function getVocabAudioURL(vocabID: string) {
+  return request<{ url: string }>(`/vocab/${vocabID}/audio-url`);
+}
+
 export async function listDue() {
   return request<{ items: VocabWithState[] }>("/reviews/due");
 }

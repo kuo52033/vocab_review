@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"net/mail"
 	"strings"
 	"time"
@@ -14,12 +13,18 @@ import (
 	"vocabreview/backend/internal/clock"
 	"vocabreview/backend/internal/domain"
 	"vocabreview/backend/internal/repository"
+	"vocabreview/backend/internal/service/audios"
 	"vocabreview/backend/internal/service/enrichment"
 	"vocabreview/backend/internal/service/intake"
 	"vocabreview/backend/internal/service/scheduling"
 )
 
 var ErrEnrichmentNotConfigured = errors.New("vocab enrichment is not configured")
+var (
+	ErrVocabAudioNotFound       = errors.New("vocab audio not found")
+	ErrVocabAudioNotReady       = errors.New("vocab audio is not ready")
+	ErrVocabAudioURLUnavailable = errors.New("vocab audio url is unavailable")
+)
 
 const productionMagicLinkMinInterval = 60 * time.Second
 
@@ -31,12 +36,17 @@ type MagicLinkSender interface {
 	SendMagicLink(ctx context.Context, email, verificationURL, token string, expiresAt time.Time) error
 }
 
+type VocabAudioURLSigner interface {
+	SignVocabAudioURL(ctx context.Context, storageKey string) (string, error)
+}
+
 type App struct {
 	store           repository.AppRepository
 	clock           clock.Clock
 	enricher        VocabEnricher
 	authConfig      AuthConfig
 	audioConfig     VocabAudioConfig
+	audioURLSigner  VocabAudioURLSigner
 	debugEmails     map[string]struct{}
 	magicLinkSender MagicLinkSender
 }
@@ -74,6 +84,10 @@ func NewAppWithConfig(store repository.AppRepository, appClock clock.Clock, enri
 }
 
 func NewAppWithVocabAudioConfig(store repository.AppRepository, appClock clock.Clock, enricher VocabEnricher, config AuthConfig, sender MagicLinkSender, audioConfig VocabAudioConfig) *App {
+	return NewAppWithVocabAudioConfigAndSigner(store, appClock, enricher, config, sender, audioConfig, nil)
+}
+
+func NewAppWithVocabAudioConfigAndSigner(store repository.AppRepository, appClock clock.Clock, enricher VocabEnricher, config AuthConfig, sender MagicLinkSender, audioConfig VocabAudioConfig, signer VocabAudioURLSigner) *App {
 	config.Environment = strings.ToLower(strings.TrimSpace(config.Environment))
 	if config.Environment == "" {
 		config.Environment = "production"
@@ -95,7 +109,7 @@ func NewAppWithVocabAudioConfig(store repository.AppRepository, appClock clock.C
 	if audioConfig.Speed == 0 {
 		audioConfig.Speed = 1
 	}
-	return &App{store: store, clock: appClock, enricher: enricher, authConfig: config, audioConfig: audioConfig, debugEmails: debugEmails, magicLinkSender: sender}
+	return &App{store: store, clock: appClock, enricher: enricher, authConfig: config, audioConfig: audioConfig, audioURLSigner: signer, debugEmails: debugEmails, magicLinkSender: sender}
 }
 
 type AuthResult struct {
@@ -321,7 +335,7 @@ func (a *App) UpdateVocab(ctx context.Context, userID, id string, input CreateVo
 	if !ok || item.UserID != userID {
 		return domain.VocabItem{}, errors.New("vocab not found")
 	}
-	previousTerm := normalizeAudioInput(item.Term)
+	previousTerm := audios.NormalizeInput(item.Term)
 	item.Term = updatedString(input.Term, item.Term)
 	item.Meaning = updatedString(input.Meaning, item.Meaning)
 	item.Chinese = updatedString(input.Chinese, item.Chinese)
@@ -334,7 +348,7 @@ func (a *App) UpdateVocab(ctx context.Context, userID, id string, input CreateVo
 	item.Notes = updatedString(input.Notes, item.Notes)
 	item.UpdatedAt = a.clock.Now()
 	var audioJob *domain.VocabAudioJob
-	if normalizeAudioInput(item.Term) != previousTerm {
+	if audios.NormalizeInput(item.Term) != previousTerm {
 		audioJob, err = a.prepareAudioJob(ctx, &item, item.Term, item.UpdatedAt)
 		if err != nil {
 			return domain.VocabItem{}, err
@@ -344,6 +358,30 @@ func (a *App) UpdateVocab(ctx context.Context, userID, id string, input CreateVo
 		return domain.VocabItem{}, err
 	}
 	return a.decorateAudio(item), nil
+}
+
+func (a *App) VocabAudioURL(ctx context.Context, userID, vocabID string) (string, error) {
+	item, ok, err := a.store.GetVocab(ctx, vocabID)
+	if err != nil {
+		return "", err
+	}
+	if !ok || item.UserID != userID {
+		return "", ErrVocabAudioNotFound
+	}
+	item = a.decorateAudio(item)
+	if item.Audio == nil || item.Audio.Status == "unavailable" {
+		return "", ErrVocabAudioNotFound
+	}
+	if item.Audio.Status != "ready" {
+		return "", ErrVocabAudioNotReady
+	}
+	if item.Audio.URL != "" {
+		return item.Audio.URL, nil
+	}
+	if item.Audio.StorageKey == "" || a.audioURLSigner == nil {
+		return "", ErrVocabAudioURLUnavailable
+	}
+	return a.audioURLSigner.SignVocabAudioURL(ctx, item.Audio.StorageKey)
 }
 
 func (a *App) ArchiveVocab(ctx context.Context, userID, id string) (domain.VocabItem, error) {
@@ -647,11 +685,11 @@ func (a *App) prepareAudioJob(ctx context.Context, item *domain.VocabItem, term 
 	if !a.audioConfig.Enabled {
 		return nil, nil
 	}
-	inputText := normalizeAudioInput(term)
+	inputText := audios.NormalizeInput(term)
 	if inputText == "" {
 		return nil, nil
 	}
-	inputHash := vocabAudioHash(a.audioConfig.Provider, a.audioConfig.Model, a.audioConfig.Voice, a.audioConfig.Speed, a.audioConfig.OutputFormat, inputText)
+	inputHash := audios.InputHash(audioGenerationConfig(a.audioConfig), inputText)
 	audio, ok, err := a.store.GetReadyVocabAudio(ctx, a.audioConfig.Provider, a.audioConfig.Model, a.audioConfig.Voice, a.audioConfig.Speed, a.audioConfig.OutputFormat, inputHash)
 	if err != nil {
 		return nil, err
@@ -698,19 +736,12 @@ func (a *App) decorateAudio(item domain.VocabItem) domain.VocabItem {
 	return item
 }
 
-func normalizeAudioInput(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
-}
-
-func vocabAudioHash(provider, model, voice string, speed float64, outputFormat, inputText string) string {
-	parts := []string{
-		strings.TrimSpace(provider),
-		strings.TrimSpace(model),
-		strings.TrimSpace(voice),
-		fmt.Sprintf("%.2f", speed),
-		strings.TrimSpace(outputFormat),
-		inputText,
-	}
-	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
-	return hex.EncodeToString(sum[:])
+func audioGenerationConfig(config VocabAudioConfig) audios.GenerationConfig {
+	return audios.GenerationConfig{
+		Provider:     config.Provider,
+		Model:        config.Model,
+		Voice:        config.Voice,
+		Speed:        config.Speed,
+		OutputFormat: config.OutputFormat,
+	}.Normalized()
 }

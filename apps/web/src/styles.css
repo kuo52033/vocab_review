@@ -783,6 +783,14 @@ h3 {
   text-shadow: 0 8px 26px rgba(255, 148, 148, 0.18);
 }
 
+.session-term-line {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-width: 0;
+}
+
 .answer-options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1597,6 +1605,33 @@ textarea {
   font-family: var(--font-ui);
   font-weight: 900;
   line-height: 1;
+}
+
+.audio-play-button {
+  display: grid;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 999px;
+  padding: 0;
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.session-term-line .audio-play-button {
+  width: 36px;
+  height: 36px;
+  font-size: 0.82rem;
+}
+
+.audio-play-button.is-playing {
+  color: #fff;
+  background: linear-gradient(135deg, var(--rose-500), var(--blush));
+  border-color: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 12px 30px rgba(255, 148, 148, 0.34);
 }
 
 .library-actions .icon-button {

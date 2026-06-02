@@ -9,6 +9,7 @@ import (
 
 	"vocabreview/backend/internal/domain"
 	"vocabreview/backend/internal/repository"
+	"vocabreview/backend/internal/service/audios"
 	"vocabreview/backend/internal/service/enrichment"
 )
 
@@ -143,6 +144,12 @@ func (f *fakeRepository) CreateCapturedVocab(ctx context.Context, item domain.Vo
 
 func (f *fakeRepository) GetVocab(_ context.Context, id string) (domain.VocabItem, bool, error) {
 	item, ok := f.vocab[id]
+	if item.AudioID != "" {
+		audio, audioOK := f.audios[item.AudioID]
+		if audioOK {
+			item.Audio = &audio
+		}
+	}
 	return item, ok, nil
 }
 
@@ -694,6 +701,16 @@ type fakeEnricher struct {
 	err         error
 }
 
+type fakeAudioURLSigner struct {
+	storageKey string
+	url        string
+}
+
+func (s *fakeAudioURLSigner) SignVocabAudioURL(_ context.Context, storageKey string) (string, error) {
+	s.storageKey = storageKey
+	return s.url, nil
+}
+
 func (f *fakeEnricher) Autocomplete(ctx context.Context, items []enrichment.Item) ([]enrichment.Suggestion, error) {
 	f.ctx = ctx
 	f.items = append([]enrichment.Item(nil), items...)
@@ -840,7 +857,7 @@ func TestCreateVocabEnqueuesAudioWhenConfigured(t *testing.T) {
 func TestCreateVocabReusesReadyAudio(t *testing.T) {
 	repo := newFakeRepository()
 	config := testAudioConfig()
-	inputHash := vocabAudioHash(config.Provider, config.Model, config.Voice, config.Speed, config.OutputFormat, "serendipity")
+	inputHash := audios.InputHash(audioGenerationConfig(config), "serendipity")
 	repo.audios["aud_existing"] = domain.VocabAudio{
 		ID:           "aud_existing",
 		Provider:     config.Provider,
@@ -886,6 +903,59 @@ func TestUpdateVocabEnqueuesNewAudioWhenTermChanges(t *testing.T) {
 	}
 	if updated.Audio == nil || updated.Audio.Status != "pending" {
 		t.Fatalf("updated audio: %+v", updated.Audio)
+	}
+}
+
+func TestVocabAudioURLSignsReadyPrivateAudio(t *testing.T) {
+	repo := newFakeRepository()
+	signer := &fakeAudioURLSigner{url: "https://signed.example.com/audio.mp3"}
+	config := testAudioConfig()
+	config.PublicBaseURL = ""
+	app := NewAppWithVocabAudioConfigAndSigner(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)}, nil, AuthConfig{Environment: "development"}, nil, config, signer)
+	userID := "usr_test"
+	result, err := app.CreateVocab(context.Background(), userID, CreateVocabInput{Term: "serendipity"})
+	if err != nil {
+		t.Fatalf("create vocab: %v", err)
+	}
+	audio := domain.VocabAudio{
+		ID:           "aud_ready",
+		Provider:     config.Provider,
+		Model:        config.Model,
+		Voice:        config.Voice,
+		Speed:        config.Speed,
+		OutputFormat: config.OutputFormat,
+		InputHash:    "hash",
+		StorageKey:   "audio/openai/gpt-4o-mini-tts/alloy/hash.mp3",
+		Status:       "ready",
+	}
+	repo.audios[audio.ID] = audio
+	item := repo.vocab[result.Item.ID]
+	item.AudioID = audio.ID
+	repo.vocab[item.ID] = item
+
+	url, err := app.VocabAudioURL(context.Background(), userID, result.Item.ID)
+	if err != nil {
+		t.Fatalf("vocab audio url: %v", err)
+	}
+	if url != signer.url {
+		t.Fatalf("url: got %q want %q", url, signer.url)
+	}
+	if signer.storageKey != audio.StorageKey {
+		t.Fatalf("signed key: got %q want %q", signer.storageKey, audio.StorageKey)
+	}
+}
+
+func TestVocabAudioURLRequiresReadyAudio(t *testing.T) {
+	repo := newFakeRepository()
+	app := NewAppWithVocabAudioConfig(repo, stubClock{now: time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)}, nil, AuthConfig{Environment: "development"}, nil, testAudioConfig())
+	result, err := app.CreateVocab(context.Background(), "usr_test", CreateVocabInput{Term: "serendipity"})
+	if err != nil {
+		t.Fatalf("create vocab: %v", err)
+	}
+
+	_, err = app.VocabAudioURL(context.Background(), "usr_test", result.Item.ID)
+	if !errors.Is(err, ErrVocabAudioNotReady) {
+		t.Fatalf("error: got %v want %v", err, ErrVocabAudioNotReady)
 	}
 }
 

@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import UserNotifications
+import AVFoundation
 
 @MainActor
 final class SessionStore: ObservableObject {
@@ -25,10 +26,13 @@ final class SessionStore: ObservableObject {
     @Published var isCreatingVocab: Bool = false
     @Published var isDeletingVocab: Bool = false
     @Published var isAutocompletingVocab: Bool = false
+    @Published var playingAudioVocabID: String = ""
 
     private let baseURL = AppEnvironment.apiBaseURL
     private let sessionTokenKey = "session_token"
     private var libraryLoadID = 0
+    private var audioPlayer: AVPlayer?
+    private var audioEndObserver: NSObjectProtocol?
     let libraryPageSize = 10
     let reviewHistoryPageSize = 21
 
@@ -518,7 +522,66 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    func toggleAudioPlayback(for item: VocabItem) async {
+        guard isAuthenticated else { return }
+
+        if playingAudioVocabID == item.id {
+            stopAudioPlayback()
+            return
+        }
+
+        guard item.hasPlayableAudio else {
+            errorMessage = "Pronunciation is still processing."
+            return
+        }
+
+        stopAudioPlayback()
+        errorMessage = ""
+
+        do {
+            let urlString: String
+            if let directURL = item.audio?.url?.trimmingCharacters(in: .whitespacesAndNewlines), !directURL.isEmpty {
+                urlString = directURL
+            } else {
+                let response: VocabAudioURLResponse = try await sendRequest(path: "/vocab/\(item.id)/audio-url")
+                urlString = response.url
+            }
+
+            guard let url = URL(string: urlString) else {
+                throw SessionStoreError.invalidResponse
+            }
+
+            let player = AVPlayer(url: url)
+            audioPlayer = player
+            playingAudioVocabID = item.id
+            audioEndObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime,
+                object: player.currentItem,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.stopAudioPlayback()
+                }
+            }
+            player.play()
+        } catch {
+            stopAudioPlayback()
+            errorMessage = "Could not load pronunciation URL for \"\(item.term)\"."
+        }
+    }
+
+    func stopAudioPlayback() {
+        audioPlayer?.pause()
+        audioPlayer = nil
+        playingAudioVocabID = ""
+        if let audioEndObserver {
+            NotificationCenter.default.removeObserver(audioEndObserver)
+            self.audioEndObserver = nil
+        }
+    }
+
     func signOut() {
+        stopAudioPlayback()
         sessionToken = ""
         dueCards = []
         libraryCards = []
@@ -713,6 +776,13 @@ final class SessionStore: ObservableObject {
 extension VocabItem {
     var createdAtDate: Date {
         ISO8601DateFormatter.vocabReview.date(from: created_at) ?? .distantPast
+    }
+
+    var hasPlayableAudio: Bool {
+        guard audio?.status == "ready" else { return false }
+        let hasDirectURL = !(audio?.url?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        let hasStorageKey = !(audio?.storage_key?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        return hasDirectURL || hasStorageKey
     }
 }
 

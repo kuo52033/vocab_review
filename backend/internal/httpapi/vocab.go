@@ -93,6 +93,33 @@ func (s *Server) handleUpdateVocab(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"item": item})
 }
 
+func (s *Server) handleVocabAudioURL(w http.ResponseWriter, r *http.Request) {
+	vocabID := r.PathValue("id")
+	if vocabID == "" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	url, err := s.app.VocabAudioURL(r.Context(), userIDFromContext(r.Context()), vocabID)
+	if err != nil {
+		writeError(w, vocabAudioURLStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"url": url})
+}
+
+func vocabAudioURLStatus(err error) int {
+	switch {
+	case errors.Is(err, service.ErrVocabAudioNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, service.ErrVocabAudioNotReady):
+		return http.StatusConflict
+	case errors.Is(err, service.ErrVocabAudioURLUnavailable):
+		return http.StatusBadGateway
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
 func (s *Server) handleDeleteVocab(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/vocab/")
 	item, err := s.app.ArchiveVocab(r.Context(), userIDFromContext(r.Context()), id)

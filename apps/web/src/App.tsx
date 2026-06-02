@@ -6,6 +6,7 @@ import {
   clearToken,
   createVocab,
   deleteVocab,
+  getVocabAudioURL,
   getReviewStats,
   gradeReview,
   isUnauthorizedError,
@@ -281,7 +282,33 @@ function formatBulkImportCards(cards: ParsedImportCard[]) {
     .join("\n");
 }
 
+type AudioPlayButtonProps = {
+  item: VocabItem;
+  isPlaying: boolean;
+  onPlay: (item: VocabItem) => void;
+};
+
+function hasPlayableAudio(item: VocabItem) {
+  return item.audio?.status === "ready" && Boolean(item.audio.url || item.audio.storage_key);
+}
+
+function AudioPlayButton({ item, isPlaying, onPlay }: AudioPlayButtonProps) {
+  if (!hasPlayableAudio(item)) return null;
+
+  return (
+    <button
+      type="button"
+      className={`audio-play-button${isPlaying ? " is-playing" : ""}`}
+      aria-label={`${isPlaying ? "Pause" : "Play"} pronunciation for ${item.term}`}
+      onClick={() => onPlay(item)}
+    >
+      {isPlaying ? "Ⅱ" : "▶"}
+    </button>
+  );
+}
+
 export function App() {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const termInputRef = useRef<HTMLInputElement>(null);
   const importPreviewRef = useRef<HTMLDivElement>(null);
   const bulkTextRef = useRef("");
@@ -320,6 +347,7 @@ export function App() {
   const [isGrading, setIsGrading] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isReviewIconLoaded, setIsReviewIconLoaded] = useState(false);
+  const [playingAudioID, setPlayingAudioID] = useState("");
   const [cockatielRun, setCockatielRun] = useState(0);
   const [cockatielDirection, setCockatielDirection] = useState<CockatielDirection>(() => (
     Math.random() < 0.15 ? "reverse" : "forward"
@@ -362,6 +390,12 @@ export function App() {
     }, 90_000);
     return () => window.clearInterval(interval);
   }, [auth.token]);
+
+  useEffect(() => {
+    return () => {
+      stopAudioPlayback(false);
+    };
+  }, []);
 
   const visibleVocab = [...vocab]
     .sort((left, right) => new Date(right.item.created_at).getTime() - new Date(left.item.created_at).getTime());
@@ -457,6 +491,7 @@ export function App() {
   }
 
   function clearAuthenticatedState() {
+    stopAudioPlayback();
     refreshRequestIDRef.current += 1;
     clearToken();
     setAuth((current) => ({ ...current, token: "", magicLink: undefined, magicMessage: undefined }));
@@ -479,6 +514,57 @@ export function App() {
     setIsSaving(false);
     setIsGrading(false);
     setIsUserMenuOpen(false);
+  }
+
+  function stopAudioPlayback(updateState = true) {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
+    if (updateState) {
+      setPlayingAudioID("");
+    }
+  }
+
+  async function handlePlayAudio(item: VocabItem) {
+    if (playingAudioID === item.id) {
+      stopAudioPlayback();
+      return;
+    }
+    if (item.audio?.status !== "ready") return;
+    stopAudioPlayback();
+    let url = item.audio.url;
+    if (!url) {
+      try {
+        url = (await getVocabAudioURL(item.id)).url;
+      } catch {
+        setError(`Could not load pronunciation URL for "${item.term}".`);
+        return;
+      }
+    }
+    try {
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      setPlayingAudioID(item.id);
+      audio.addEventListener("ended", () => {
+        if (audioRef.current === audio) {
+          setPlayingAudioID("");
+          audioRef.current = null;
+        }
+      });
+      audio.addEventListener("error", () => {
+        if (audioRef.current === audio) {
+          setError(`Could not play pronunciation for "${item.term}".`);
+          stopAudioPlayback();
+        }
+      });
+      await audio.play();
+      setError("");
+    } catch {
+      setError(`Could not play pronunciation for "${item.term}".`);
+      stopAudioPlayback();
+    }
   }
 
   function handleRequestError(error: unknown) {
@@ -742,6 +828,7 @@ export function App() {
   }
 
   function endReviewSession() {
+    stopAudioPlayback();
     setSessionDeck([]);
     setSessionIndex(0);
     setSessionCorrectCount(0);
@@ -778,6 +865,7 @@ export function App() {
   }
 
   function completeOrAdvanceQuiz(reviewed: number, correct: number, wrong: number, lastNextDue: string) {
+    stopAudioPlayback();
     if (reviewed >= sessionDeck.length) {
       setSessionSummary({
         reviewed,
@@ -959,7 +1047,10 @@ export function App() {
                 </div>
                 <div className="session-prompt" key={`prompt-${currentQuizCard.card.item.id}`}>
                   <p className="eyebrow">{partOfSpeechLabel(currentQuizCard.card.item)}</p>
-                  <h3>{currentQuizCard.card.item.term}</h3>
+                  <div className="session-term-line">
+                    <h3>{currentQuizCard.card.item.term}</h3>
+                    <AudioPlayButton item={currentQuizCard.card.item} isPlaying={playingAudioID === currentQuizCard.card.item.id} onPlay={handlePlayAudio} />
+                  </div>
                 </div>
                 <div className="answer-options" aria-label="Meaning choices" key={`options-${currentQuizCard.card.item.id}`}>
                   {currentQuizCard.options.map((option, index) => {
@@ -1304,6 +1395,7 @@ export function App() {
                       <div className="library-copy">
                         <div className="library-title-line">
                           <h2>{item.term}</h2>
+                          <AudioPlayButton item={item} isPlaying={playingAudioID === item.id} onPlay={handlePlayAudio} />
                           <span className="part-of-speech-chip">{item.part_of_speech ? item.part_of_speech.replace(/_/g, " ") : "No part of speech"}</span>
                         </div>
                         <p>{item.meaning || "Meaning not added yet."}</p>

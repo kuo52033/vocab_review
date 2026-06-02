@@ -95,6 +95,25 @@ struct ReadingCard: ViewModifier {
     }
 }
 
+struct AudioPlayButton: View {
+    let isPlaying: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                .font(AppTheme.uiFont(size: 12, weight: .black, relativeTo: .caption))
+                .foregroundStyle(AppTheme.paper)
+                .frame(width: 30, height: 30)
+                .background(AppTheme.coral, in: Circle())
+                .shadow(color: AppTheme.coral.opacity(0.24), radius: 8, x: 0, y: 4)
+        }
+        .buttonStyle(.plain)
+        .contentShape(Circle())
+        .accessibilityLabel(isPlaying ? "Pause pronunciation" : "Play pronunciation")
+    }
+}
+
 struct ReadingInputField: ViewModifier {
     func body(content: Content) -> some View {
         content

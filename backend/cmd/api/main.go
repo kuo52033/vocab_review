@@ -21,6 +21,7 @@ import (
 	"vocabreview/backend/internal/httpapi"
 	"vocabreview/backend/internal/repository/postgres"
 	"vocabreview/backend/internal/service"
+	"vocabreview/backend/internal/service/audios"
 	"vocabreview/backend/internal/service/enrichment"
 )
 
@@ -60,7 +61,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	app := service.NewAppWithVocabAudioConfig(store, clock.RealClock{}, newVocabEnricherFromEnv(), authConfig, magicLinkSender, newVocabAudioConfigFromEnv())
+	audioConfig := newVocabAudioConfigFromEnv()
+	audioURLSigner, err := newVocabAudioURLSignerFromEnv(awsCtx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	app := service.NewAppWithVocabAudioConfigAndSigner(store, clock.RealClock{}, newVocabEnricherFromEnv(), authConfig, magicLinkSender, audioConfig, audioURLSigner)
 	server := httpapi.NewServer(app, logger)
 
 	log.Printf("listening on %s", addr)
@@ -242,6 +248,22 @@ func newVocabAudioConfigFromEnv() service.VocabAudioConfig {
 		OutputFormat:  outputFormat,
 		PublicBaseURL: os.Getenv("TTS_AUDIO_PUBLIC_BASE_URL"),
 	}
+}
+
+func newVocabAudioURLSignerFromEnv(ctx context.Context) (service.VocabAudioURLSigner, error) {
+	bucket := strings.TrimSpace(os.Getenv("TTS_S3_BUCKET"))
+	region := strings.TrimSpace(os.Getenv("TTS_S3_REGION"))
+	if region == "" {
+		region = strings.TrimSpace(os.Getenv("AWS_REGION"))
+	}
+	if bucket == "" || region == "" {
+		return nil, nil
+	}
+	awsConfig, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
+	if err != nil {
+		return nil, fmt.Errorf("load AWS config for audio presigner: %w", err)
+	}
+	return audios.NewS3Presigner(awsConfig, bucket, 5*time.Minute), nil
 }
 
 func newAuthConfigFromEnv() (service.AuthConfig, error) {
