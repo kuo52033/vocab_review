@@ -294,7 +294,6 @@ a {
 
 .brand-mark,
 .review-icon,
-.summary-mark,
 .quiz-result-badge,
 .gpt-mark,
 .answer-option span {
@@ -525,7 +524,6 @@ button:disabled {
 .panel,
 .review-start-card,
 .session-card,
-.session-summary,
 .library-card,
 .capture-card,
 .callout,
@@ -714,6 +712,121 @@ h3 {
   line-height: 1;
 }
 
+.review-result-page {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 28px;
+  width: min(100%, 760px);
+  min-height: calc(100vh - 220px);
+  padding: clamp(28px, 5vw, 68px) 0;
+  text-align: center;
+  animation: surface-in 480ms var(--ease-polished) both;
+}
+
+.review-accuracy-ring {
+  --accuracy: 0%;
+  position: relative;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  width: clamp(156px, 24vw, 196px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, var(--cream) 0 55%, transparent 56%),
+    conic-gradient(var(--rose-500) var(--accuracy), rgba(255, 209, 209, 0.62) 0);
+  box-shadow: 0 24px 52px rgba(128, 70, 72, 0.14);
+}
+
+.review-accuracy-ring::after {
+  position: absolute;
+  inset: -10px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  content: "";
+}
+
+.review-accuracy-ring span {
+  color: var(--wine);
+  font-family: var(--font-ui);
+  font-size: clamp(2.1rem, 5vw, 3.1rem);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.review-accuracy-ring small {
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.review-result-copy {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.review-result-copy h1 {
+  max-width: 720px;
+  font-size: clamp(2.9rem, 7vw, 5rem);
+  line-height: 0.96;
+  text-wrap: balance;
+}
+
+.review-result-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  width: min(100%, 680px);
+}
+
+.review-result-stats article {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  min-height: 104px;
+  border: 1px solid var(--line-strong);
+  border-radius: 18px;
+  padding: 18px 16px;
+  background:
+    linear-gradient(135deg, rgba(255, 245, 228, 0.94), rgba(255, 227, 225, 0.82)),
+    radial-gradient(circle at 92% 12%, rgba(255, 148, 148, 0.14), transparent 34%);
+  box-shadow: var(--shadow-soft);
+}
+
+.review-result-stats strong {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 4vw, 2.45rem);
+  line-height: 1;
+}
+
+.review-result-stats span,
+.review-result-return {
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.review-result-return {
+  margin: 0;
+}
+
+.review-result-button {
+  width: min(100%, 300px);
+  min-height: 62px;
+  border-radius: 18px;
+  color: var(--cream);
+  background: linear-gradient(135deg, var(--rose-500), var(--wine));
+  font-family: var(--font-ui);
+  font-weight: 900;
+}
+
 .session-card {
   position: relative;
   display: grid;
@@ -730,8 +843,7 @@ h3 {
   z-index: 1;
 }
 
-.session-topline,
-.session-summary {
+.session-topline {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -892,8 +1004,6 @@ h3 {
 }
 
 .quiz-result div:last-child,
-.summary-copy,
-.summary-score,
 .stack,
 .edit-form,
 .library {
@@ -903,8 +1013,7 @@ h3 {
 
 .quiz-result strong,
 .eyebrow,
-.field-label span,
-.session-summary strong {
+.field-label span {
   color: var(--wine);
   font-family: var(--font-ui);
   font-weight: 900;
@@ -932,67 +1041,6 @@ small,
   justify-self: end;
   width: auto;
   min-width: 190px;
-}
-
-.session-summary {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 14px 16px;
-  align-items: start;
-  margin-top: 18px;
-  border-radius: 22px;
-  padding: 18px;
-}
-
-.summary-mark {
-  width: 48px;
-  height: 48px;
-  border-radius: 16px;
-  color: var(--cream);
-  background: linear-gradient(135deg, var(--rose-500), var(--wine));
-  font-family: var(--font-ui);
-  font-size: 1.3rem;
-  font-weight: 900;
-}
-
-.summary-score {
-  justify-items: end;
-  min-width: 116px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  padding: 10px 14px;
-  background: rgba(255, 245, 228, 0.72);
-}
-
-.summary-score strong {
-  color: var(--ink);
-  font-size: 1.75rem;
-  line-height: 1;
-}
-
-.summary-breakdown {
-  grid-column: 2 / 4;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.summary-breakdown span,
-.summary-return {
-  color: var(--muted);
-  font-size: 0.92rem;
-}
-
-.summary-breakdown span {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 6px 10px;
-  background: rgba(255, 250, 240, 0.7);
-  font-weight: 800;
-}
-
-.summary-return {
-  grid-column: 2 / 4;
 }
 
 .quick-add {
@@ -1754,11 +1802,22 @@ textarea {
   }
 
   .home-stats,
+  .review-result-stats,
   .answer-options,
   .optional-grid,
   .quick-add,
   .action-row {
     grid-template-columns: 1fr;
+  }
+
+  .review-result-page {
+    min-height: calc(100vh - 170px);
+    gap: 22px;
+    padding: 34px 0 48px;
+  }
+
+  .review-result-stats {
+    width: min(100%, 360px);
   }
 
   .quick-add-page {
@@ -1772,21 +1831,6 @@ textarea {
 
   .add-mode-toggle button {
     padding-inline: 10px;
-  }
-
-  .quiz-summary,
-  .session-summary {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .summary-score,
-  .summary-breakdown,
-  .summary-return {
-    grid-column: 1 / -1;
-  }
-
-  .summary-score {
-    justify-items: start;
   }
 
   .section-heading,
@@ -2118,7 +2162,6 @@ body::after {
 
 .brand-mark,
 .review-icon,
-.summary-mark,
 .quiz-result-badge,
 .gpt-mark,
 .answer-option span {
@@ -2165,7 +2208,6 @@ button:hover:not(:disabled),
 .panel,
 .review-start-card,
 .session-card,
-.session-summary,
 .library-card,
 .capture-card,
 .callout,
@@ -2232,9 +2274,27 @@ button:hover:not(:disabled),
 .answer-option.wrong span,
 .danger-button,
 .next-card-button,
-.summary-mark {
+.review-result-button {
   color: #fffdf5;
   background: var(--wine);
+}
+
+.review-accuracy-ring {
+  background:
+    radial-gradient(circle, #fffdf5 0 55%, transparent 56%),
+    conic-gradient(var(--wine) var(--accuracy), rgba(233, 213, 179, 0.58) 0);
+}
+
+.review-accuracy-ring span {
+  color: var(--wine);
+}
+
+.review-result-stats article {
+  border-color: var(--line-strong);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 250, 0.98), rgba(255, 252, 240, 0.94)),
+    radial-gradient(circle at 92% 12%, rgba(233, 213, 179, 0.16), transparent 34%);
+  box-shadow: var(--shadow-soft);
 }
 
 input,

@@ -188,6 +188,18 @@ function partOfSpeechLabel(item: VocabItem) {
   return item.part_of_speech ? item.part_of_speech.replace(/_/g, " ") : "Word";
 }
 
+function reviewAccuracy(summary: SessionSummary) {
+  return Math.round((summary.correct / Math.max(1, summary.reviewed)) * 100);
+}
+
+function reviewResultMessage(summary: SessionSummary) {
+  const accuracy = reviewAccuracy(summary);
+  if (accuracy === 100) return "Perfect review.";
+  if (accuracy >= 80) return "Great work.";
+  if (accuracy >= 50) return "Nice progress.";
+  return "Keep going.";
+}
+
 function buildQuizDeck(dueCards: VocabWithState[], candidates: VocabWithState[], limit: number): QuizCard[] {
   const cardsWithAnswers = dueCards.filter(({ item }) => answerText(item));
   const candidateAnswers = candidates
@@ -837,6 +849,12 @@ export function App() {
     setPendingNextDue("");
   }
 
+  function returnToReviewHome() {
+    stopAudioPlayback();
+    setSessionSummary(null);
+    setActiveSection("review");
+  }
+
   async function handleQuizAnswer(option: QuizOption) {
     if (!currentQuizCard || selectedOptionID) return;
     setSelectedOptionID(option.id);
@@ -1109,6 +1127,49 @@ export function App() {
                   </button>
                 ) : null}
               </article>
+            ) : sessionSummary ? (
+              <section className="review-result-page" aria-label="Review session results">
+                <div
+                  className="review-accuracy-ring"
+                  style={{ "--accuracy": `${reviewAccuracy(sessionSummary)}%` } as CSSProperties}
+                  aria-label={`${reviewAccuracy(sessionSummary)} percent accuracy`}
+                >
+                  <span>{sessionSummary.correct}/{sessionSummary.reviewed}</span>
+                  <small>correct</small>
+                </div>
+
+                <div className="review-result-copy">
+                  <p className="eyebrow">Review complete</p>
+                  <h1>{reviewResultMessage(sessionSummary)}</h1>
+                </div>
+
+                <div className="review-result-stats" aria-label="Review result breakdown">
+                  <article>
+                    <strong>{sessionSummary.reviewed}</strong>
+                    <span>Reviewed</span>
+                  </article>
+                  <article>
+                    <strong>{sessionSummary.correct}</strong>
+                    <span>Correct</span>
+                  </article>
+                  <article>
+                    <strong>{sessionSummary.wrong}</strong>
+                    <span>Wrong</span>
+                  </article>
+                  <article>
+                    <strong>{reviewAccuracy(sessionSummary)}%</strong>
+                    <span>Accuracy</span>
+                  </article>
+                </div>
+
+                {sessionSummary.lastNextDue ? (
+                  <p className="review-result-return">Last card returns {formatDate(sessionSummary.lastNextDue)}.</p>
+                ) : null}
+
+                <button type="button" className="review-result-button" onClick={returnToReviewHome}>
+                  Back to Home
+                </button>
+              </section>
             ) : (
               <div className="home-layout">
                 <article className="review-start-card">
@@ -1152,26 +1213,6 @@ export function App() {
                 </div>
               </div>
             )}
-            {sessionSummary ? (
-              <div className="session-summary quiz-summary">
-                <div className="summary-mark" aria-hidden="true">✓</div>
-                <div className="summary-copy">
-                  <strong>Review complete</strong>
-                  <span>{sessionSummary.reviewed} cards reviewed</span>
-                </div>
-                <div className="summary-score">
-                  <strong>{Math.round((sessionSummary.correct / Math.max(1, sessionSummary.reviewed)) * 100)}%</strong>
-                  <span>accuracy</span>
-                </div>
-                <div className="summary-breakdown" aria-label="Review result breakdown">
-                  <span>{sessionSummary.correct} correct</span>
-                  <span>{sessionSummary.wrong} wrong</span>
-                </div>
-                {sessionSummary.lastNextDue ? (
-                  <span className="summary-return">Last card returns {formatDate(sessionSummary.lastNextDue)}.</span>
-                ) : null}
-              </div>
-            ) : null}
           </section>
         ) : null}
 
