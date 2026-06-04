@@ -382,13 +382,22 @@ struct ReviewListView: View {
                             .fill(optionBadgeColor(showWrong: showWrong))
                     }
                 }
-            Text(option.text)
-                .multilineTextAlignment(.leading)
-                .lineLimit(nil)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .layoutPriority(1)
-                .foregroundStyle(AppTheme.ink)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(option.text)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(nil)
+                    .foregroundStyle(AppTheme.ink)
+                if showWrong {
+                    Text(wrongOptionSourceLabel(option.item))
+                        .font(.callout.weight(.bold))
+                        .foregroundStyle(AppTheme.coral)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(1)
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding()
@@ -491,6 +500,14 @@ struct ReviewListView: View {
             return "Word"
         }
         return item.part_of_speech.replacingOccurrences(of: "_", with: " ")
+    }
+
+    private func wrongOptionSourceLabel(_ item: VocabItem) -> String {
+        let chinese = item.chinese.trimmingCharacters(in: .whitespacesAndNewlines)
+        if chinese.isEmpty {
+            return item.term
+        }
+        return "\(item.term) · \(chinese)"
     }
 
     private func sessionSummaryCard(_ summary: ReviewSessionSummary) -> some View {
@@ -705,6 +722,7 @@ private struct QuizOption: Identifiable {
     let id: String
     let text: String
     let isCorrect: Bool
+    let item: VocabItem
 }
 
 private struct ReviewSessionSummary {
@@ -833,7 +851,7 @@ private func buildQuizDeck(dueCards: [DueCard], candidates: [DueCard], limit: In
     let cardsWithAnswers = dueCards.filter { !$0.item.meaning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     let candidateAnswers = candidates
         .filter { !$0.item.meaning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        .map { (id: $0.item.id, text: $0.item.meaning.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        .map { (id: $0.item.id, text: $0.item.meaning.trimmingCharacters(in: .whitespacesAndNewlines), item: $0.item) }
 
     return cardsWithAnswers.shuffled()
         .prefix(limit)
@@ -844,8 +862,8 @@ private func buildQuizDeck(dueCards: [DueCard], candidates: [DueCard], limit: In
                 .shuffled()
                 .prefix(3)
 
-            let options = ([QuizOption(id: "\(card.item.id)-correct", text: correctText, isCorrect: true)] + distractors.map {
-                QuizOption(id: "\(card.item.id)-\($0.id)", text: $0.text, isCorrect: false)
+            let options = ([QuizOption(id: "\(card.item.id)-correct", text: correctText, isCorrect: true, item: card.item)] + distractors.map {
+                QuizOption(id: "\(card.item.id)-\($0.id)", text: $0.text, isCorrect: false, item: $0.item)
             }).shuffled()
 
             guard options.count >= 2 else { return nil }

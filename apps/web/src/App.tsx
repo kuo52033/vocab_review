@@ -64,6 +64,7 @@ type QuizOption = {
   id: string;
   text: string;
   isCorrect: boolean;
+  item: VocabItem;
 };
 type QuizCard = {
   card: VocabWithState;
@@ -204,7 +205,7 @@ function buildQuizDeck(dueCards: VocabWithState[], candidates: VocabWithState[],
   const cardsWithAnswers = dueCards.filter(({ item }) => answerText(item));
   const candidateAnswers = candidates
     .filter(({ item }) => answerText(item))
-    .map(({ item }) => ({ id: item.id, text: answerText(item) }));
+    .map(({ item }) => ({ id: item.id, text: answerText(item), item }));
 
   return shuffleItems(cardsWithAnswers)
     .slice(0, limit)
@@ -217,11 +218,12 @@ function buildQuizDeck(dueCards: VocabWithState[], candidates: VocabWithState[],
       return {
         card,
         options: shuffleItems([
-          { id: `${card.item.id}-correct`, text: correctText, isCorrect: true },
+          { id: `${card.item.id}-correct`, text: correctText, isCorrect: true, item: card.item },
           ...distractors.map((distractor) => ({
             id: `${card.item.id}-${distractor.id}`,
             text: distractor.text,
-            isCorrect: false
+            isCorrect: false,
+            item: distractor.item
           }))
         ])
       };
@@ -916,6 +918,7 @@ export function App() {
     setLibraryPage(1);
     setIsUserMenuOpen(false);
     setActiveSection("library");
+    void refresh(1, "");
   }
 
   function handleSignOut() {
@@ -1089,7 +1092,15 @@ export function App() {
                         disabled={Boolean(selectedOptionID) || isGrading}
                       >
                         <span>{String.fromCharCode(65 + index)}</span>
-                        <strong>{option.text}</strong>
+                        <div className="answer-option-copy">
+                          <strong>{option.text}</strong>
+                          {showWrong ? (
+                            <small>
+                              {option.item.term}
+                              {option.item.chinese.trim() ? ` · ${option.item.chinese.trim()}` : ""}
+                            </small>
+                          ) : null}
+                        </div>
                       </button>
                     );
                   })}

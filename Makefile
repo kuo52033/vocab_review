@@ -8,7 +8,7 @@ include $(ENV_FILE)
 export
 endif
 
-.PHONY: db-up db-down db-wait db-reset db-reset-test migrate migrate-test backend-run notifications-run audio-worker-run backfill-audio test test-integration
+.PHONY: db-up db-down db-wait db-reset db-reset-fixtures db-reset-test migrate migrate-test backend-run notifications-run audio-worker-run fixture-data backfill-audio test test-integration
 
 db-up:
 	docker compose up -d postgres
@@ -32,6 +32,8 @@ db-reset: db-wait
 	docker compose exec -T postgres psql -U vocab -d vocab_review_dev -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 	$(MAKE) migrate
 
+db-reset-fixtures: db-reset fixture-data
+
 db-reset-test: db-wait
 	docker compose exec -T postgres psql -U vocab -d vocab_review_test -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
 	$(MAKE) ENV_FILE=.env.test migrate-test
@@ -47,6 +49,10 @@ notifications-run:
 audio-worker-run:
 	test -n "$(DATABASE_URL)"
 	cd backend && DATABASE_URL="$(DATABASE_URL)" go run ./cmd/audio-worker
+
+fixture-data:
+	test -n "$(DATABASE_URL)"
+	cd backend && DATABASE_URL="$(DATABASE_URL)" APP_ENV="$(APP_ENV)" TOKEN_HASH_SECRET="$(TOKEN_HASH_SECRET)" go run ./cmd/fixture-data
 
 backfill-audio:
 	test -n "$(DATABASE_URL)"
