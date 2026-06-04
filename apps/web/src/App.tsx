@@ -114,6 +114,27 @@ const emptyStats: ReviewStats = {
 
 const reviewSessionSize = 12;
 const libraryPageSize = 10;
+const bulkImportDraftStorageKey = "vocab_review_bulk_import_draft";
+
+function readStoredBulkImportDraft() {
+  try {
+    return localStorage.getItem(bulkImportDraftStorageKey) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function storeBulkImportDraft(value: string) {
+  try {
+    if (value) {
+      localStorage.setItem(bulkImportDraftStorageKey, value);
+    } else {
+      localStorage.removeItem(bulkImportDraftStorageKey);
+    }
+  } catch {
+    // Ignore storage failures so typing in the import box still works.
+  }
+}
 
 function draftFromItem(item: VocabItem): CardDraft {
   return {
@@ -325,7 +346,6 @@ export function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const termInputRef = useRef<HTMLInputElement>(null);
   const importPreviewRef = useRef<HTMLDivElement>(null);
-  const bulkTextRef = useRef("");
   const refreshRequestIDRef = useRef(0);
   const [auth, setAuth] = useState<AuthState>({ email: "", token: localStorage.getItem("session_token") ?? "" });
   const [vocab, setVocab] = useState<VocabWithState[]>([]);
@@ -334,7 +354,8 @@ export function App() {
   const [stats, setStats] = useState<ReviewStats>(emptyStats);
   const [jobs, setJobs] = useState<Array<{ id: string; vocab_item_id: string; status: string; scheduled_at: string }>>([]);
   const [form, setForm] = useState(emptyForm);
-  const [bulkText, setBulkText] = useState("");
+  const [bulkText, setBulkText] = useState(readStoredBulkImportDraft);
+  const bulkTextRef = useRef(bulkText);
   const [enrichedCards, setEnrichedCards] = useState<ParsedImportCard[] | null>(null);
   const [isEnriching, setIsEnriching] = useState(false);
   const [enrichmentError, setEnrichmentError] = useState("");
@@ -705,8 +726,7 @@ export function App() {
       if (bulkTextRef.current !== inputSnapshot) return;
       const mergedCards = mergeAutocompleteResults(cards, response.items);
       const mergedText = formatBulkImportCards(mergedCards);
-      bulkTextRef.current = mergedText;
-      setBulkText(mergedText);
+      handleBulkTextChange(mergedText);
       setEnrichedCards(mergedCards);
     } catch (err) {
       if (bulkTextRef.current !== inputSnapshot) return;
@@ -909,6 +929,7 @@ export function App() {
   function handleBulkTextChange(value: string) {
     bulkTextRef.current = value;
     setBulkText(value);
+    storeBulkImportDraft(value);
     setEnrichedCards(null);
     setEnrichmentError("");
   }

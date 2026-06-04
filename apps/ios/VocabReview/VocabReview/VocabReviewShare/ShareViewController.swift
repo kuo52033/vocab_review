@@ -4,12 +4,23 @@ import UniformTypeIdentifiers
 final class ShareViewController: UIViewController {
     private let appGroupID = Bundle.main.object(forInfoDictionaryKey: "VocabReviewAppGroup") as? String ?? "group.com.tim.VocabReview"
     private let storageKey = "queuedSharedCaptures"
+    private var hasAppeared = false
+    private var pendingCompletion = false
+    private var didRequestCompletion = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = UIColor(red: 1.0, green: 0.97, blue: 0.91, alpha: 1.0)
         showSavingMessage()
         collectSharedText()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        hasAppeared = true
+        if pendingCompletion {
+            requestExtensionCompletion()
+        }
     }
 
     private func showSavingMessage() {
@@ -29,48 +40,89 @@ final class ShareViewController: UIViewController {
 
     private func collectSharedText() {
         let extensionItems = extensionContext?.inputItems.compactMap { $0 as? NSExtensionItem } ?? []
+        if let itemText = sharedText(from: extensionItems) {
+            saveAndComplete(text: itemText, sourceURL: "")
+            return
+        }
+
         let providers = extensionItems.flatMap { $0.attachments ?? [] }
-        var capturedText = ""
-        var sourceURL = ""
-        let group = DispatchGroup()
-        let lock = NSLock()
+        let textTypeIdentifiers = [
+            UTType.plainText.identifier,
+            UTType.text.identifier,
+            "public.utf8-plain-text"
+        ]
 
         for provider in providers {
-            if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
-                group.enter()
-                provider.loadItem(forTypeIdentifier: UTType.plainText.identifier, options: nil) { item, _ in
-                    if let text = item as? String {
-                        lock.lock()
-                        if capturedText.isEmpty {
-                            capturedText = text
-                        }
-                        lock.unlock()
-                    }
-                    group.leave()
-                }
-            }
-
-            if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                group.enter()
-                provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { item, _ in
-                    let urlString: String
-                    if let url = item as? URL {
-                        urlString = url.absoluteString
-                    } else {
-                        urlString = item as? String ?? ""
-                    }
-                    lock.lock()
-                    sourceURL = urlString
-                    lock.unlock()
-                    group.leave()
-                }
+            if let typeIdentifier = textTypeIdentifiers.first(where: { provider.hasItemConformingToTypeIdentifier($0) }) {
+                loadTextData(from: provider, typeIdentifier: typeIdentifier)
+                return
             }
         }
 
-        group.notify(queue: .main) {
-            self.save(text: capturedText, sourceURL: sourceURL)
-            self.extensionContext?.completeRequest(returningItems: nil)
+        saveAndComplete(text: "", sourceURL: "")
+    }
+
+    private func saveAndComplete(text: String, sourceURL: String) {
+        save(text: text, sourceURL: sourceURL)
+        requestExtensionCompletion()
+    }
+
+    private func requestExtensionCompletion() {
+        guard hasAppeared else {
+            pendingCompletion = true
+            return
         }
+        guard !didRequestCompletion else { return }
+
+        pendingCompletion = false
+        didRequestCompletion = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                guard let self, self.view.window != nil else { return }
+                self.dismiss(animated: false)
+            }
+        }
+    }
+
+    private func loadTextData(from provider: NSItemProvider, typeIdentifier: String) {
+        var didComplete = false
+
+        let completeOnce: (String) -> Void = { [weak self] text in
+            DispatchQueue.main.async {
+                guard let self, !didComplete else { return }
+                didComplete = true
+                self.saveAndComplete(text: text, sourceURL: "")
+            }
+        }
+
+        provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { [weak self] data, _ in
+            let text = data
+                .flatMap { String(data: $0, encoding: .utf8) }
+                .map { self?.cleanedSharedText($0) ?? "" } ?? ""
+            completeOnce(text)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            completeOnce("")
+        }
+    }
+
+    private func sharedText(from extensionItems: [NSExtensionItem]) -> String? {
+        for item in extensionItems {
+            if let text = item.attributedContentText?.string, !cleanedSharedText(text).isEmpty {
+                return cleanedSharedText(text)
+            }
+            if let text = item.attributedTitle?.string, !cleanedSharedText(text).isEmpty {
+                return cleanedSharedText(text)
+            }
+        }
+        return nil
+    }
+
+    private func cleanedSharedText(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func save(text: String, sourceURL: String) {

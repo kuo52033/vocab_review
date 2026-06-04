@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AddCardsView: View {
-    @State private var addMode: AddCardsMode = .single
+    @State private var addMode: AddCardsMode = .bulk
 
     var body: some View {
         ZStack {

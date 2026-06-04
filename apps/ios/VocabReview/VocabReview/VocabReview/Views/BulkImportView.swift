@@ -3,21 +3,15 @@ import SwiftUI
 struct BulkImportView: View {
     @EnvironmentObject private var sessionStore: SessionStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     private let presentation: AddCardsPresentation
-    @State private var rawText = ""
+    @State private var rawText = BulkImportDraftStorage.load()
     @State private var parsedCards: [VocabDraftInput] = []
-    @State private var sharedCaptures: [SharedQueuedCapture] = []
     @State private var enrichedCards: [VocabDraftInput]?
     @FocusState private var isImportTextFocused: Bool
 
-    private var sharedCards: [VocabDraftInput] {
-        sharedCaptures.map {
-            VocabDraftInput(term: $0.term, meaning: "", exampleSentence: "", notes: sourceNote(for: $0))
-        }
-    }
-
     private var importCandidates: [VocabDraftInput] {
-        enrichedCards ?? (sharedCards + parsedCards)
+        enrichedCards ?? parsedCards
     }
 
     init(presentation: AddCardsPresentation = .standalone) {
@@ -39,11 +33,23 @@ struct BulkImportView: View {
                 .toolbar(.hidden, for: .navigationBar)
                 .dismissKeyboardOnTapOutside()
             }
-            .task { loadSharedCaptures() }
+            .task { refreshDraftAndSharedCaptures() }
+            .onAppear { refreshDraftAndSharedCaptures() }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    refreshDraftAndSharedCaptures()
+                }
+            }
             .onChange(of: rawText) { _, newValue in syncParsedCards(with: newValue) }
         case .embedded:
             importContent(showHeader: false)
-                .task { loadSharedCaptures() }
+                .task { refreshDraftAndSharedCaptures() }
+                .onAppear { refreshDraftAndSharedCaptures() }
+                .onChange(of: scenePhase) { _, newPhase in
+                    if newPhase == .active {
+                        refreshDraftAndSharedCaptures()
+                    }
+                }
                 .onChange(of: rawText) { _, newValue in syncParsedCards(with: newValue) }
         }
     }
@@ -54,12 +60,10 @@ struct BulkImportView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Bulk import")
                         .readingTitle()
-                    Text("Import shared selections or paste one card per line.")
+                    Text("Shared words appear in the text box automatically, or paste one card per line.")
                         .readingMuted()
                 }
             }
-
-            sharedQueueSection
 
             VStack(alignment: .leading, spacing: 12) {
                 TextEditor(text: $rawText)
@@ -105,51 +109,6 @@ struct BulkImportView: View {
     }
 
     @ViewBuilder
-    private var sharedQueueSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Shared queue")
-                    .font(.headline)
-                    .foregroundStyle(AppTheme.sageDark)
-                Spacer()
-                Text("\(sharedCaptures.count) \(sharedCaptures.count == 1 ? "item" : "items")")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(AppTheme.muted)
-            }
-
-            if sharedCaptures.isEmpty {
-                Text("Select text in Safari or another app, tap Share, then choose Vocab Review.")
-                    .readingMuted()
-            } else {
-                ForEach(sharedCaptures) { capture in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(capture.term)
-                            .readingTerm()
-                        Text(capture.sourceTitle)
-                            .font(.footnote)
-                            .readingMuted()
-                    }
-                    .padding(.vertical, 8)
-                    .overlay(alignment: .bottom) {
-                        Rectangle()
-                            .fill(AppTheme.ink.opacity(0.07))
-                            .frame(height: 1)
-                    }
-                }
-
-                Button("Clear shared queue", role: .destructive) {
-                    SharedCaptureQueue.clear()
-                    sharedCaptures = []
-                    enrichedCards = nil
-                }
-                .buttonStyle(.bordered)
-                .disabled(sessionStore.isCreatingVocab)
-            }
-        }
-        .readingCard()
-    }
-
-    @ViewBuilder
     private var previewSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -163,7 +122,7 @@ struct BulkImportView: View {
             }
 
             if importCandidates.isEmpty {
-                Text("Shared or pasted cards will appear here before import.")
+                Text("Pasted or shared cards will appear here before import.")
                     .readingMuted()
             } else {
                 ForEach(Array(importCandidates.enumerated()), id: \.offset) { _, card in
@@ -220,33 +179,22 @@ struct BulkImportView: View {
         let cards = importCandidates
         let created = await sessionStore.createVocabCards(cards)
         if created == cards.count {
-            if !sharedCaptures.isEmpty {
-                SharedCaptureQueue.clear()
-            }
             if presentation == .standalone {
+                BulkImportDraftStorage.clear()
                 dismiss()
             } else {
                 rawText = ""
                 parsedCards = []
-                sharedCaptures = []
                 enrichedCards = nil
+                BulkImportDraftStorage.clear()
             }
         }
     }
 
     private func autocompleteCards() async {
-        guard let cards = await sessionStore.autocompleteVocabCards(sharedCards + parsedCards) else { return }
+        guard let cards = await sessionStore.autocompleteVocabCards(parsedCards) else { return }
         enrichedCards = cards
-        rawText = formatBulkInput(cards.filter { sharedCard in
-            !sharedCards.contains { $0.term == sharedCard.term && $0.notes == sharedCard.notes }
-        })
-    }
-
-    private func sourceNote(for capture: SharedQueuedCapture) -> String {
-        if capture.sourceURL.isEmpty {
-            return "Shared from iOS"
-        }
-        return "Shared from \(capture.sourceURL)"
+        rawText = formatBulkInput(cards)
     }
 
     private func parseBulkInput(_ input: String) -> [VocabDraftInput] {
@@ -300,16 +248,63 @@ struct BulkImportView: View {
             .joined(separator: "\n")
     }
 
+    private func refreshDraftAndSharedCaptures() {
+        if rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            rawText = BulkImportDraftStorage.load()
+        }
+        syncParsedCards(with: rawText)
+        loadSharedCaptures()
+    }
+
     private func loadSharedCaptures() {
-        sharedCaptures = SharedCaptureQueue.load()
+        let captures = SharedCaptureQueue.load()
+        guard !captures.isEmpty else { return }
+
+        let sharedTerms = captures
+            .map { $0.term.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !sharedTerms.isEmpty else {
+            SharedCaptureQueue.clear()
+            return
+        }
+
+        let existingText = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        rawText = ([existingText] + sharedTerms)
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        parsedCards = parseBulkInput(rawText)
         enrichedCards = nil
+        BulkImportDraftStorage.save(rawText)
+        SharedCaptureQueue.clear()
     }
 
     private func syncParsedCards(with newValue: String) {
         parsedCards = parseBulkInput(newValue)
+        BulkImportDraftStorage.save(newValue)
         if let enrichedCards, formatBulkInput(enrichedCards) == newValue {
             return
         }
         enrichedCards = nil
+    }
+}
+
+private enum BulkImportDraftStorage {
+    private static let key = "bulkImportDraftText"
+
+    static func load() -> String {
+        UserDefaults.standard.string(forKey: key) ?? ""
+    }
+
+    static func save(_ text: String) {
+        let draft = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if draft.isEmpty {
+            clear()
+        } else {
+            UserDefaults.standard.set(text, forKey: key)
+        }
+    }
+
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey: key)
     }
 }
