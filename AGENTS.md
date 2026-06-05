@@ -21,6 +21,9 @@ Prefer changes inside the existing layer for each feature rather than mixing HTT
 - `make backend-run`: start the API locally on `:8080`.
 - `go test ./...` from `backend/`: run the Go test suite.
 - `make test-integration`: run the Postgres repository integration test path against the test database.
+- `go run ./cmd/audio-worker -once` from `backend/`: process one queued TTS audio batch locally when audio env vars are configured.
+- `go run ./cmd/backfill-audio -dry-run -limit 100` from `backend/`: inspect missing-audio cards without writing jobs; omit `-dry-run` to enqueue/attach.
+- `go run ./cmd/fixture-data` from `backend/`: seed local development fixture data. This command is for development only and is intentionally not included in the production Docker image.
 - `npm run dev:web` from the repo root: start the web app through the workspace.
 - `npm run build:web` from the repo root: create the production web bundle.
 - `npm run build:extension` from the repo root: build the Chrome extension into `apps/chrome-extension/dist`.
@@ -39,6 +42,17 @@ Do not edit generated output in `dist/`, packaged release output in `release/`, 
 Chrome extension popup documents are short-lived. Keep long-running queue work such as auto-fill and import in `apps/chrome-extension/src/background.ts`, persist progress in `chrome.storage.local`, and have `popup.tsx` trigger it through runtime messages so closing the popup does not cancel the operation.
 
 Production magic-link auth is intentionally strict: normal users get generic, throttled responses, while allowlisted `MAGIC_LINK_DEBUG_EMAILS` such as `tester@example.com` receive a fresh API-only token/link on every request and skip SES email delivery. Preserve that split across web, iOS, and Chrome extension clients.
+
+## Product Implementation Conventions
+New vocabulary creation and term updates may create TTS audio work. Audio metadata lives in Postgres (`vocab_audios`, `vocab_audio_jobs`), MP3 bytes live in S3, and the S3 `storage_key` is the source of truth. Do not store MP3 binary data in Postgres or persist public audio URLs as source data. Generate playable URLs dynamically through the API presign path or from `TTS_AUDIO_PUBLIC_BASE_URL` when a public/CDN base is configured. Audio is global across users: identical provider/model/voice/speed/output-format/input-hash combinations should reuse one ready audio record. Keep `speed` in the schema/hash and use `1.00` for the current implementation.
+
+The audio flow is intentionally asynchronous. Creating or updating a vocabulary item should return the card with audio status such as `processing` when a job is queued; the worker generates OpenAI TTS, uploads to S3, then marks audio ready and attaches it. Failures should stay on the job path with capped retries and must not leave inconsistent vocab/audio records. The backfill command should be used for existing production words; lazy play-button generation is not the default behavior.
+
+Bulk import is the default Add experience on both web and iOS. Preserve draft text across refreshes/app exits and append iOS shared words into the bulk import textarea, not a separate queue UI. The iOS Bulk Import page should visually follow the web structure: one main form panel, `Paste your words` label with a compact GPT auto-complete pill, format hint, hidden preview when empty, compact native-swipe preview cards, inline errors, and the import action inside the same panel.
+
+Review-mode UI should stay consistent across web and iOS. Review cards are centered when they fit, but the review screen must allow vertical scrolling when the content exceeds the viewport. The `Next word` / `Show summary` action should remain sticky after an answer is selected. Use icon-only circular audio play buttons beside terms where audio is ready.
+
+Wrong-answer review is session-only and appears on the result page only when the current round has wrong selections. Show a compact centered `Review these again` heading, then cards containing the original word, Chinese, English explanation, and the option the user chose. If there is only one wrong card, render it as a static card rather than a slider. For multiple cards, use the existing horizontal card slider pattern. Visually separate the selected explanation from the selected word/Chinese source, for example with spacing, color, or a small tinted pill.
 
 ## Deployment Workflow
 Production deployment is automated in `.github/workflows/ci.yml` and documented in `docs/deployment.md`.
