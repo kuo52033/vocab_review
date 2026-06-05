@@ -6,6 +6,12 @@ import (
 	"vocabreview/backend/internal/service"
 )
 
+func (s *Server) registerCaptureRoutes() {
+	s.handleWithAuthenticaed("POST /captures", s.handleCapture)
+	s.handleWithAuthenticaed("POST /devices/apns-token", s.handleDeviceToken)
+	s.handleWithAuthenticaed("GET /notifications/jobs", s.handleNotificationJobs)
+}
+
 func (s *Server) handleCapture(w http.ResponseWriter, r *http.Request) {
 	var req service.CaptureInput
 	if err := decodeJSON(r, &req); err != nil {

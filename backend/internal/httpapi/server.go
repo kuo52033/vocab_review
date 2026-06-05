@@ -27,25 +27,18 @@ func (s *Server) Handler() http.Handler {
 	return withRequestLogging(s.logger, withCORS(s.mux))
 }
 
+func (s *Server) handle(pattern string, handler http.HandlerFunc) {
+	s.mux.HandleFunc(pattern, handler)
+}
+
+func (s *Server) handleWithAuthenticaed(pattern string, handler http.HandlerFunc) {
+	s.mux.Handle(pattern, s.requireAuth(handler))
+}
+
 func (s *Server) routes() {
-	s.mux.HandleFunc("GET /healthz", s.handleHealth)
-
-	s.mux.HandleFunc("POST /auth/magic-link", s.handleMagicLink)
-	s.mux.HandleFunc("POST /auth/verify", s.handleVerify)
-
-	s.mux.Handle("GET /vocab", s.requireAuth(http.HandlerFunc(s.handleListVocab)))
-	s.mux.Handle("POST /vocab/autocomplete", s.requireAuth(http.HandlerFunc(s.handleAutocompleteVocab)))
-	s.mux.Handle("POST /vocab", s.requireAuth(http.HandlerFunc(s.handleCreateVocab)))
-	s.mux.Handle("GET /vocab/{id}/audio-url", s.requireAuth(http.HandlerFunc(s.handleVocabAudioURL)))
-	s.mux.Handle("PATCH /vocab/", s.requireAuth(http.HandlerFunc(s.handleUpdateVocab)))
-	s.mux.Handle("DELETE /vocab/", s.requireAuth(http.HandlerFunc(s.handleDeleteVocab)))
-
-	s.mux.Handle("GET /reviews/due", s.requireAuth(http.HandlerFunc(s.handleDueCards)))
-	s.mux.Handle("GET /reviews/history", s.requireAuth(http.HandlerFunc(s.handleReviewHistory)))
-	s.mux.Handle("GET /reviews/stats", s.requireAuth(http.HandlerFunc(s.handleReviewStats)))
-	s.mux.Handle("POST /reviews/", s.requireAuth(http.HandlerFunc(s.handleGradeReview)))
-
-	s.mux.Handle("POST /captures", s.requireAuth(http.HandlerFunc(s.handleCapture)))
-	s.mux.Handle("POST /devices/apns-token", s.requireAuth(http.HandlerFunc(s.handleDeviceToken)))
-	s.mux.Handle("GET /notifications/jobs", s.requireAuth(http.HandlerFunc(s.handleNotificationJobs)))
+	s.handle("GET /healthz", s.handleHealth)
+	s.registerAuthRoutes()
+	s.registerVocabRoutes()
+	s.registerReviewRoutes()
+	s.registerCaptureRoutes()
 }

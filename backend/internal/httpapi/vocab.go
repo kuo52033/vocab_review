@@ -10,6 +10,15 @@ import (
 	"vocabreview/backend/internal/service/enrichment"
 )
 
+func (s *Server) registerVocabRoutes() {
+	s.handleWithAuthenticaed("GET /vocab", s.handleListVocab)
+	s.handleWithAuthenticaed("POST /vocab/autocomplete", s.handleAutocompleteVocab)
+	s.handleWithAuthenticaed("POST /vocab", s.handleCreateVocab)
+	s.handleWithAuthenticaed("GET /vocab/{id}/audio-url", s.handleVocabAudioURL)
+	s.handleWithAuthenticaed("PATCH /vocab/", s.handleUpdateVocab)
+	s.handleWithAuthenticaed("DELETE /vocab/", s.handleDeleteVocab)
+}
+
 func (s *Server) handleListVocab(w http.ResponseWriter, r *http.Request) {
 	page, err := parsePageQuery(r)
 	if err != nil {
