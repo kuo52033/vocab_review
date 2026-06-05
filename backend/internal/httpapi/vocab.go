@@ -11,12 +11,12 @@ import (
 )
 
 func (s *Server) registerVocabRoutes() {
-	s.handleWithAuthenticaed("GET /vocab", s.handleListVocab)
-	s.handleWithAuthenticaed("POST /vocab/autocomplete", s.handleAutocompleteVocab)
-	s.handleWithAuthenticaed("POST /vocab", s.handleCreateVocab)
-	s.handleWithAuthenticaed("GET /vocab/{id}/audio-url", s.handleVocabAudioURL)
-	s.handleWithAuthenticaed("PATCH /vocab/", s.handleUpdateVocab)
-	s.handleWithAuthenticaed("DELETE /vocab/", s.handleDeleteVocab)
+	s.handleAuthenticated("GET /vocab", s.handleListVocab)
+	s.handleAuthenticated("POST /vocab/autocomplete", s.handleAutocompleteVocab)
+	s.handleAuthenticated("POST /vocab", s.handleCreateVocab)
+	s.handleAuthenticated("GET /vocab/{id}/audio-url", s.handleVocabAudioURL)
+	s.handleAuthenticated("PATCH /vocab/", s.handleUpdateVocab)
+	s.handleAuthenticated("DELETE /vocab/", s.handleDeleteVocab)
 }
 
 func (s *Server) handleListVocab(w http.ResponseWriter, r *http.Request) {

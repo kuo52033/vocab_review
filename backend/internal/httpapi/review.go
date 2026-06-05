@@ -9,10 +9,10 @@ import (
 )
 
 func (s *Server) registerReviewRoutes() {
-	s.handleWithAuthenticaed("GET /reviews/due", s.handleDueCards)
-	s.handleWithAuthenticaed("GET /reviews/history", s.handleReviewHistory)
-	s.handleWithAuthenticaed("GET /reviews/stats", s.handleReviewStats)
-	s.handleWithAuthenticaed("POST /reviews/", s.handleGradeReview)
+	s.handleAuthenticated("GET /reviews/due", s.handleDueCards)
+	s.handleAuthenticated("GET /reviews/history", s.handleReviewHistory)
+	s.handleAuthenticated("GET /reviews/stats", s.handleReviewStats)
+	s.handleAuthenticated("POST /reviews/", s.handleGradeReview)
 }
 
 func (s *Server) handleDueCards(w http.ResponseWriter, r *http.Request) {

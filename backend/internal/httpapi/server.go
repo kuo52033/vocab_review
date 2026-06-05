@@ -31,7 +31,7 @@ func (s *Server) handle(pattern string, handler http.HandlerFunc) {
 	s.mux.HandleFunc(pattern, handler)
 }
 
-func (s *Server) handleWithAuthenticaed(pattern string, handler http.HandlerFunc) {
+func (s *Server) handleAuthenticated(pattern string, handler http.HandlerFunc) {
 	s.mux.Handle(pattern, s.requireAuth(handler))
 }
 
