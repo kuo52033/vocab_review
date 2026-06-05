@@ -8,6 +8,13 @@ import (
 	"vocabreview/backend/internal/service"
 )
 
+func (s *Server) registerReviewRoutes() {
+	s.handleAuthenticated("GET /reviews/due", s.handleDueCards)
+	s.handleAuthenticated("GET /reviews/history", s.handleReviewHistory)
+	s.handleAuthenticated("GET /reviews/stats", s.handleReviewStats)
+	s.handleAuthenticated("POST /reviews/", s.handleGradeReview)
+}
+
 func (s *Server) handleDueCards(w http.ResponseWriter, r *http.Request) {
 	items, err := s.app.DueCards(r.Context(), userIDFromContext(r.Context()))
 	if err != nil {

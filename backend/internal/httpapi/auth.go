@@ -4,6 +4,11 @@ import (
 	"net/http"
 )
 
+func (s *Server) registerAuthRoutes() {
+	s.handle("POST /auth/magic-link", s.handleMagicLink)
+	s.handle("POST /auth/verify", s.handleVerify)
+}
+
 func (s *Server) handleMagicLink(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Email   string `json:"email"`
