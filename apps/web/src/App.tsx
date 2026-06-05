@@ -1,4 +1,4 @@
-import { CSSProperties, FormEvent, MouseEvent, useEffect, useRef, useState } from "react";
+import { CSSProperties, FormEvent, MouseEvent, PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import {
   autocompleteVocab,
   AutocompleteItem,
@@ -59,6 +59,16 @@ type SessionSummary = {
   correct: number;
   wrong: number;
   lastNextDue?: string;
+  wrongReviews: WrongReviewItem[];
+};
+type WrongReviewItem = {
+  id: string;
+  term: string;
+  meaning: string;
+  chinese: string;
+  selectedAnswer: string;
+  selectedTerm: string;
+  selectedChinese: string;
 };
 type QuizOption = {
   id: string;
@@ -77,6 +87,13 @@ type ParsedImportCard = {
   example_sentence: string;
   part_of_speech: string;
   error?: string;
+};
+type DragScrollHandlers = {
+  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onClickCapture: (event: MouseEvent<HTMLDivElement>) => void;
 };
 
 const allowedPartsOfSpeech = new Set([
@@ -134,6 +151,123 @@ function storeBulkImportDraft(value: string) {
   } catch {
     // Ignore storage failures so typing in the import box still works.
   }
+}
+
+function useDragScroll(onScrollStateChange: () => void): { isDragging: boolean; dragScrollHandlers: DragScrollHandlers } {
+  const glideFrameRef = useRef(0);
+  const dragStateRef = useRef({
+    pointerID: null as number | null,
+    startX: 0,
+    startScrollLeft: 0,
+    lastX: 0,
+    lastTime: 0,
+    velocity: 0,
+    pendingScrollLeft: 0,
+    frameID: 0,
+    isDragging: false,
+    suppressClick: false
+  });
+  const [isDragging, setIsDragging] = useState(false);
+
+  function cancelGlide() {
+    if (!glideFrameRef.current) return;
+    window.cancelAnimationFrame(glideFrameRef.current);
+    glideFrameRef.current = 0;
+  }
+
+  function scheduleScrollUpdate(scroller: HTMLDivElement, nextScrollLeft: number) {
+    const state = dragStateRef.current;
+    state.pendingScrollLeft = nextScrollLeft;
+    if (state.frameID) return;
+    state.frameID = window.requestAnimationFrame(() => {
+      state.frameID = 0;
+      scroller.scrollLeft = state.pendingScrollLeft;
+      onScrollStateChange();
+    });
+  }
+
+  function startGlide(scroller: HTMLDivElement, initialVelocity: number) {
+    cancelGlide();
+    let velocity = Math.max(-1.8, Math.min(1.8, initialVelocity));
+    if (Math.abs(velocity) < 0.12) return;
+
+    let lastTime = performance.now();
+    const glide = (time: number) => {
+      const elapsed = Math.min(time - lastTime, 32);
+      lastTime = time;
+      scroller.scrollLeft -= velocity * elapsed;
+      onScrollStateChange();
+      velocity *= 0.9;
+
+      if (Math.abs(velocity) < 0.05) {
+        glideFrameRef.current = 0;
+        return;
+      }
+      glideFrameRef.current = window.requestAnimationFrame(glide);
+    };
+    glideFrameRef.current = window.requestAnimationFrame(glide);
+  }
+
+  function finishDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const state = dragStateRef.current;
+    if (state.pointerID !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    state.pointerID = null;
+    state.isDragging = false;
+    setIsDragging(false);
+    startGlide(event.currentTarget, state.velocity);
+  }
+
+  const dragScrollHandlers: DragScrollHandlers = {
+    onPointerDown(event) {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      cancelGlide();
+      dragStateRef.current = {
+        pointerID: event.pointerId,
+        startX: event.clientX,
+        startScrollLeft: event.currentTarget.scrollLeft,
+        lastX: event.clientX,
+        lastTime: performance.now(),
+        velocity: 0,
+        pendingScrollLeft: event.currentTarget.scrollLeft,
+        frameID: 0,
+        isDragging: false,
+        suppressClick: false
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setIsDragging(true);
+    },
+    onPointerMove(event) {
+      const state = dragStateRef.current;
+      if (state.pointerID !== event.pointerId) return;
+      const deltaX = event.clientX - state.startX;
+      if (Math.abs(deltaX) > 6) {
+        state.isDragging = true;
+        state.suppressClick = true;
+      }
+      if (!state.isDragging) return;
+      event.preventDefault();
+      const now = performance.now();
+      const elapsed = Math.max(now - state.lastTime, 1);
+      state.velocity = (event.clientX - state.lastX) / elapsed;
+      state.lastX = event.clientX;
+      state.lastTime = now;
+      scheduleScrollUpdate(event.currentTarget, state.startScrollLeft - deltaX);
+    },
+    onPointerUp: finishDrag,
+    onPointerCancel: finishDrag,
+    onClickCapture(event) {
+      const state = dragStateRef.current;
+      if (!state.suppressClick) return;
+      event.preventDefault();
+      event.stopPropagation();
+      state.suppressClick = false;
+    }
+  };
+
+  return { isDragging, dragScrollHandlers };
 }
 
 function draftFromItem(item: VocabItem): CardDraft {
@@ -346,6 +480,7 @@ export function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const termInputRef = useRef<HTMLInputElement>(null);
   const importPreviewRef = useRef<HTMLDivElement>(null);
+  const wrongReviewRef = useRef<HTMLDivElement>(null);
   const refreshRequestIDRef = useRef(0);
   const [auth, setAuth] = useState<AuthState>({ email: "", token: localStorage.getItem("session_token") ?? "" });
   const [vocab, setVocab] = useState<VocabWithState[]>([]);
@@ -369,6 +504,7 @@ export function App() {
   const [sessionIndex, setSessionIndex] = useState(0);
   const [sessionCorrectCount, setSessionCorrectCount] = useState(0);
   const [sessionWrongCount, setSessionWrongCount] = useState(0);
+  const [sessionWrongReviews, setSessionWrongReviews] = useState<WrongReviewItem[]>([]);
   const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
   const [selectedOptionID, setSelectedOptionID] = useState("");
   const [pendingNextDue, setPendingNextDue] = useState("");
@@ -395,6 +531,8 @@ export function App() {
   });
   const [canScrollPreviewLeft, setCanScrollPreviewLeft] = useState(false);
   const [canScrollPreviewRight, setCanScrollPreviewRight] = useState(false);
+  const [canScrollWrongReviewLeft, setCanScrollWrongReviewLeft] = useState(false);
+  const [canScrollWrongReviewRight, setCanScrollWrongReviewRight] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -469,6 +607,37 @@ export function App() {
     });
   }
 
+  function updateWrongReviewScrollState() {
+    const scroller = wrongReviewRef.current;
+    if (!scroller) {
+      setCanScrollWrongReviewLeft(false);
+      setCanScrollWrongReviewRight(false);
+      return;
+    }
+    const edgeTolerance = 24;
+    const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
+    setCanScrollWrongReviewLeft(scroller.scrollLeft > edgeTolerance);
+    setCanScrollWrongReviewRight(maxScrollLeft - scroller.scrollLeft > edgeTolerance);
+  }
+
+  function scrollWrongReview(direction: "left" | "right") {
+    const scroller = wrongReviewRef.current;
+    if (!scroller) return;
+    scroller.scrollBy({
+      left: direction === "right" ? scroller.clientWidth * 0.82 : -scroller.clientWidth * 0.82,
+      behavior: "smooth"
+    });
+  }
+
+  const {
+    isDragging: isImportPreviewDragging,
+    dragScrollHandlers: importPreviewDragHandlers
+  } = useDragScroll(updateImportPreviewScrollState);
+  const {
+    isDragging: isWrongReviewDragging,
+    dragScrollHandlers: wrongReviewDragHandlers
+  } = useDragScroll(updateWrongReviewScrollState);
+
   useEffect(() => {
     if (addMode !== "bulk") return;
     const frame = window.requestAnimationFrame(updateImportPreviewScrollState);
@@ -490,6 +659,34 @@ export function App() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [addMode, parsedImportCards.length]);
+
+  useEffect(() => {
+    const wrongCount = sessionSummary?.wrongReviews.length ?? 0;
+    if (wrongCount === 0) {
+      setCanScrollWrongReviewLeft(false);
+      setCanScrollWrongReviewRight(false);
+      return;
+    }
+    const frame = window.requestAnimationFrame(updateWrongReviewScrollState);
+    window.addEventListener("resize", updateWrongReviewScrollState);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updateWrongReviewScrollState);
+    };
+  }, [sessionSummary?.wrongReviews.length]);
+
+  useEffect(() => {
+    const wrongCount = sessionSummary?.wrongReviews.length ?? 0;
+    if (wrongCount === 0) return;
+    const frame = window.requestAnimationFrame(() => {
+      const scroller = wrongReviewRef.current;
+      if (scroller) {
+        scroller.scrollLeft = 0;
+      }
+      updateWrongReviewScrollState();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [sessionSummary?.wrongReviews.length]);
 
   async function refresh(page = libraryPage, searchQuery = normalizedQuery) {
     const requestID = refreshRequestIDRef.current + 1;
@@ -541,6 +738,7 @@ export function App() {
     setSessionIndex(0);
     setSessionCorrectCount(0);
     setSessionWrongCount(0);
+    setSessionWrongReviews([]);
     setSessionSummary(null);
     setSelectedOptionID("");
     setPendingNextDue("");
@@ -867,6 +1065,7 @@ export function App() {
     setSessionIndex(0);
     setSessionCorrectCount(0);
     setSessionWrongCount(0);
+    setSessionWrongReviews([]);
     setSelectedOptionID("");
     setPendingNextDue("");
   }
@@ -889,6 +1088,20 @@ export function App() {
       const wrong = sessionWrongCount + (option.isCorrect ? 0 : 1);
       setSessionCorrectCount(correct);
       setSessionWrongCount(wrong);
+      if (!option.isCorrect) {
+        setSessionWrongReviews((current) => [
+          ...current,
+          {
+            id: `${currentQuizCard.card.item.id}-${reviewed}`,
+            term: currentQuizCard.card.item.term,
+            meaning: currentQuizCard.card.item.meaning,
+            chinese: currentQuizCard.card.item.chinese,
+            selectedAnswer: option.text,
+            selectedTerm: option.item.term,
+            selectedChinese: option.item.chinese
+          }
+        ]);
+      }
       await refresh();
       setPendingNextDue(response.state.next_due_at);
       setError("");
@@ -911,7 +1124,8 @@ export function App() {
         reviewed,
         correct,
         wrong,
-        lastNextDue
+        lastNextDue,
+        wrongReviews: sessionWrongReviews
       });
       endReviewSession();
       return;
@@ -1076,87 +1290,91 @@ export function App() {
           <section className="review-dashboard page-panel">
             {sessionActive ? (
               <article className="session-card">
-                <div className="session-topline">
-                  <span>
-                    Card {sessionIndex + 1} of {sessionDeck.length}
-                  </span>
-                  <button type="button" className="ghost-button compact-button" onClick={endReviewSession} disabled={isGrading}>
-                    End
-                  </button>
-                </div>
-                <div className="session-progress" aria-label={`${sessionProgress}% complete`}>
-                  <span style={{ width: `${sessionProgress}%` }} />
-                </div>
-                <div className="session-prompt" key={`prompt-${currentQuizCard.card.item.id}`}>
-                  <p className="eyebrow">{partOfSpeechLabel(currentQuizCard.card.item)}</p>
-                  <div className="session-term-line">
-                    <h3>{currentQuizCard.card.item.term}</h3>
-                    <AudioPlayButton item={currentQuizCard.card.item} isPlaying={playingAudioID === currentQuizCard.card.item.id} onPlay={handlePlayAudio} />
+                <div className="session-scroll-area">
+                  <div className="session-topline">
+                    <span>
+                      Card {sessionIndex + 1} of {sessionDeck.length}
+                    </span>
+                    <button type="button" className="ghost-button compact-button" onClick={endReviewSession} disabled={isGrading}>
+                      End
+                    </button>
                   </div>
-                </div>
-                <div className="answer-options" aria-label="Meaning choices" key={`options-${currentQuizCard.card.item.id}`}>
-                  {currentQuizCard.options.map((option, index) => {
-                    const isSelected = selectedOptionID === option.id;
-                    const showCorrect = Boolean(selectedOptionID) && option.isCorrect;
-                    const showWrong = isSelected && !option.isCorrect;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        className={[
-                          "answer-option",
-                          isSelected ? "selected" : "",
-                          showCorrect ? "correct" : "",
-                          showWrong ? "wrong" : ""
-                        ].filter(Boolean).join(" ")}
-                        onClick={() => handleQuizAnswer(option)}
-                        disabled={Boolean(selectedOptionID) || isGrading}
-                      >
-                        <span>{String.fromCharCode(65 + index)}</span>
-                        <div className="answer-option-copy">
-                          <strong>{option.text}</strong>
-                          {showWrong ? (
-                            <small>
-                              {option.item.term}
-                              {option.item.chinese.trim() ? ` · ${option.item.chinese.trim()}` : ""}
-                            </small>
-                          ) : null}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-                {selectedOptionID ? (
-                  <div className={`quiz-result ${currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? "correct" : "wrong"}`}>
-                    <div className="quiz-result-badge" aria-hidden="true">
-                      {currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? "✓" : "!"}
+                  <div className="session-progress" aria-label={`${sessionProgress}% complete`}>
+                    <span style={{ width: `${sessionProgress}%` }} />
+                  </div>
+                  <div className="session-prompt" key={`prompt-${currentQuizCard.card.item.id}`}>
+                    <p className="eyebrow">{partOfSpeechLabel(currentQuizCard.card.item)}</p>
+                    <div className="session-term-line">
+                      <h3>{currentQuizCard.card.item.term}</h3>
+                      <AudioPlayButton item={currentQuizCard.card.item} isPlaying={playingAudioID === currentQuizCard.card.item.id} onPlay={handlePlayAudio} />
                     </div>
-                    <div>
-                      <strong>
-                        {currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? "Correct" : "Review again"}
-                      </strong>
-                      {currentQuizCard.card.item.chinese.trim() ? (
-                        <span>{currentQuizCard.card.item.chinese}</span>
-                      ) : null}
-                      {currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? (
-                        currentQuizCard.card.item.example_sentence.trim() ? (
-                          <small>{currentQuizCard.card.item.example_sentence}</small>
-                        ) : null
-                      ) : (
-                        <>
-                          <small>Correct answer: {answerText(currentQuizCard.card.item)}</small>
-                          {currentQuizCard.card.item.example_sentence.trim() ? (
+                  </div>
+                  <div className="answer-options" aria-label="Meaning choices" key={`options-${currentQuizCard.card.item.id}`}>
+                    {currentQuizCard.options.map((option, index) => {
+                      const isSelected = selectedOptionID === option.id;
+                      const showCorrect = Boolean(selectedOptionID) && option.isCorrect;
+                      const showWrong = isSelected && !option.isCorrect;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          className={[
+                            "answer-option",
+                            isSelected ? "selected" : "",
+                            showCorrect ? "correct" : "",
+                            showWrong ? "wrong" : ""
+                          ].filter(Boolean).join(" ")}
+                          onClick={() => handleQuizAnswer(option)}
+                          disabled={Boolean(selectedOptionID) || isGrading}
+                        >
+                          <span>{String.fromCharCode(65 + index)}</span>
+                          <div className="answer-option-copy">
+                            <strong>{option.text}</strong>
+                            {showWrong ? (
+                              <small>
+                                {option.item.term}
+                                {option.item.chinese.trim() ? ` · ${option.item.chinese.trim()}` : ""}
+                              </small>
+                            ) : null}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selectedOptionID ? (
+                    <div className={`quiz-result ${currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? "correct" : "wrong"}`}>
+                      <div className="quiz-result-badge" aria-hidden="true">
+                        {currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? "✓" : "!"}
+                      </div>
+                      <div>
+                        <strong>
+                          {currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? "Correct" : "Review again"}
+                        </strong>
+                        {currentQuizCard.card.item.chinese.trim() ? (
+                          <span>{currentQuizCard.card.item.chinese}</span>
+                        ) : null}
+                        {currentQuizCard.options.find((option) => option.id === selectedOptionID)?.isCorrect ? (
+                          currentQuizCard.card.item.example_sentence.trim() ? (
                             <small>{currentQuizCard.card.item.example_sentence}</small>
-                          ) : null}
-                        </>
-                      )}
+                          ) : null
+                        ) : (
+                          <>
+                            <small>Correct answer: {answerText(currentQuizCard.card.item)}</small>
+                            {currentQuizCard.card.item.example_sentence.trim() ? (
+                              <small>{currentQuizCard.card.item.example_sentence}</small>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ) : null}
+                  ) : null}
+                </div>
                 {selectedOptionID ? (
-                  <button type="button" className="next-card-button" onClick={advanceQuizCard} disabled={isGrading}>
-                    {sessionIndex + 1 >= sessionDeck.length ? "Show summary" : "Next word"}
-                  </button>
+                  <div className="session-sticky-action">
+                    <button type="button" className="next-card-button" onClick={advanceQuizCard} disabled={isGrading}>
+                      {sessionIndex + 1 >= sessionDeck.length ? "Show summary" : "Next word"}
+                    </button>
+                  </div>
                 ) : null}
               </article>
             ) : sessionSummary ? (
@@ -1194,8 +1412,98 @@ export function App() {
                   </article>
                 </div>
 
-                {sessionSummary.lastNextDue ? (
-                  <p className="review-result-return">Last card returns {formatDate(sessionSummary.lastNextDue)}.</p>
+                {sessionSummary.wrongReviews.length > 0 ? (
+                  <section className="wrong-review-list" aria-label="Wrong words from this review">
+                    <div className="wrong-review-heading">
+                      <h2>Review these again</h2>
+                    </div>
+                    {sessionSummary.wrongReviews.length === 1 ? (
+                      <div className="wrong-review-single">
+                        {sessionSummary.wrongReviews.map((item) => (
+                          <article key={item.id} className="wrong-review-card">
+                            <div>
+                              <h3>{item.term}</h3>
+                              {item.chinese.trim() ? <p className="wrong-review-chinese">{item.chinese}</p> : null}
+                            </div>
+                            <dl>
+                              <div>
+                                <dt>English explanation</dt>
+                                <dd>{item.meaning}</dd>
+                              </div>
+                              <div>
+                                <dt>You chose</dt>
+                                <dd className="wrong-review-choice">
+                                  <span className="wrong-review-choice-answer">{item.selectedAnswer}</span>
+                                  {item.selectedTerm.trim() ? (
+                                    <small className="wrong-review-choice-source">
+                                      {item.selectedTerm}
+                                      {item.selectedChinese.trim() ? ` · ${item.selectedChinese.trim()}` : ""}
+                                    </small>
+                                  ) : null}
+                                </dd>
+                              </div>
+                            </dl>
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="wrong-review-frame">
+                        {canScrollWrongReviewLeft ? (
+                          <button
+                            type="button"
+                            className="preview-arrow preview-arrow-left"
+                            aria-label="Slide wrong word review left"
+                            onClick={() => scrollWrongReview("left")}
+                          >
+                            <span aria-hidden="true">‹</span>
+                          </button>
+                        ) : null}
+                        <div
+                          className={`wrong-review-cards${isWrongReviewDragging ? " is-dragging" : ""}`}
+                          ref={wrongReviewRef}
+                          onScroll={updateWrongReviewScrollState}
+                          {...wrongReviewDragHandlers}
+                        >
+                          {sessionSummary.wrongReviews.map((item) => (
+                            <article key={item.id} className="wrong-review-card">
+                              <div>
+                                <h3>{item.term}</h3>
+                                {item.chinese.trim() ? <p className="wrong-review-chinese">{item.chinese}</p> : null}
+                              </div>
+                              <dl>
+                                <div>
+                                  <dt>English explanation</dt>
+                                  <dd>{item.meaning}</dd>
+                                </div>
+                                <div>
+                                  <dt>You chose</dt>
+                                  <dd className="wrong-review-choice">
+                                    <span className="wrong-review-choice-answer">{item.selectedAnswer}</span>
+                                    {item.selectedTerm.trim() ? (
+                                      <small className="wrong-review-choice-source">
+                                        {item.selectedTerm}
+                                        {item.selectedChinese.trim() ? ` · ${item.selectedChinese.trim()}` : ""}
+                                      </small>
+                                    ) : null}
+                                  </dd>
+                                </div>
+                              </dl>
+                            </article>
+                          ))}
+                        </div>
+                        {canScrollWrongReviewRight ? (
+                          <button
+                            type="button"
+                            className="preview-arrow preview-arrow-right"
+                            aria-label="Slide wrong word review right"
+                            onClick={() => scrollWrongReview("right")}
+                          >
+                            <span aria-hidden="true">›</span>
+                          </button>
+                        ) : null}
+                      </div>
+                    )}
+                  </section>
                 ) : null}
 
                 <button type="button" className="review-result-button" onClick={returnToReviewHome}>
@@ -1354,7 +1662,12 @@ export function App() {
                           <span aria-hidden="true">‹</span>
                         </button>
                       ) : null}
-                      <div className="import-preview" ref={importPreviewRef} onScroll={updateImportPreviewScrollState}>
+                      <div
+                        className={`import-preview${isImportPreviewDragging ? " is-dragging" : ""}`}
+                        ref={importPreviewRef}
+                        onScroll={updateImportPreviewScrollState}
+                        {...importPreviewDragHandlers}
+                      >
                         {parsedImportCards.slice(0, 12).map((card, index) => (
                           <article key={`${card.term}-${index}`} className="import-preview-card">
                             <strong>{card.term}</strong>

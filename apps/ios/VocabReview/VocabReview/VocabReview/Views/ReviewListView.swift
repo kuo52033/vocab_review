@@ -8,6 +8,7 @@ struct ReviewListView: View {
     @State private var selectedOptionID = ""
     @State private var correctCount = 0
     @State private var wrongCount = 0
+    @State private var wrongReviewItems: [WrongReviewItem] = []
     @State private var pendingNextDue = ""
     @State private var sessionSummary: ReviewSessionSummary?
     @State private var isStartingReview = false
@@ -94,36 +95,40 @@ struct ReviewListView: View {
             }
             let shouldScroll = focusedReviewContentHeight > availableHeight + 1 || hasOversizedOption
 
-            ScrollView {
-                VStack {
-                    quizCard(card)
-                        .id(card.card.item.id)
-                        .opacity(isAdvancingQuizCard ? 0 : 1)
-                        .scaleEffect(isAdvancingQuizCard ? 0.98 : 1)
-                        .offset(y: isAdvancingQuizCard ? 18 : 0)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    VStack {
+                        quizCard(card)
+                            .id(card.card.item.id)
+                            .opacity(isAdvancingQuizCard ? 0 : 1)
+                            .scaleEffect(isAdvancingQuizCard ? 0.98 : 1)
+                            .offset(y: isAdvancingQuizCard ? 18 : 0)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.top, focusedReviewTopPadding)
+                    .padding(.bottom, bottomPadding)
+                    .background {
+                        GeometryReader { contentProxy in
+                            Color.clear
+                                .preference(key: FocusedReviewContentHeightKey.self, value: contentProxy.size.height)
+                        }
+                    }
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: availableHeight,
+                        alignment: shouldScroll ? .top : .center
+                    )
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, focusedReviewTopPadding)
-                .padding(.bottom, bottomPadding)
-                .background {
-                    GeometryReader { contentProxy in
-                        Color.clear
-                            .preference(key: FocusedReviewContentHeightKey.self, value: contentProxy.size.height)
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize, axes: .vertical)
+                .onPreferenceChange(FocusedReviewContentHeightKey.self) { focusedReviewContentHeight = $0 }
+                .onChange(of: card.card.item.id) { _, newID in
+                    focusedReviewContentHeight = 0
+                    DispatchQueue.main.async {
+                        scrollProxy.scrollTo(newID, anchor: .top)
                     }
                 }
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: availableHeight,
-                    alignment: shouldScroll ? .top : .center
-                )
-            }
-            .scrollIndicators(.hidden)
-            .scrollBounceBehavior(.basedOnSize, axes: .vertical)
-            .scrollDisabled(!shouldScroll)
-            .onPreferenceChange(FocusedReviewContentHeightKey.self) { focusedReviewContentHeight = $0 }
-            .onChange(of: card.card.item.id) { _, _ in
-                focusedReviewContentHeight = 0
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if !selectedOptionID.isEmpty {
@@ -245,7 +250,7 @@ struct ReviewListView: View {
     private func finalReviewPage(_ summary: ReviewSessionSummary) -> some View {
         GeometryReader { proxy in
             ScrollView {
-                VStack(spacing: 46) {
+                VStack(spacing: 34) {
                     Spacer(minLength: max(proxy.size.height * 0.12, 72))
 
                     ReviewAccuracyRing(summary: summary)
@@ -254,6 +259,10 @@ struct ReviewListView: View {
                         .font(AppTheme.displayFont(size: 42, weight: .semibold))
                         .foregroundStyle(AppTheme.ink)
                         .multilineTextAlignment(.center)
+
+                    if !summary.wrongReviews.isEmpty {
+                        wrongReviewSection(summary.wrongReviews)
+                    }
 
                     Button {
                         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
@@ -274,6 +283,116 @@ struct ReviewListView: View {
             }
             .scrollIndicators(.hidden)
         }
+    }
+
+    private func wrongReviewSection(_ items: [WrongReviewItem]) -> some View {
+        VStack(alignment: .center, spacing: 14) {
+            Text("Review these again")
+                .font(AppTheme.displayFont(size: 24, weight: .semibold, relativeTo: .title2))
+                .foregroundStyle(AppTheme.ink)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+
+            if items.count == 1, let item = items.first {
+                wrongReviewCard(item)
+                    .frame(maxWidth: .infinity)
+            } else {
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 12) {
+                        ForEach(items) { item in
+                            wrongReviewCard(item)
+                                .containerRelativeFrame(.horizontal, count: 1, spacing: 12)
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollIndicators(.hidden)
+                .scrollTargetBehavior(.viewAligned)
+            }
+        }
+        .frame(maxWidth: 560, alignment: .center)
+    }
+
+    private func wrongReviewCard(_ item: WrongReviewItem) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.term)
+                    .font(AppTheme.displayFont(size: 34, weight: .semibold))
+                    .foregroundStyle(AppTheme.ink)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !item.chinese.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(item.chinese)
+                        .font(.callout.weight(.bold))
+                        .foregroundStyle(AppTheme.coral)
+                }
+            }
+
+            wrongReviewField("English explanation", item.meaning)
+            wrongReviewChoiceField(item)
+        }
+        .padding()
+        .frame(minHeight: 230, alignment: .topLeading)
+        .background(AppTheme.paper.opacity(0.9), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(AppTheme.danger.opacity(0.18), lineWidth: 1)
+        }
+        .shadow(color: AppTheme.shadow.opacity(0.08), radius: 14, x: 0, y: 8)
+    }
+
+    private func wrongReviewField(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption.weight(.bold))
+                .textCase(.uppercase)
+                .foregroundStyle(AppTheme.muted)
+            Text(value)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(AppTheme.ink)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func wrongReviewChoiceField(_ item: WrongReviewItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("You chose")
+                .font(.caption.weight(.bold))
+                .textCase(.uppercase)
+                .foregroundStyle(AppTheme.muted)
+
+            Text("\(item.selectedOptionLabel). \(item.selectedAnswer)")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(AppTheme.ink)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+
+            let source = selectedSourceLabel(for: item)
+            if !source.isEmpty {
+                Text(source)
+                    .font(.callout.weight(.bold))
+                    .foregroundStyle(AppTheme.coral)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(AppTheme.blush.opacity(0.58), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(AppTheme.coral.opacity(0.14), lineWidth: 1)
+                    }
+            }
+        }
+    }
+
+    private func selectedSourceLabel(for item: WrongReviewItem) -> String {
+        let selectedChinese = item.selectedChinese.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selectedTerm = item.selectedTerm.trimmingCharacters(in: .whitespacesAndNewlines)
+        if selectedTerm.isEmpty { return "" }
+        if selectedChinese.isEmpty { return selectedTerm }
+        return "\(selectedTerm) · \(selectedChinese)"
     }
 
     private func quizCard(_ quizCard: QuizCard) -> some View {
@@ -361,47 +480,55 @@ struct ReviewListView: View {
         let isSelected = selectedOptionID == option.id
         let showCorrect = !selectedOptionID.isEmpty && option.isCorrect
         let showWrong = isSelected && !option.isCorrect
+        let optionLabel = String(UnicodeScalar(65 + index)!)
 
-        return HStack(alignment: .top, spacing: 12) {
-            Text(String(UnicodeScalar(65 + index)!))
-                .font(.caption.weight(.bold))
-                .foregroundStyle(showCorrect ? AppTheme.paper : AppTheme.ink)
-                .frame(width: 28, height: 28)
-                .background {
-                    if showCorrect {
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [AppTheme.success, AppTheme.successDark],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
+        return Button {
+            guard selectedOptionID.isEmpty, !sessionStore.isGrading else { return }
+            Task { await selectAnswer(option, optionLabel: optionLabel) }
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Text(optionLabel)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(showCorrect ? AppTheme.paper : AppTheme.ink)
+                    .frame(width: 28, height: 28)
+                    .background {
+                        if showCorrect {
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [AppTheme.success, AppTheme.successDark],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
                                 )
-                            )
-                    } else {
-                        Circle()
-                            .fill(optionBadgeColor(showWrong: showWrong))
+                        } else {
+                            Circle()
+                                .fill(optionBadgeColor(showWrong: showWrong))
+                        }
+                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(option.text)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(nil)
+                        .foregroundStyle(AppTheme.ink)
+                    if showWrong {
+                        Text(wrongOptionSourceLabel(option.item))
+                            .font(.callout.weight(.bold))
+                            .foregroundStyle(AppTheme.coral)
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-            VStack(alignment: .leading, spacing: 6) {
-                Text(option.text)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(nil)
-                    .foregroundStyle(AppTheme.ink)
-                if showWrong {
-                    Text(wrongOptionSourceLabel(option.item))
-                        .font(.callout.weight(.bold))
-                        .foregroundStyle(AppTheme.coral)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
-            .layoutPriority(1)
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .buttonStyle(.plain)
+        .disabled(!selectedOptionID.isEmpty || sessionStore.isGrading)
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .background {
             let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -421,13 +548,9 @@ struct ReviewListView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(optionBorder(showCorrect: showCorrect, showWrong: showWrong), lineWidth: 1)
         }
-        .onTapGesture {
-            guard selectedOptionID.isEmpty, !sessionStore.isGrading else { return }
-            Task { await selectAnswer(option) }
-        }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("Option \(String(UnicodeScalar(65 + index)!)), \(option.text)")
+        .accessibilityLabel("Option \(optionLabel), \(option.text)")
         .scaleEffect(isSelected ? 0.985 : 1)
         .animation(.easeOut(duration: 0.16), value: selectedOptionID)
     }
@@ -561,11 +684,6 @@ struct ReviewListView: View {
                 summaryPill("\(summary.wrong) wrong")
             }
 
-            if let lastNextDue = summary.lastNextDue {
-                Text("Last card returns \(formattedDate(lastNextDue)).")
-                    .font(.caption)
-                    .readingMuted()
-            }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -642,6 +760,7 @@ struct ReviewListView: View {
             selectedOptionID = ""
             correctCount = 0
             wrongCount = 0
+            wrongReviewItems = []
             pendingNextDue = ""
             sessionSummary = nil
             isAdvancingQuizCard = false
@@ -649,7 +768,7 @@ struct ReviewListView: View {
         sessionStore.clearError()
     }
 
-    private func selectAnswer(_ option: QuizOption) async {
+    private func selectAnswer(_ option: QuizOption, optionLabel: String) async {
         guard let currentQuizCard, selectedOptionID.isEmpty else { return }
         selectedOptionID = option.id
         let grade = option.isCorrect ? "easy" : "again"
@@ -659,6 +778,20 @@ struct ReviewListView: View {
         }
         correctCount += option.isCorrect ? 1 : 0
         wrongCount += option.isCorrect ? 0 : 1
+        if !option.isCorrect {
+            wrongReviewItems.append(
+                WrongReviewItem(
+                    id: "\(currentQuizCard.card.item.id)-\(sessionIndex)",
+                    term: currentQuizCard.card.item.term,
+                    meaning: currentQuizCard.card.item.meaning,
+                    chinese: currentQuizCard.card.item.chinese,
+                    selectedAnswer: option.text,
+                    selectedOptionLabel: optionLabel,
+                    selectedTerm: option.item.term,
+                    selectedChinese: option.item.chinese
+                )
+            )
+        }
         pendingNextDue = nextDue
     }
 
@@ -672,7 +805,8 @@ struct ReviewListView: View {
                 reviewed: reviewed,
                 correct: correctCount,
                 wrong: wrongCount,
-                lastNextDue: pendingNextDue.isEmpty ? nil : pendingNextDue
+                lastNextDue: pendingNextDue.isEmpty ? nil : pendingNextDue,
+                wrongReviews: wrongReviewItems
             )
             endReviewSession()
             return
@@ -701,6 +835,7 @@ struct ReviewListView: View {
             sessionIndex = 0
             selectedOptionID = ""
             pendingNextDue = ""
+            wrongReviewItems = []
             isAdvancingQuizCard = false
         }
     }
@@ -730,6 +865,7 @@ private struct ReviewSessionSummary {
     let correct: Int
     let wrong: Int
     let lastNextDue: String?
+    let wrongReviews: [WrongReviewItem]
 
     var accuracy: Int {
         Int((Double(correct) / Double(max(reviewed, 1)) * 100).rounded())
@@ -751,6 +887,17 @@ private struct ReviewSessionSummary {
             return "Keep going! 💪"
         }
     }
+}
+
+private struct WrongReviewItem: Identifiable {
+    let id: String
+    let term: String
+    let meaning: String
+    let chinese: String
+    let selectedAnswer: String
+    let selectedOptionLabel: String
+    let selectedTerm: String
+    let selectedChinese: String
 }
 
 private struct FocusedReviewContentHeightKey: PreferenceKey {

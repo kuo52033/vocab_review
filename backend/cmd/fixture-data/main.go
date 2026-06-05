@@ -18,7 +18,7 @@ import (
 
 const (
 	fixtureUserID    = "usr_fixture"
-	fixtureEmail     = "fixture@example.com"
+	fixtureEmail     = "tim31422@gmail.com"
 	fixtureToken     = "fixture-dev-token"
 	devTokenSecret   = "development-token-hash-secret"
 	sessionIDMonths  = 6

@@ -114,6 +114,7 @@ a {
 .app-shell.is-review-focused {
   align-content: center;
   padding-top: 24px;
+  padding-bottom: 0;
 }
 
 .app-shell.is-review-focused .workspace {
@@ -124,7 +125,7 @@ a {
 .app-shell.is-review-focused .review-dashboard {
   align-content: center;
   min-height: calc(100vh - 114px);
-  padding: 0;
+  padding: 0 0 28px;
 }
 
 .app-shell.is-review-focused .session-card {
@@ -805,16 +806,159 @@ h3 {
   line-height: 1;
 }
 
-.review-result-stats span,
-.review-result-return {
+.review-result-stats span {
   color: var(--muted);
   font-family: var(--font-ui);
   font-size: 0.9rem;
   font-weight: 800;
 }
 
-.review-result-return {
+.wrong-review-list {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  width: min(100%, 720px);
+  text-align: left;
+}
+
+.wrong-review-heading {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.wrong-review-heading h2 {
   margin: 0;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  line-height: 1;
+}
+
+.wrong-review-single {
+  width: min(100%, 430px);
+}
+
+.wrong-review-single .wrong-review-card {
+  width: 100%;
+}
+
+.wrong-review-frame {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.wrong-review-cards {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 8px 12px;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.wrong-review-cards::-webkit-scrollbar {
+  display: none;
+}
+
+.wrong-review-cards.is-dragging {
+  cursor: grabbing;
+  scroll-behavior: auto;
+  scroll-snap-type: none;
+}
+
+.wrong-review-card {
+  flex: 0 0 clamp(260px, 74vw, 420px);
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  border: 1px solid rgba(128, 70, 72, 0.18);
+  border-radius: 18px;
+  padding: clamp(16px, 3vw, 22px);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 250, 0.98), rgba(255, 246, 241, 0.92)),
+    radial-gradient(circle at 92% 10%, rgba(128, 70, 72, 0.08), transparent 38%);
+  box-shadow: var(--shadow-soft);
+  scroll-snap-align: start;
+}
+
+.wrong-review-card h3 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 4vw, 2.45rem);
+  line-height: 1;
+}
+
+.wrong-review-chinese {
+  margin: 6px 0 0;
+  color: var(--wine);
+  font-family: var(--font-ui);
+  font-weight: 850;
+}
+
+.wrong-review-card dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.wrong-review-card dl div {
+  display: grid;
+  gap: 4px;
+}
+
+.wrong-review-card dt {
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.wrong-review-card dd {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.wrong-review-choice {
+  gap: 8px;
+}
+
+.wrong-review-choice-answer {
+  color: var(--ink);
+}
+
+.wrong-review-choice-source {
+  width: fit-content;
+  border: 1px solid rgba(128, 70, 72, 0.14);
+  border-radius: 12px;
+  padding: 7px 10px;
+  color: var(--wine);
+  background: rgba(255, 227, 225, 0.58);
+}
+
+.wrong-review-card dd small:not(.wrong-review-choice-source) {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
 }
 
 .review-result-button {
@@ -832,10 +976,31 @@ h3 {
   display: grid;
   gap: 20px;
   width: min(100%, 900px);
-  overflow: hidden;
+  overflow: visible;
   border-radius: 26px;
   padding: clamp(24px, 4vw, 46px);
   animation: surface-in 440ms var(--ease-polished) both;
+}
+
+.session-scroll-area {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 20px;
+  min-height: 0;
+}
+
+.session-sticky-action {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 calc(clamp(24px, 4vw, 46px) * -1) calc(clamp(24px, 4vw, 46px) * -1);
+  padding: 14px clamp(24px, 4vw, 46px) clamp(18px, 3vw, 28px);
+  background:
+    linear-gradient(180deg, rgba(255, 250, 240, 0), rgba(255, 250, 240, 0.94) 24%, rgba(255, 250, 240, 0.98)),
+    linear-gradient(135deg, rgba(255, 250, 240, 0.94), rgba(255, 227, 225, 0.72));
 }
 
 .session-card > * {
@@ -1439,10 +1604,19 @@ textarea {
   scroll-behavior: smooth;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
 }
 
 .import-preview::-webkit-scrollbar {
   display: none;
+}
+
+.import-preview.is-dragging {
+  cursor: grabbing;
+  scroll-behavior: auto;
+  scroll-snap-type: none;
 }
 
 .import-preview-card {

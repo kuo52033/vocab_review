@@ -65,7 +65,47 @@ struct BulkImportView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .center, spacing: 12) {
+                    Text("Paste your words")
+                        .font(AppTheme.uiFont(size: 15, weight: .bold, relativeTo: .subheadline))
+                        .foregroundStyle(AppTheme.ink)
+
+                    Spacer(minLength: 8)
+
+                    Button {
+                        Task { await autocompleteCards() }
+                    } label: {
+                        HStack(spacing: 7) {
+                            if sessionStore.isAutocompletingVocab {
+                                ProgressView()
+                                    .controlSize(.mini)
+                            } else {
+                                Circle()
+                                    .fill(AppTheme.paper)
+                                    .frame(width: 8, height: 8)
+                            }
+
+                            Text(sessionStore.isAutocompletingVocab ? "Working..." : "GPT Auto-complete")
+                                .lineLimit(1)
+                        }
+                        .font(AppTheme.uiFont(size: 12, weight: .bold, relativeTo: .caption))
+                        .foregroundStyle(AppTheme.paper)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 8)
+                        .background(
+                            AppTheme.coral.opacity(autocompleteDisabled ? 0.42 : 1),
+                            in: Capsule()
+                        )
+                        .overlay {
+                            Capsule()
+                                .stroke(AppTheme.lineStrong.opacity(autocompleteDisabled ? 0.24 : 0.7), lineWidth: 1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(autocompleteDisabled)
+                }
+
                 TextEditor(text: $rawText)
                     .frame(minHeight: 190)
                     .scrollContentBackground(.hidden)
@@ -79,100 +119,105 @@ struct BulkImportView: View {
                             .stroke(AppTheme.ink.opacity(0.08), lineWidth: 1)
                     }
 
-                Text("Examples: abandon - to leave behind, meticulous: very careful, take off")
+                Text("One card per line. Full format: word | definition | 中文 | example sentence | part_of_speech")
                     .font(.footnote)
                     .readingMuted()
+
+                previewSection
+
+                if !sessionStore.errorMessage.isEmpty {
+                    Text(sessionStore.errorMessage)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(AppTheme.danger)
+                }
+
+                Button {
+                    Task { await importCards() }
+                } label: {
+                    if sessionStore.isCreatingVocab {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Text("Import \(importCandidates.count) \(importCandidates.count == 1 ? "Card" : "Cards")")
+                    }
+                }
+                .readingPrimaryButton()
+                .disabled(sessionStore.isCreatingVocab || importCandidates.isEmpty)
             }
             .readingCard()
-
-            previewSection
-
-            Button {
-                Task { await importCards() }
-            } label: {
-                if sessionStore.isCreatingVocab {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                } else {
-                    Text("Import")
-                }
-            }
-            .readingPrimaryButton()
-            .disabled(sessionStore.isCreatingVocab || importCandidates.isEmpty)
-
-            if !sessionStore.errorMessage.isEmpty {
-                Text(sessionStore.errorMessage)
-                    .foregroundStyle(AppTheme.danger)
-                    .readingCard()
-            }
         }
+    }
+
+    private var autocompleteDisabled: Bool {
+        sessionStore.isAutocompletingVocab || sessionStore.isCreatingVocab || importCandidates.isEmpty
     }
 
     @ViewBuilder
     private var previewSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Preview")
-                    .font(.headline)
-                    .foregroundStyle(AppTheme.sageDark)
-                Spacer()
-                Text("\(importCandidates.count) \(importCandidates.count == 1 ? "card" : "cards")")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(AppTheme.muted)
-            }
+        if !importCandidates.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Preview")
+                        .font(AppTheme.uiFont(size: 16, weight: .bold, relativeTo: .headline))
+                        .foregroundStyle(AppTheme.sageDark)
+                    Spacer()
+                    Text("\(importCandidates.count) \(importCandidates.count == 1 ? "card" : "cards")")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(AppTheme.muted)
+                }
 
-            if importCandidates.isEmpty {
-                Text("Pasted or shared cards will appear here before import.")
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 12) {
+                        ForEach(Array(importCandidates.enumerated()), id: \.offset) { _, card in
+                            importPreviewCard(card)
+                        }
+                    }
+                    .scrollTargetLayout()
+                    .padding(.vertical, 4)
+                }
+                .scrollIndicators(.hidden)
+                .scrollTargetBehavior(.viewAligned)
+            }
+        }
+    }
+
+    private func importPreviewCard(_ card: VocabDraftInput) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(card.term)
+                .readingTerm()
+            if !card.partOfSpeech.isEmpty {
+                Text(card.partOfSpeech.replacingOccurrences(of: "_", with: " "))
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AppTheme.sageDark)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(AppTheme.blush.opacity(0.5), in: Capsule())
+            }
+            if card.meaning.isEmpty {
+                Text("Meaning can be added later.")
                     .readingMuted()
             } else {
-                ForEach(Array(importCandidates.enumerated()), id: \.offset) { _, card in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(card.term)
-                            .readingTerm()
-                        if card.meaning.isEmpty {
-                            Text("Meaning can be added later.")
-                                .readingMuted()
-                        } else {
-                            Text(card.meaning)
-                                .foregroundStyle(AppTheme.ink)
-                        }
-                        if !card.chinese.isEmpty {
-                            Text(card.chinese)
-                                .foregroundStyle(AppTheme.clay)
-                        }
-                        if !card.exampleSentence.isEmpty {
-                            Text(card.exampleSentence)
-                                .font(.footnote)
-                                .readingMuted()
-                        }
-                        if !card.partOfSpeech.isEmpty {
-                            Text(card.partOfSpeech.replacingOccurrences(of: "_", with: " "))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(AppTheme.sageDark)
-                        }
-                    }
-                    .padding(.vertical, 8)
-                    .overlay(alignment: .bottom) {
-                        Rectangle()
-                            .fill(AppTheme.ink.opacity(0.07))
-                            .frame(height: 1)
-                    }
-                }
+                Text(card.meaning)
+                    .foregroundStyle(AppTheme.ink)
             }
-
-            Button {
-                Task { await autocompleteCards() }
-            } label: {
-                if sessionStore.isAutocompletingVocab {
-                    ProgressView()
-                } else {
-                    Text("Auto-complete missing details")
-                }
+            if !card.chinese.isEmpty {
+                Text(card.chinese)
+                    .foregroundStyle(AppTheme.clay)
             }
-            .readingPrimaryButton()
-            .disabled(sessionStore.isAutocompletingVocab || sessionStore.isCreatingVocab || importCandidates.isEmpty)
+            if !card.exampleSentence.isEmpty {
+                Text(card.exampleSentence)
+                    .font(.footnote)
+                    .readingMuted()
+            }
         }
-        .readingCard()
+        .padding()
+        .frame(width: 228, alignment: .topLeading)
+        .frame(minHeight: 172, alignment: .topLeading)
+        .background(AppTheme.paper.opacity(0.86), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(AppTheme.coral.opacity(0.16), lineWidth: 1)
+        }
     }
 
     private func importCards() async {
