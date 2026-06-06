@@ -3,7 +3,6 @@ package httpapi
 import (
 	"errors"
 	"net/http"
-	"strings"
 
 	"vocabreview/backend/internal/domain"
 	"vocabreview/backend/internal/service"
@@ -15,8 +14,8 @@ func (s *Server) registerVocabRoutes() {
 	s.handleAuthenticated("POST /vocab/autocomplete", s.handleAutocompleteVocab)
 	s.handleAuthenticated("POST /vocab", s.handleCreateVocab)
 	s.handleAuthenticated("GET /vocab/{id}/audio-url", s.handleVocabAudioURL)
-	s.handleAuthenticated("PATCH /vocab/", s.handleUpdateVocab)
-	s.handleAuthenticated("DELETE /vocab/", s.handleDeleteVocab)
+	s.handleAuthenticated("PATCH /vocab/{id}", s.handleUpdateVocab)
+	s.handleAuthenticated("DELETE /vocab/{id}", s.handleDeleteVocab)
 }
 
 func (s *Server) handleListVocab(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +87,8 @@ func autocompleteVocabStatus(err error) int {
 }
 
 func (s *Server) handleUpdateVocab(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimPrefix(r.URL.Path, "/vocab/")
+	id := r.PathValue("id")
+
 	var req service.CreateVocabInput
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -130,7 +130,8 @@ func vocabAudioURLStatus(err error) int {
 }
 
 func (s *Server) handleDeleteVocab(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimPrefix(r.URL.Path, "/vocab/")
+	id := r.PathValue("id")
+
 	item, err := s.app.ArchiveVocab(r.Context(), userIDFromContext(r.Context()), id)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

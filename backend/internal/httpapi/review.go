@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"net/http"
-	"strings"
 
 	"vocabreview/backend/internal/domain"
 	"vocabreview/backend/internal/service"
@@ -12,7 +11,7 @@ func (s *Server) registerReviewRoutes() {
 	s.handleAuthenticated("GET /reviews/due", s.handleDueCards)
 	s.handleAuthenticated("GET /reviews/history", s.handleReviewHistory)
 	s.handleAuthenticated("GET /reviews/stats", s.handleReviewStats)
-	s.handleAuthenticated("POST /reviews/", s.handleGradeReview)
+	s.handleAuthenticated("POST /reviews/{id}/grade", s.handleGradeReview)
 }
 
 func (s *Server) handleDueCards(w http.ResponseWriter, r *http.Request) {
@@ -48,12 +47,8 @@ func (s *Server) handleReviewStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGradeReview(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/reviews/")
-	if !strings.HasSuffix(path, "/grade") {
-		writeError(w, http.StatusNotFound, "not found")
-		return
-	}
-	vocabID := strings.TrimSuffix(path, "/grade")
+	vocabID := r.PathValue("id")
+
 	var req struct {
 		Grade domain.ReviewGrade `json:"grade"`
 	}
