@@ -4,37 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"testing"
-	"time"
 
 	"vocabreview/backend/internal/clock"
 	"vocabreview/backend/internal/domain"
-	"vocabreview/backend/internal/repository"
 	"vocabreview/backend/internal/service"
 	"vocabreview/backend/internal/service/enrichment"
 )
 
 type autocompleteHTTPRepository struct {
-	repository.AppRepository
-}
-
-func (r autocompleteHTTPRepository) HealthCheck(context.Context) error { return nil }
-
-func (r autocompleteHTTPRepository) GetSessionUser(_ context.Context, token string) (domain.Session, domain.User, bool, error) {
-	if token == "" {
-		return domain.Session{}, domain.User{}, false, nil
-	}
-	return domain.Session{
-			TokenHash: token,
-			UserID:    "usr_test",
-			ExpiresAt: time.Now().Add(time.Hour),
-		}, domain.User{
-			ID:    "usr_test",
-			Email: "test@example.com",
-		}, true, nil
+	authenticatedHTTPRepository
 }
 
 type autocompleteHTTPEnricher struct {
@@ -55,7 +35,8 @@ func TestHandleAutocompleteVocabReturnsSuggestions(t *testing.T) {
 			PartOfSpeech:    domain.PartOfSpeechNoun,
 		}},
 	})
-	response := performAutocompleteRequest(handler, `{"items":[{"term":"serendipity"}]}`)
+	request := authenticatedRequest(http.MethodPost, "/vocab/autocomplete", bytes.NewBufferString(`{"items":[{"term":"serendipity"}]}`))
+	response := performRequest(handler, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status: got %d want %d body %s", response.Code, http.StatusOK, response.Body.String())
@@ -73,7 +54,8 @@ func TestHandleAutocompleteVocabReturnsSuggestions(t *testing.T) {
 
 func TestHandleAutocompleteVocabMapsValidationErrors(t *testing.T) {
 	handler := newAutocompleteHandler(t, autocompleteHTTPEnricher{err: enrichment.ErrEmptyBatch})
-	response := performAutocompleteRequest(handler, `{"items":[]}`)
+	request := authenticatedRequest(http.MethodPost, "/vocab/autocomplete", bytes.NewBufferString(`{"items":[]}`))
+	response := performRequest(handler, request)
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status: got %d want %d body %s", response.Code, http.StatusBadRequest, response.Body.String())
@@ -90,20 +72,5 @@ func TestHandleAutocompleteVocabMapsValidationErrors(t *testing.T) {
 func newAutocompleteHandler(t *testing.T, enricher service.VocabEnricher) http.Handler {
 	t.Helper()
 	app := service.NewAppWithEnricher(autocompleteHTTPRepository{}, clock.RealClock{}, enricher)
-	return NewServer(app, slog.New(slog.NewTextHandler(ioDiscard{}, nil))).Handler()
-}
-
-func performAutocompleteRequest(handler http.Handler, body string) *httptest.ResponseRecorder {
-	request := httptest.NewRequest(http.MethodPost, "/vocab/autocomplete", bytes.NewBufferString(body))
-	request.Header.Set("Authorization", "Bearer sess_test")
-	request.Header.Set("Content-Type", "application/json")
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	return response
-}
-
-type ioDiscard struct{}
-
-func (ioDiscard) Write(p []byte) (int, error) {
-	return len(p), nil
+	return NewServer(app, testLogger()).Handler()
 }

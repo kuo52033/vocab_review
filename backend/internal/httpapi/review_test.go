@@ -3,38 +3,17 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"testing"
-	"time"
 
 	"vocabreview/backend/internal/clock"
-	"vocabreview/backend/internal/domain"
 	"vocabreview/backend/internal/repository"
 	"vocabreview/backend/internal/service"
 )
 
 type reviewHTTPRepository struct {
-	repository.AppRepository
+	authenticatedHTTPRepository
 	seenPagination repository.Pagination
-}
-
-func (r *reviewHTTPRepository) HealthCheck(context.Context) error { return nil }
-
-func (r *reviewHTTPRepository) GetSessionUser(_ context.Context, token string) (domain.Session, domain.User, bool, error) {
-	if token == "" {
-		return domain.Session{}, domain.User{}, false, nil
-	}
-	return domain.Session{
-			TokenHash: token,
-			UserID:    "usr_test",
-			ExpiresAt: time.Now().Add(time.Hour),
-		}, domain.User{
-			ID:    "usr_test",
-			Email: "test@example.com",
-		}, true, nil
 }
 
 func (r *reviewHTTPRepository) ListReviewHistory(_ context.Context, userID string, pagination repository.Pagination) ([]repository.ReviewHistoryEntry, int, error) {
@@ -47,12 +26,9 @@ func (r *reviewHTTPRepository) ListReviewHistory(_ context.Context, userID strin
 
 func TestHandleReviewHistoryAcceptsPaginatedGetRequest(t *testing.T) {
 	repo := &reviewHTTPRepository{}
-	handler := NewServer(service.NewApp(repo, clock.RealClock{}), slog.New(slog.NewTextHandler(io.Discard, nil))).Handler()
-	request := httptest.NewRequest(http.MethodGet, "/reviews/history?limit=21&offset=0", nil)
-	request.Header.Set("Authorization", "Bearer sess_test")
-	response := httptest.NewRecorder()
-
-	handler.ServeHTTP(response, request)
+	handler := NewServer(service.NewApp(repo, clock.RealClock{}), testLogger()).Handler()
+	request := authenticatedRequest(http.MethodGet, "/reviews/history?limit=21&offset=0", nil)
+	response := performRequest(handler, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status: got %d want %d body %s", response.Code, http.StatusOK, response.Body.String())
