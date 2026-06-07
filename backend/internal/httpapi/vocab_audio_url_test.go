@@ -3,37 +3,17 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"testing"
-	"time"
 
 	"vocabreview/backend/internal/clock"
 	"vocabreview/backend/internal/domain"
-	"vocabreview/backend/internal/repository"
 	"vocabreview/backend/internal/service"
 )
 
 type vocabAudioURLRepository struct {
-	repository.AppRepository
+	authenticatedHTTPRepository
 	item domain.VocabItem
-}
-
-func (r vocabAudioURLRepository) HealthCheck(context.Context) error { return nil }
-
-func (r vocabAudioURLRepository) GetSessionUser(_ context.Context, token string) (domain.Session, domain.User, bool, error) {
-	if token == "" {
-		return domain.Session{}, domain.User{}, false, nil
-	}
-	return domain.Session{
-			TokenHash: token,
-			UserID:    "usr_test",
-			ExpiresAt: time.Now().Add(time.Hour),
-		}, domain.User{
-			ID:    "usr_test",
-			Email: "test@example.com",
-		}, true, nil
 }
 
 func (r vocabAudioURLRepository) GetVocab(_ context.Context, id string) (domain.VocabItem, bool, error) {
@@ -67,12 +47,9 @@ func TestHandleVocabAudioURLReturnsSignedURL(t *testing.T) {
 		service.VocabAudioConfig{Enabled: true},
 		vocabAudioURLSigner{},
 	)
-	handler := NewServer(app, slog.New(slog.NewTextHandler(ioDiscard{}, nil))).Handler()
-	request := httptest.NewRequest(http.MethodGet, "/vocab/voc_test/audio-url", nil)
-	request.Header.Set("Authorization", "Bearer sess_test")
-	response := httptest.NewRecorder()
-
-	handler.ServeHTTP(response, request)
+	handler := NewServer(app, testLogger()).Handler()
+	request := authenticatedRequest(http.MethodGet, "/vocab/voc_test/audio-url", nil)
+	response := performRequest(handler, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status: got %d want %d body %s", response.Code, http.StatusOK, response.Body.String())
