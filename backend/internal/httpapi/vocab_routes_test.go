@@ -164,5 +164,36 @@ func TestPostReviewGradeRouteUsesPathID(t *testing.T) {
 	if repo.seenRecordReviewLog.Grade != domain.ReviewGradeGood {
 		t.Fatalf("RecordReview log grade: got %q want %q", repo.seenRecordReviewLog.Grade, domain.ReviewGradeGood)
 	}
+}
 
+func TestIDBearingRoutesRejectMalformedPaths(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{"patch vocab extra segment", http.MethodPatch, "/vocab/voc_route/extra", `{"term":"x"}`},
+		{"delete vocab extra segment", http.MethodDelete, "/vocab/voc_route/extra", ""},
+		{"grade review extra segment", http.MethodPost, "/reviews/voc_route/grade/extra", `{"grade":"good"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &routeHTTPRepository{}
+			handler := NewServer(service.NewApp(repo, clock.RealClock{}), testLogger()).Handler()
+
+			response := performRequest(
+				handler,
+				authenticatedRequest(tc.method, tc.path, bytes.NewBufferString(tc.body)),
+			)
+
+			if response.Code != http.StatusNotFound {
+				t.Fatalf("status: got %d want %d body %s", response.Code, http.StatusNotFound, response.Body.String())
+			}
+			if repo.seenGetVocabID != "" || repo.seenArchiveVocabID != "" || repo.seenReviewVocabID != "" {
+				t.Fatalf("repository was hit for malformed route: %+v", repo)
+			}
+		})
+	}
 }
