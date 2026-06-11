@@ -224,16 +224,18 @@ struct BulkImportView: View {
         let cards = importCandidates
         let created = await sessionStore.createVocabCards(cards)
         if created == cards.count {
+            resetImportedDraft()
             if presentation == .standalone {
-                BulkImportDraftStorage.clear()
                 dismiss()
-            } else {
-                rawText = ""
-                parsedCards = []
-                enrichedCards = nil
-                BulkImportDraftStorage.clear()
             }
         }
+    }
+
+    private func resetImportedDraft() {
+        rawText = ""
+        parsedCards = []
+        enrichedCards = nil
+        BulkImportDraftStorage.clear()
     }
 
     private func autocompleteCards() async {
