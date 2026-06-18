@@ -69,10 +69,7 @@ func TestLogFormatWriterStripsTimeKey(t *testing.T) {
 
 func TestTextLoggerOutputOmitsTimeKey(t *testing.T) {
 	var output bytes.Buffer
-	writer := logFormatWriter{out: &output}
-	logger := slog.New(slog.NewTextHandler(writer, &slog.HandlerOptions{
-		ReplaceAttr: replaceLogAttr,
-	}))
+	logger := newLogger(&output, "false")
 
 	logger.Info("request", "status", 200)
 

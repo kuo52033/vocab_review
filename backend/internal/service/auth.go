@@ -23,9 +23,8 @@ type AuthConfig struct {
 }
 
 type AuthResult struct {
-	User        domain.User `json:"user"`
-	Session     AuthSession `json:"session"`
-	RedirectURL string      `json:"redirect_url"`
+	User    domain.User `json:"user"`
+	Session AuthSession `json:"session"`
 }
 
 type AuthSession struct {
@@ -46,13 +45,16 @@ type MagicLinkResponse struct {
 
 func (a *App) RequestMagicLink(ctx context.Context, email, baseURL, client string) (MagicLinkResponse, error) {
 	email = normalizeEmail(email)
+
 	if !validEmail(email) {
 		return MagicLinkResponse{}, errors.New("valid email is required")
 	}
 
 	response := MagicLinkResponse{Message: "Check your email for the sign-in link."}
 	isDevelopment := a.authConfig.Environment == "development"
+
 	isDebugEmail := a.isDebugEmail(email)
+
 	if !isDevelopment {
 		if _, ok, err := a.store.GetUserByEmail(ctx, email); err != nil {
 			return MagicLinkResponse{}, err
@@ -69,6 +71,7 @@ func (a *App) RequestMagicLink(ctx context.Context, email, baseURL, client strin
 		CreatedAt: now,
 		ExpiresAt: now.Add(15 * time.Minute),
 	}
+
 	minInterval := time.Duration(0)
 	if !isDevelopment && !isDebugEmail {
 		minInterval = productionMagicLinkMinInterval
@@ -82,11 +85,13 @@ func (a *App) RequestMagicLink(ctx context.Context, email, baseURL, client strin
 	}
 
 	verificationURL := a.verificationURL(baseURL, rawToken, client)
+
 	if isDevelopment || isDebugEmail {
 		response.Token = rawToken
 		response.VerificationURL = verificationURL
 		response.ExpiresAt = token.ExpiresAt.Format(time.RFC3339)
 	}
+
 	if !isDevelopment && !isDebugEmail && a.magicLinkSender != nil {
 		if err := a.magicLinkSender.SendMagicLink(ctx, email, verificationURL, rawToken, token.ExpiresAt); err != nil {
 			return response, nil
@@ -124,9 +129,11 @@ func (a *App) VerifyMagicLink(ctx context.Context, token string) (AuthResult, er
 	}
 
 	return AuthResult{
-		User:        user,
-		Session:     AuthSession{Token: sessionToken, ExpiresAt: session.ExpiresAt},
-		RedirectURL: "/auth/success?session_token=" + sessionToken,
+		User: user,
+		Session: AuthSession{
+			Token:     sessionToken,
+			ExpiresAt: session.ExpiresAt,
+		},
 	}, nil
 }
 
