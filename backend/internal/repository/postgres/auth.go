@@ -13,6 +13,7 @@ import (
 
 func (s *Store) PutMagicLink(ctx context.Context, token domain.MagicLinkToken, minInterval time.Duration) (bool, error) {
 	issued := false
+
 	err := withTx(ctx, s.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM magic_links WHERE expires_at < $1`, token.CreatedAt.UTC()); err != nil {
 			return err
@@ -51,17 +52,21 @@ func (s *Store) PutMagicLink(ctx context.Context, token domain.MagicLinkToken, m
 
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (domain.User, bool, error) {
 	var user domain.User
+
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, email, created_at
 		FROM users
 		WHERE email = $1
 	`, email).Scan(&user.ID, &user.Email, &user.CreatedAt)
+
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.User{}, false, nil
 	}
+
 	if err != nil {
 		return domain.User{}, false, err
 	}
+
 	return user, true, nil
 }
 
@@ -72,12 +77,14 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, tokenHash string, now time
 	err := withTx(ctx, s.pool, func(tx pgx.Tx) error {
 		var email string
 		var expiresAt time.Time
+
 		err := tx.QueryRow(ctx, `
 			SELECT email, expires_at
 			FROM magic_links
 			WHERE token_hash = $1
 			FOR UPDATE
 		`, tokenHash).Scan(&email, &expiresAt)
+
 		if errors.Is(err, pgx.ErrNoRows) {
 			return repository.ErrNotFound
 		}
@@ -93,6 +100,7 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, tokenHash string, now time
 			FROM users
 			WHERE email = $1
 		`, email).Scan(&user.ID, &user.Email, &user.CreatedAt)
+
 		if errors.Is(err, pgx.ErrNoRows) {
 			newUser.Email = email
 			if _, err := tx.Exec(ctx, `

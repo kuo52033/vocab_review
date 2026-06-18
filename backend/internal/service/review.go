@@ -92,7 +92,16 @@ func NewAppWithVocabAudioConfigAndSigner(store repository.AppRepository, appCloc
 	if audioConfig.Speed == 0 {
 		audioConfig.Speed = 1
 	}
-	return &App{store: store, clock: appClock, enricher: enricher, authConfig: config, audioConfig: audioConfig, audioURLSigner: signer, debugEmails: debugEmails, magicLinkSender: sender}
+	return &App{
+		store:           store,
+		clock:           appClock,
+		enricher:        enricher,
+		authConfig:      config,
+		audioConfig:     audioConfig,
+		audioURLSigner:  signer,
+		debugEmails:     debugEmails,
+		magicLinkSender: sender,
+	}
 }
 
 type CreateVocabInput struct {

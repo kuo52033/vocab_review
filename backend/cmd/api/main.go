@@ -66,7 +66,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	app := service.NewAppWithVocabAudioConfigAndSigner(store, clock.RealClock{}, newVocabEnricherFromEnv(), authConfig, magicLinkSender, audioConfig, audioURLSigner)
+	app := service.NewAppWithVocabAudioConfigAndSigner(
+		store, clock.RealClock{},
+		newVocabEnricherFromEnv(),
+		authConfig,
+		magicLinkSender,
+		audioConfig,
+		audioURLSigner,
+	)
 	server := httpapi.NewServer(app, logger)
 
 	log.Printf("listening on %s", addr)
