@@ -129,9 +129,9 @@ func (a *App) VerifyMagicLink(ctx context.Context, token string) (AuthResult, er
 	}
 
 	return AuthResult{
-		User:    user,
+		User: user,
 		Session: AuthSession{
-			Token: sessionToken, 
+			Token:     sessionToken,
 			ExpiresAt: session.ExpiresAt,
 		},
 	}, nil
