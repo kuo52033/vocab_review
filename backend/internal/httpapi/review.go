@@ -8,6 +8,7 @@ import (
 )
 
 func (s *Server) registerReviewRoutes() {
+	s.handleAuthenticated("GET /reviews/session", s.handleReviewSession)
 	s.handleAuthenticated("GET /reviews/due", s.handleDueCards)
 	s.handleAuthenticated("GET /reviews/history", s.handleReviewHistory)
 	s.handleAuthenticated("GET /reviews/stats", s.handleReviewStats)
@@ -44,6 +45,38 @@ func (s *Server) handleReviewStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"stats": stats})
+}
+
+func (s *Server) handleReviewSession(w http.ResponseWriter, r *http.Request) {
+	values := r.URL.Query()
+	limit, err := parseOptionalNonNegativeInt(values.Get("limit"), "limit")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if limit > maxPageLimit {
+		writeError(w, http.StatusBadRequest, "limit must be 100 or less")
+		return
+	}
+	candidates, err := parseOptionalNonNegativeInt(values.Get("candidates"), "candidates")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if candidates > maxPageLimit {
+		writeError(w, http.StatusBadRequest, "candidates must be 100 or less")
+		return
+	}
+
+	session, err := s.app.ReviewSession(r.Context(), userIDFromContext(r.Context()), service.ReviewSessionInput{
+		Limit:      limit,
+		Candidates: candidates,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, session)
 }
 
 func (s *Server) handleGradeReview(w http.ResponseWriter, r *http.Request) {

@@ -74,7 +74,6 @@ struct ReviewListView: View {
             .padding()
         }
         .refreshable {
-            await sessionStore.loadDueCards()
             await sessionStore.loadReviewStats()
         }
         .onAppear {
@@ -136,7 +135,6 @@ struct ReviewListView: View {
                 }
             }
             .refreshable {
-                await sessionStore.loadDueCards()
                 await sessionStore.loadReviewStats()
             }
         }
@@ -180,7 +178,7 @@ struct ReviewListView: View {
                     }
                 }
                 .buttonStyle(ReviewHeroButtonStyle())
-                .disabled(sessionStore.dueCards.isEmpty || isStartingReview)
+                .disabled(isStartingReview)
             }
         }
         .padding(28)
@@ -316,11 +314,27 @@ struct ReviewListView: View {
     private func wrongReviewCard(_ item: WrongReviewItem) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(item.term)
-                    .font(AppTheme.displayFont(size: 34, weight: .semibold))
-                    .foregroundStyle(AppTheme.ink)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .center, spacing: 10) {
+                    Text(item.term)
+                        .font(AppTheme.displayFont(size: 34, weight: .semibold))
+                        .foregroundStyle(AppTheme.ink)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
+                    if item.item.hasPlayableAudio {
+                        AudioPlayButton(
+                            isPlaying: sessionStore.playingAudioVocabID == item.item.id,
+                            action: {
+                                Task { await sessionStore.toggleAudioPlayback(for: item.item) }
+                            }
+                        )
+                        .accessibilityLabel(
+                            sessionStore.playingAudioVocabID == item.item.id
+                                ? "Pause pronunciation for \(item.term)"
+                                : "Play pronunciation for \(item.term)"
+                        )
+                    }
+                }
                 if !item.chinese.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text(item.chinese)
                         .font(.callout.weight(.bold))
@@ -625,7 +639,7 @@ struct ReviewListView: View {
         return item.part_of_speech.replacingOccurrences(of: "_", with: " ")
     }
 
-    private func wrongOptionSourceLabel(_ item: VocabItem) -> String {
+    private func wrongOptionSourceLabel(_ item: ReviewSessionCandidate) -> String {
         let chinese = item.chinese.trimmingCharacters(in: .whitespacesAndNewlines)
         if chinese.isEmpty {
             return item.term
@@ -735,18 +749,18 @@ struct ReviewListView: View {
         isStartingReview = true
         defer { isStartingReview = false }
 
-        guard let bootstrap = await sessionStore.loadReviewBootstrap(limit: 100) else {
+        guard let session = await sessionStore.loadReviewSession(limit: sessionLimit, candidates: 30) else {
             return
         }
 
-        guard !bootstrap.due.isEmpty else {
+        guard !session.due.isEmpty else {
             sessionStore.clearError()
             return
         }
 
         let deck = buildQuizDeck(
-            dueCards: bootstrap.due,
-            candidates: bootstrap.candidates,
+            dueCards: session.due,
+            candidates: session.candidates,
             limit: sessionLimit
         )
 
@@ -783,6 +797,7 @@ struct ReviewListView: View {
             wrongReviewItems.append(
                 WrongReviewItem(
                     id: "\(currentQuizCard.card.item.id)-\(sessionIndex)",
+                    item: currentQuizCard.card.item,
                     term: currentQuizCard.card.item.term,
                     meaning: currentQuizCard.card.item.meaning,
                     chinese: currentQuizCard.card.item.chinese,
@@ -858,7 +873,7 @@ private struct QuizOption: Identifiable {
     let id: String
     let text: String
     let isCorrect: Bool
-    let item: VocabItem
+    let item: ReviewSessionCandidate
 }
 
 private struct ReviewSessionSummary {
@@ -892,6 +907,7 @@ private struct ReviewSessionSummary {
 
 private struct WrongReviewItem: Identifiable {
     let id: String
+    let item: VocabItem
     let term: String
     let meaning: String
     let chinese: String
@@ -995,11 +1011,11 @@ private struct ReviewAccuracyRing: View {
     }
 }
 
-private func buildQuizDeck(dueCards: [DueCard], candidates: [DueCard], limit: Int) -> [QuizCard] {
+private func buildQuizDeck(dueCards: [DueCard], candidates: [ReviewSessionCandidate], limit: Int) -> [QuizCard] {
     let cardsWithAnswers = dueCards.filter { !$0.item.meaning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     let candidateAnswers = candidates
-        .filter { !$0.item.meaning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        .map { (id: $0.item.id, text: $0.item.meaning.trimmingCharacters(in: .whitespacesAndNewlines), item: $0.item) }
+        .filter { !$0.meaning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .map { (id: $0.id, text: $0.meaning.trimmingCharacters(in: .whitespacesAndNewlines), item: $0) }
 
     return cardsWithAnswers.shuffled()
         .prefix(limit)
@@ -1010,7 +1026,8 @@ private func buildQuizDeck(dueCards: [DueCard], candidates: [DueCard], limit: In
                 .shuffled()
                 .prefix(3)
 
-            let options = ([QuizOption(id: "\(card.item.id)-correct", text: correctText, isCorrect: true, item: card.item)] + distractors.map {
+            let correctCandidate = ReviewSessionCandidate(id: card.item.id, term: card.item.term, meaning: card.item.meaning, chinese: card.item.chinese)
+            let options = ([QuizOption(id: "\(card.item.id)-correct", text: correctText, isCorrect: true, item: correctCandidate)] + distractors.map {
                 QuizOption(id: "\(card.item.id)-\($0.id)", text: $0.text, isCorrect: false, item: $0.item)
             }).shuffled()
 

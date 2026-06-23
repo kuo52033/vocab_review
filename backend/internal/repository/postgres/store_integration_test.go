@@ -107,7 +107,7 @@ func TestStoreLifecycle(t *testing.T) {
 		t.Fatalf("unexpected vocab list: total=%d hasNext=%v items=%+v", total, hasNext, listed)
 	}
 
-	due, err := store.ListDueVocab(ctx, user.ID, now.Add(time.Minute))
+	due, err := store.ListDueVocab(ctx, user.ID, now.Add(time.Minute), 0)
 	if err != nil {
 		t.Fatalf("list due: %v", err)
 	}

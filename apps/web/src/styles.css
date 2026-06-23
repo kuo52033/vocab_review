@@ -901,6 +901,21 @@ h3 {
   line-height: 1;
 }
 
+.wrong-review-term-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wrong-review-term-line h3 {
+  min-width: 0;
+}
+
+.wrong-review-term-line .audio-play-button {
+  width: 34px;
+  height: 34px;
+}
+
 .wrong-review-chinese {
   margin: 6px 0 0;
   color: var(--wine);

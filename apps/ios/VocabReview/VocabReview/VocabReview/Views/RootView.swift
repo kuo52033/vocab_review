@@ -22,7 +22,7 @@ struct RootView: View {
         .dismissKeyboardOnTapOutside()
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active, sessionStore.isAuthenticated else { return }
-            Task { await sessionStore.refreshAuthenticatedData() }
+            Task { await refreshCurrentTab() }
         }
     }
 
@@ -66,7 +66,7 @@ struct RootView: View {
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: selectedTab)
         .animation(.easeOut(duration: 0.22), value: isReviewSessionActive)
-        .task { await sessionStore.refreshAuthenticatedData() }
+        .task { await refreshCurrentTab() }
     }
 
     private var signInView: some View {
@@ -219,6 +219,7 @@ struct RootView: View {
             withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
                 selectedTab = tab
             }
+            Task { await refreshCurrentTab() }
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: systemImage)
@@ -254,6 +255,17 @@ struct RootView: View {
         }
         .buttonStyle(ReadingToolbarButtonStyle())
         .accessibilityLabel(title)
+    }
+
+    private func refreshCurrentTab() async {
+        switch selectedTab {
+        case .review:
+            await sessionStore.loadReviewStats()
+        case .library:
+            await sessionStore.loadLibraryCards()
+        case .add:
+            break
+        }
     }
 
     @ViewBuilder

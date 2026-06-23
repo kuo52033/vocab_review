@@ -39,6 +39,19 @@ type ReviewStats struct {
 	ArchivedCards int
 }
 
+type ReviewSessionData struct {
+	Due        []VocabWithState
+	Candidates []ReviewSessionCandidate
+	Stats      ReviewStats
+}
+
+type ReviewSessionCandidate struct {
+	ID      string
+	Term    string
+	Meaning string
+	Chinese string
+}
+
 type Pagination struct {
 	Limit  int
 	Offset int
@@ -67,7 +80,9 @@ type VocabRepository interface {
 	UpdateVocab(ctx context.Context, item domain.VocabItem, audioJob *domain.VocabAudioJob) error
 	ArchiveVocabForUser(ctx context.Context, userID string, vocabID string, archivedAt time.Time) (domain.VocabItem, error)
 	ListVocabByUser(ctx context.Context, userID string, options ListVocabOptions) ([]VocabWithState, int, bool, error)
-	ListDueVocab(ctx context.Context, userID string, now time.Time) ([]VocabWithState, error)
+	ListDueVocab(ctx context.Context, userID string, now time.Time, limit int) ([]VocabWithState, error)
+	GetReviewSessionData(ctx context.Context, userID string, now time.Time, dueLimit int, candidateLimit int) (ReviewSessionData, error)
+	ListReviewSessionCandidates(ctx context.Context, userID string, limit int) ([]ReviewSessionCandidate, error)
 	GetReviewState(ctx context.Context, vocabID string) (domain.ReviewState, bool, error)
 	RecordReview(ctx context.Context, state domain.ReviewState, log domain.ReviewLog, job *domain.NotificationJob) error
 	ListReviewHistory(ctx context.Context, userID string, pagination Pagination) ([]ReviewHistoryEntry, int, bool, error)

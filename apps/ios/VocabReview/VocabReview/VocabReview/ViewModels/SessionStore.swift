@@ -92,7 +92,7 @@ final class SessionStore: ObservableObject {
             sessionToken = response.session.token
             UserDefaults.standard.set(response.session.token, forKey: sessionTokenKey)
             requestedMagicLink = nil
-            await refreshAuthenticatedData()
+            await loadReviewStats()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -186,44 +186,7 @@ final class SessionStore: ObservableObject {
         }
     }
 
-    func refreshAuthenticatedData() async {
-        guard isAuthenticated else { return }
-
-        libraryLoadID += 1
-        let loadID = libraryLoadID
-        isLoadingDueCards = true
-        isLoadingLibraryCards = true
-        errorMessage = ""
-        defer {
-            isLoadingDueCards = false
-            if loadID == libraryLoadID {
-                isLoadingLibraryCards = false
-            }
-        }
-
-        do {
-            let response: BootstrapResponse = try await sendRequest(path: pathWithQuery("/app/bootstrap", [
-                URLQueryItem(name: "limit", value: String(libraryPageSize)),
-                URLQueryItem(name: "offset", value: String((libraryPage - 1) * libraryPageSize))
-            ]))
-            guard loadID == libraryLoadID else { return }
-            dueCards = response.due
-            libraryCards = response.library.items.sorted { lhs, rhs in
-                lhs.item.createdAtDate > rhs.item.createdAtDate
-            }
-            libraryTotal = response.library.total ?? response.library.items.count
-            libraryHasNext = response.library.has_next ?? false
-            if libraryCards.isEmpty && libraryPage > 1 && !libraryHasNext {
-                libraryPage -= 1
-            }
-            reviewStats = response.stats
-        } catch {
-            guard loadID == libraryLoadID else { return }
-            handleRequestError(error)
-        }
-    }
-
-    func loadReviewBootstrap(limit: Int) async -> (due: [DueCard], candidates: [DueCard])? {
+    func loadReviewSession(limit: Int, candidates: Int) async -> (due: [DueCard], candidates: [ReviewSessionCandidate])? {
         guard isAuthenticated else { return nil }
 
         isLoadingDueCards = true
@@ -233,13 +196,13 @@ final class SessionStore: ObservableObject {
         }
 
         do {
-            let response: BootstrapResponse = try await sendRequest(path: pathWithQuery("/app/bootstrap", [
+            let response: ReviewSessionResponse = try await sendRequest(path: pathWithQuery("/reviews/session", [
                 URLQueryItem(name: "limit", value: String(limit)),
-                URLQueryItem(name: "offset", value: "0")
+                URLQueryItem(name: "candidates", value: String(candidates))
             ]))
             dueCards = response.due
             reviewStats = response.stats
-            return (response.due, response.library.items)
+            return (response.due, response.candidates)
         } catch {
             handleRequestError(error)
             return nil
@@ -444,7 +407,7 @@ final class SessionStore: ObservableObject {
         infoMessage = ""
 
         do {
-            let _: UpdateVocabResponse = try await sendRequest(
+            let response: UpdateVocabResponse = try await sendRequest(
                 path: "/vocab/\(cardID)",
                 method: "PATCH",
                 body: CreateVocabRequest(
@@ -459,7 +422,7 @@ final class SessionStore: ObservableObject {
                 )
             )
             infoMessage = "Card updated."
-            await refreshAuthenticatedData()
+            applyUpdatedVocab(response.item)
             isCreatingVocab = false
             return true
         } catch {
@@ -477,13 +440,13 @@ final class SessionStore: ObservableObject {
         infoMessage = ""
 
         do {
-            let _: UpdateVocabResponse = try await sendRequest(
+            let response: UpdateVocabResponse = try await sendRequest(
                 path: "/vocab/\(cardID)",
                 method: "DELETE",
                 body: EmptyRequest()
             )
             infoMessage = "Card deleted."
-            await refreshAuthenticatedData()
+            applyArchivedVocab(response.item)
             isDeletingVocab = false
             return true
         } catch {
@@ -811,6 +774,29 @@ final class SessionStore: ObservableObject {
             active_cards: reviewStats.active_cards + cards.count,
             due_now: reviewStats.due_now + dueNowCards.count,
             archived_cards: reviewStats.archived_cards
+        )
+    }
+
+    private func applyUpdatedVocab(_ item: VocabItem) {
+        libraryCards = libraryCards.map { card in
+            card.item.id == item.id ? DueCard(item: item, state: card.state) : card
+        }
+        dueCards = dueCards.map { card in
+            card.item.id == item.id ? DueCard(item: item, state: card.state) : card
+        }
+    }
+
+    private func applyArchivedVocab(_ item: VocabItem) {
+        let wasDue = dueCards.contains { $0.item.id == item.id }
+        libraryCards.removeAll { $0.item.id == item.id }
+        dueCards.removeAll { $0.item.id == item.id }
+        libraryTotal = max(0, libraryTotal - 1)
+        reviewStats = ReviewStats(
+            reviewed_today: reviewStats.reviewed_today,
+            reviewed_7_days: reviewStats.reviewed_7_days,
+            active_cards: max(0, reviewStats.active_cards - 1),
+            due_now: max(0, reviewStats.due_now - (wasDue ? 1 : 0)),
+            archived_cards: reviewStats.archived_cards + 1
         )
     }
 }

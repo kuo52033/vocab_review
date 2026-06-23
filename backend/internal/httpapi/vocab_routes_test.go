@@ -25,6 +25,8 @@ type routeHTTPRepository struct {
 	seenCreateBatch     []repository.VocabCreate
 	seenListOptions     repository.ListVocabOptions
 	seenListDueUserID   string
+	seenListDueLimit    int
+	seenCandidatesLimit int
 	seenStatsUserID     string
 	seenGetVocabID      string
 	seenUpdateVocab     domain.VocabItem
@@ -65,14 +67,38 @@ func (r *routeHTTPRepository) ListVocabByUser(_ context.Context, userID string, 
 	}, 7, true, nil
 }
 
-func (r *routeHTTPRepository) ListDueVocab(_ context.Context, userID string, _ time.Time) ([]repository.VocabWithState, error) {
+func (r *routeHTTPRepository) ListDueVocab(_ context.Context, userID string, _ time.Time, limit int) ([]repository.VocabWithState, error) {
 	r.seenListDueUserID = userID
+	r.seenListDueLimit = limit
 	return []repository.VocabWithState{
 		{
 			Item:  domain.VocabItem{ID: "voc_due", UserID: userID, Term: "due"},
 			State: domain.ReviewState{VocabItemID: "voc_due", UserID: userID},
 		},
 	}, nil
+}
+
+func (r *routeHTTPRepository) ListReviewSessionCandidates(_ context.Context, _ string, limit int) ([]repository.ReviewSessionCandidate, error) {
+	r.seenCandidatesLimit = limit
+	return []repository.ReviewSessionCandidate{
+		{ID: "voc_candidate", Term: "candidate", Meaning: "candidate meaning", Chinese: "候選"},
+	}, nil
+}
+
+func (r *routeHTTPRepository) GetReviewSessionData(ctx context.Context, userID string, now time.Time, dueLimit int, candidateLimit int) (repository.ReviewSessionData, error) {
+	due, err := r.ListDueVocab(ctx, userID, now, dueLimit)
+	if err != nil {
+		return repository.ReviewSessionData{}, err
+	}
+	candidates, err := r.ListReviewSessionCandidates(ctx, userID, candidateLimit)
+	if err != nil {
+		return repository.ReviewSessionData{}, err
+	}
+	stats, err := r.GetReviewStats(ctx, userID, now)
+	if err != nil {
+		return repository.ReviewSessionData{}, err
+	}
+	return repository.ReviewSessionData{Due: due, Candidates: candidates, Stats: stats}, nil
 }
 
 func (r *routeHTTPRepository) GetReviewStats(_ context.Context, userID string, _ time.Time) (repository.ReviewStats, error) {
@@ -214,27 +240,27 @@ func testWakeAudioConfig() service.VocabAudioConfig {
 	}
 }
 
-func TestAppBootstrapCombinesInitialData(t *testing.T) {
+func TestReviewSessionReturnsDueAndLightweightCandidates(t *testing.T) {
 	repo := &routeHTTPRepository{}
 	handler := NewServer(service.NewApp(repo, clock.RealClock{}), testLogger()).Handler()
-	request := authenticatedRequest(http.MethodGet, "/app/bootstrap?limit=10&offset=20&q=seren&status=learning", nil)
+	request := authenticatedRequest(http.MethodGet, "/reviews/session?limit=10&candidates=30", nil)
 	response := performRequest(handler, request)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status: got %d want %d body %s", response.Code, http.StatusOK, response.Body.String())
 	}
-	if repo.seenListOptions.Limit != 10 || repo.seenListOptions.Offset != 20 || repo.seenListOptions.Query != "seren" || repo.seenListOptions.Status != domain.ReviewStatusLearning {
-		t.Fatalf("list options: %+v", repo.seenListOptions)
-	}
 	if repo.seenListDueUserID != testUserID || repo.seenStatsUserID != testUserID {
 		t.Fatalf("user IDs: due=%q stats=%q", repo.seenListDueUserID, repo.seenStatsUserID)
 	}
-	var body service.AppBootstrap
+	if repo.seenListDueLimit != 10 || repo.seenCandidatesLimit != 30 {
+		t.Fatalf("limits: due=%d candidates=%d", repo.seenListDueLimit, repo.seenCandidatesLimit)
+	}
+	var body service.ReviewSession
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body.Library.Total != 7 || !body.Library.HasNext || len(body.Library.Items) != 1 || len(body.Due) != 1 || body.Stats.ActiveCards != 7 {
-		t.Fatalf("bootstrap body: %+v", body)
+	if len(body.Due) != 1 || len(body.Candidates) != 1 || body.Candidates[0].ID != "voc_candidate" || body.Stats.ActiveCards != 7 {
+		t.Fatalf("review session body: %+v", body)
 	}
 }
 

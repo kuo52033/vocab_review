@@ -10,7 +10,6 @@ import (
 )
 
 func (s *Server) registerVocabRoutes() {
-	s.handleAuthenticated("GET /app/bootstrap", s.handleAppBootstrap)
 	s.handleAuthenticated("GET /vocab", s.handleListVocab)
 	s.handleAuthenticated("POST /vocab/autocomplete", s.handleAutocompleteVocab)
 	s.handleAuthenticated("POST /vocab/bulk", s.handleBulkCreateVocab)
@@ -27,25 +26,6 @@ func (s *Server) handleListVocab(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := s.app.ListVocab(r.Context(), userIDFromContext(r.Context()), service.ListVocabInput{
-		Limit:  page.Limit,
-		Offset: page.Offset,
-		Query:  r.URL.Query().Get("q"),
-		Status: domain.ReviewStatus(r.URL.Query().Get("status")),
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (s *Server) handleAppBootstrap(w http.ResponseWriter, r *http.Request) {
-	page, err := parsePageQuery(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	result, err := s.app.Bootstrap(r.Context(), userIDFromContext(r.Context()), service.ListVocabInput{
 		Limit:  page.Limit,
 		Offset: page.Offset,
 		Query:  r.URL.Query().Get("q"),

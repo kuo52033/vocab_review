@@ -245,7 +245,7 @@ func (f *fakeRepository) ListVocabByUser(_ context.Context, userID string, optio
 	return items, total, hasNext, nil
 }
 
-func (f *fakeRepository) ListDueVocab(_ context.Context, userID string, now time.Time) ([]repository.VocabWithState, error) {
+func (f *fakeRepository) ListDueVocab(_ context.Context, userID string, now time.Time, limit int) ([]repository.VocabWithState, error) {
 	items := make([]repository.VocabWithState, 0)
 	for _, state := range f.reviewStates {
 		if state.UserID != userID || state.NextDueAt.After(now) {
@@ -257,7 +257,45 @@ func (f *fakeRepository) ListDueVocab(_ context.Context, userID string, now time
 		}
 		items = append(items, repository.VocabWithState{Item: item, State: state})
 	}
+	if limit > 0 && len(items) > limit {
+		items = items[:limit]
+	}
 	return items, nil
+}
+
+func (f *fakeRepository) ListReviewSessionCandidates(_ context.Context, userID string, limit int) ([]repository.ReviewSessionCandidate, error) {
+	candidates := make([]repository.ReviewSessionCandidate, 0)
+	for _, item := range f.vocab {
+		if item.UserID != userID || item.ArchivedAt != nil || strings.TrimSpace(item.Meaning) == "" {
+			continue
+		}
+		candidates = append(candidates, repository.ReviewSessionCandidate{
+			ID:      item.ID,
+			Term:    item.Term,
+			Meaning: item.Meaning,
+			Chinese: item.Chinese,
+		})
+	}
+	if limit > 0 && len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	return candidates, nil
+}
+
+func (f *fakeRepository) GetReviewSessionData(ctx context.Context, userID string, now time.Time, dueLimit int, candidateLimit int) (repository.ReviewSessionData, error) {
+	due, err := f.ListDueVocab(ctx, userID, now, dueLimit)
+	if err != nil {
+		return repository.ReviewSessionData{}, err
+	}
+	candidates, err := f.ListReviewSessionCandidates(ctx, userID, candidateLimit)
+	if err != nil {
+		return repository.ReviewSessionData{}, err
+	}
+	stats, err := f.GetReviewStats(ctx, userID, now)
+	if err != nil {
+		return repository.ReviewSessionData{}, err
+	}
+	return repository.ReviewSessionData{Due: due, Candidates: candidates, Stats: stats}, nil
 }
 
 func (f *fakeRepository) GetReviewState(_ context.Context, vocabID string) (domain.ReviewState, bool, error) {

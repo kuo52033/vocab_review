@@ -39,10 +39,17 @@ struct ReviewStatsResponse: Codable {
     let stats: ReviewStats
 }
 
-struct BootstrapResponse: Codable {
-    let library: LibraryResponse
+struct ReviewSessionResponse: Codable {
     let due: [DueCard]
+    let candidates: [ReviewSessionCandidate]
     let stats: ReviewStats
+}
+
+struct ReviewSessionCandidate: Codable, Identifiable {
+    let id: String
+    let term: String
+    let meaning: String
+    let chinese: String
 }
 
 struct ReviewStats: Codable {

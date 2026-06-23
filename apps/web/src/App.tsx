@@ -7,12 +7,15 @@ import {
   clearToken,
   createVocab,
   deleteVocab,
-  getBootstrap,
+  getReviewStats,
+  getReviewSession,
   getVocabAudioURL,
   gradeReview,
   isUnauthorizedError,
+  listVocab,
   requestMagicLink,
   ReviewGrade,
+  ReviewSessionCandidate,
   ReviewState,
   ReviewStats,
   setToken,
@@ -62,6 +65,7 @@ type SessionSummary = {
 };
 type WrongReviewItem = {
   id: string;
+  item: VocabItem;
   term: string;
   meaning: string;
   chinese: string;
@@ -73,7 +77,7 @@ type QuizOption = {
   id: string;
   text: string;
   isCorrect: boolean;
-  item: VocabItem;
+  item: ReviewSessionCandidate;
 };
 type QuizCard = {
   card: VocabWithState;
@@ -335,7 +339,7 @@ function shuffleItems<T>(items: T[]) {
   return [...items].sort(() => Math.random() - 0.5);
 }
 
-function answerText(item: VocabItem) {
+function answerText(item: Pick<VocabItem, "meaning"> | ReviewSessionCandidate) {
   return item.meaning.trim();
 }
 
@@ -355,11 +359,20 @@ function reviewResultMessage(summary: SessionSummary) {
   return "Keep going.";
 }
 
-function buildQuizDeck(dueCards: VocabWithState[], candidates: VocabWithState[], limit: number): QuizCard[] {
+function reviewSessionCandidate(item: VocabItem): ReviewSessionCandidate {
+  return {
+    id: item.id,
+    term: item.term,
+    meaning: item.meaning,
+    chinese: item.chinese
+  };
+}
+
+function buildQuizDeck(dueCards: VocabWithState[], candidates: ReviewSessionCandidate[], limit: number): QuizCard[] {
   const cardsWithAnswers = dueCards.filter(({ item }) => answerText(item));
   const candidateAnswers = candidates
-    .filter(({ item }) => answerText(item))
-    .map(({ item }) => ({ id: item.id, text: answerText(item), item }));
+    .filter((item) => answerText(item))
+    .map((item) => ({ id: item.id, text: answerText(item), item }));
 
   return shuffleItems(cardsWithAnswers)
     .slice(0, limit)
@@ -372,7 +385,7 @@ function buildQuizDeck(dueCards: VocabWithState[], candidates: VocabWithState[],
       return {
         card,
         options: shuffleItems([
-          { id: `${card.item.id}-correct`, text: correctText, isCorrect: true, item: card.item },
+          { id: `${card.item.id}-correct`, text: correctText, isCorrect: true, item: reviewSessionCandidate(card.item) },
           ...distractors.map((distractor) => ({
             id: `${card.item.id}-${distractor.id}`,
             text: distractor.text,
@@ -551,8 +564,14 @@ export function App() {
 
   useEffect(() => {
     if (!auth.token) return;
-    refresh(libraryPage, normalizedQuery);
-  }, [auth.token, libraryPage, normalizedQuery]);
+    if (activeSection === "library") {
+      refresh(libraryPage, normalizedQuery);
+      return;
+    }
+    if (activeSection === "review") {
+      refreshReviewHome();
+    }
+  }, [auth.token, activeSection, libraryPage, normalizedQuery]);
 
   useEffect(() => {
     if (!auth.token) return;
@@ -695,17 +714,15 @@ export function App() {
     setVocab([]);
     setEditingID("");
     try {
-      const bootstrap = await getBootstrap({
+      const library = await listVocab({
         limit: libraryPageSize,
         offset: (page - 1) * libraryPageSize,
         q: searchQuery
       });
       if (requestID !== refreshRequestIDRef.current) return;
-			setVocab(bootstrap.library.items);
-			setDue(bootstrap.due);
-			setVocabTotal(bootstrap.library.total);
-			setVocabHasNext(bootstrap.library.has_next);
-			setStats(bootstrap.stats);
+			setVocab(library.items);
+			setVocabTotal(library.total);
+			setVocabHasNext(library.has_next);
       setError("");
     } catch (err) {
       if (requestID !== refreshRequestIDRef.current) return;
@@ -714,6 +731,16 @@ export function App() {
       if (requestID === refreshRequestIDRef.current) {
         setIsRefreshing(false);
       }
+    }
+  }
+
+  async function refreshReviewHome() {
+    try {
+      const response = await getReviewStats();
+      setStats(response.stats);
+      setError("");
+    } catch (err) {
+      handleRequestError(err);
     }
   }
 
@@ -843,6 +870,28 @@ export function App() {
     }));
   }
 
+  function applyUpdatedVocab(item: VocabItem) {
+    setVocab((current) =>
+      current.map((card) => (card.item.id === item.id ? { ...card, item } : card))
+    );
+    setDue((current) =>
+      current.map((card) => (card.item.id === item.id ? { ...card, item } : card))
+    );
+  }
+
+  function applyArchivedVocab(id: string) {
+    const wasDue = due.some((card) => card.item.id === id);
+    setVocab((current) => current.filter((card) => card.item.id !== id));
+    setDue((current) => current.filter((card) => card.item.id !== id));
+    setVocabTotal((current) => Math.max(0, current - 1));
+    setStats((current) => ({
+      ...current,
+      active_cards: Math.max(0, current.active_cards - 1),
+      due_now: Math.max(0, current.due_now - (wasDue ? 1 : 0)),
+      archived_cards: current.archived_cards + 1
+    }));
+  }
+
   async function handleCreateVocab(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsSaving(true);
@@ -943,10 +992,10 @@ export function App() {
     if (!editingID) return;
     setIsSaving(true);
     try {
-      await updateVocab(editingID, editDraft);
+      const response = await updateVocab(editingID, editDraft);
+      applyUpdatedVocab(response.item);
       setEditingID("");
       setEditDraft(emptyForm);
-      await refresh();
     } catch (err) {
       handleRequestError(err);
     } finally {
@@ -958,11 +1007,11 @@ export function App() {
     setIsSaving(true);
     try {
       await deleteVocab(id);
+      applyArchivedVocab(id);
       if (editingID === id) {
         setEditingID("");
         setEditDraft(emptyForm);
       }
-      await refresh();
     } catch (err) {
       handleRequestError(err);
     } finally {
@@ -985,27 +1034,27 @@ export function App() {
   async function prepareReviewSession(): Promise<PreparedReviewSession | null> {
     setIsStartingReview(true);
     try {
-      const bootstrap = await getBootstrap({ limit: 100, offset: 0 });
+      const session = await getReviewSession({ limit: reviewSessionSize, candidates: 30 });
 
-      if (bootstrap.due.length === 0) {
-        setDue(bootstrap.due);
-        setStats(bootstrap.stats);
+      if (session.due.length === 0) {
+        setDue(session.due);
+        setStats(session.stats);
         setError("");
         return null;
       }
 
-      const deck = buildQuizDeck(bootstrap.due, bootstrap.library.items, reviewSessionSize);
+      const deck = buildQuizDeck(session.due, session.candidates, reviewSessionSize);
       if (deck.length === 0) {
-        setDue(bootstrap.due);
-        setStats(bootstrap.stats);
+        setDue(session.due);
+        setStats(session.stats);
         setError("Start Review needs at least one due card with a meaning and one other active card with a meaning.");
         return null;
       }
       setError("");
       return {
         deck,
-        dueItems: bootstrap.due,
-        stats: bootstrap.stats
+        dueItems: session.due,
+        stats: session.stats
       };
     } catch (err) {
       handleRequestError(err);
@@ -1092,6 +1141,7 @@ export function App() {
           ...current,
           {
             id: `${currentQuizCard.card.item.id}-${reviewed}`,
+            item: currentQuizCard.card.item,
             term: currentQuizCard.card.item.term,
             meaning: currentQuizCard.card.item.meaning,
             chinese: currentQuizCard.card.item.chinese,
@@ -1152,7 +1202,6 @@ export function App() {
     setLibraryPage(1);
     setIsUserMenuOpen(false);
     setActiveSection("library");
-    void refresh(1, "");
   }
 
   function handleSignOut() {
@@ -1421,7 +1470,10 @@ export function App() {
                         {sessionSummary.wrongReviews.map((item) => (
                           <article key={item.id} className="wrong-review-card">
                             <div>
-                              <h3>{item.term}</h3>
+                              <div className="wrong-review-term-line">
+                                <h3>{item.term}</h3>
+                                <AudioPlayButton item={item.item} isPlaying={playingAudioID === item.item.id} onPlay={handlePlayAudio} />
+                              </div>
                               {item.chinese.trim() ? <p className="wrong-review-chinese">{item.chinese}</p> : null}
                             </div>
                             <dl>
@@ -1466,7 +1518,10 @@ export function App() {
                           {sessionSummary.wrongReviews.map((item) => (
                             <article key={item.id} className="wrong-review-card">
                               <div>
-                                <h3>{item.term}</h3>
+                                <div className="wrong-review-term-line">
+                                  <h3>{item.term}</h3>
+                                  <AudioPlayButton item={item.item} isPlaying={playingAudioID === item.item.id} onPlay={handlePlayAudio} />
+                                </div>
                                 {item.chinese.trim() ? <p className="wrong-review-chinese">{item.chinese}</p> : null}
                               </div>
                               <dl>
@@ -1530,7 +1585,7 @@ export function App() {
                     </span>
                   </div>
                   {stats.due_now > 0 ? (
-                    <button type="button" className="start-review-button" onClick={handleStartReviewClick} disabled={due.length === 0 || isStartingReview || reviewTransition.phase !== "idle"}>
+                    <button type="button" className="start-review-button" onClick={handleStartReviewClick} disabled={isStartingReview || reviewTransition.phase !== "idle"}>
                       {isStartingReview ? "Preparing..." : "Start Review"}
                     </button>
                   ) : null}

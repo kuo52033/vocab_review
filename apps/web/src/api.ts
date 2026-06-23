@@ -89,9 +89,16 @@ export interface PageResponse<T> {
   has_next: boolean;
 }
 
-export interface BootstrapResponse {
-  library: PageResponse<VocabWithState>;
+export interface ReviewSessionCandidate {
+  id: string;
+  term: string;
+  meaning: string;
+  chinese: string;
+}
+
+export interface ReviewSessionResponse {
   due: VocabWithState[];
+  candidates: ReviewSessionCandidate[];
   stats: ReviewStats;
 }
 
@@ -139,7 +146,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json();
 }
 
-function withQuery(path: string, params?: PageParams) {
+function withQuery(path: string, params?: object) {
   if (!params) return path;
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -168,8 +175,8 @@ export async function listVocab(params?: PageParams) {
   return request<PageResponse<VocabWithState>>(withQuery("/vocab", params));
 }
 
-export async function getBootstrap(params?: PageParams) {
-  return request<BootstrapResponse>(withQuery("/app/bootstrap", params));
+export async function getReviewSession(params?: { limit?: number; candidates?: number }) {
+  return request<ReviewSessionResponse>(withQuery("/reviews/session", params));
 }
 
 export async function createVocab(payload: Partial<VocabItem>) {

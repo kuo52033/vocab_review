@@ -401,10 +401,22 @@ type VocabPage struct {
 	HasNext bool             `json:"has_next"`
 }
 
-type AppBootstrap struct {
-	Library VocabPage   `json:"library"`
-	Due     []DueCard   `json:"due"`
-	Stats   ReviewStats `json:"stats"`
+type ReviewSessionCandidate struct {
+	ID      string `json:"id"`
+	Term    string `json:"term"`
+	Meaning string `json:"meaning"`
+	Chinese string `json:"chinese"`
+}
+
+type ReviewSession struct {
+	Due        []DueCard                `json:"due"`
+	Candidates []ReviewSessionCandidate `json:"candidates"`
+	Stats      ReviewStats              `json:"stats"`
+}
+
+type ReviewSessionInput struct {
+	Limit      int
+	Candidates int
 }
 
 func (a *App) ListVocab(ctx context.Context, userID string, input ListVocabInput) (VocabPage, error) {
@@ -425,20 +437,44 @@ func (a *App) ListVocab(ctx context.Context, userID string, input ListVocabInput
 	}, nil
 }
 
-func (a *App) Bootstrap(ctx context.Context, userID string, input ListVocabInput) (AppBootstrap, error) {
-	library, err := a.ListVocab(ctx, userID, input)
-	if err != nil {
-		return AppBootstrap{}, err
+func (a *App) ReviewSession(ctx context.Context, userID string, input ReviewSessionInput) (ReviewSession, error) {
+	limit := input.Limit
+	if limit <= 0 {
+		limit = 12
 	}
-	due, err := a.DueCards(ctx, userID)
-	if err != nil {
-		return AppBootstrap{}, err
+	candidateLimit := input.Candidates
+	if candidateLimit <= 0 {
+		candidateLimit = 30
 	}
-	stats, err := a.ReviewStats(ctx, userID)
+
+	data, err := a.store.GetReviewSessionData(ctx, userID, a.clock.Now(), limit, candidateLimit)
 	if err != nil {
-		return AppBootstrap{}, err
+		return ReviewSession{}, err
 	}
-	return AppBootstrap{Library: library, Due: due, Stats: stats}, nil
+	return ReviewSession{
+		Due:        a.dueCards(data.Due),
+		Candidates: reviewSessionCandidates(data.Candidates),
+		Stats: ReviewStats{
+			ReviewedToday: data.Stats.ReviewedToday,
+			Reviewed7Days: data.Stats.Reviewed7Days,
+			ActiveCards:   data.Stats.ActiveCards,
+			DueNow:        data.Stats.DueNow,
+			ArchivedCards: data.Stats.ArchivedCards,
+		},
+	}, nil
+}
+
+func reviewSessionCandidates(candidates []repository.ReviewSessionCandidate) []ReviewSessionCandidate {
+	result := make([]ReviewSessionCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		result = append(result, ReviewSessionCandidate{
+			ID:      candidate.ID,
+			Term:    candidate.Term,
+			Meaning: candidate.Meaning,
+			Chinese: candidate.Chinese,
+		})
+	}
+	return result
 }
 
 type DueCard struct {
@@ -475,7 +511,7 @@ type ReviewStats struct {
 }
 
 func (a *App) DueCards(ctx context.Context, userID string) ([]DueCard, error) {
-	states, err := a.store.ListDueVocab(ctx, userID, a.clock.Now())
+	states, err := a.store.ListDueVocab(ctx, userID, a.clock.Now(), 0)
 	if err != nil {
 		return nil, err
 	}
