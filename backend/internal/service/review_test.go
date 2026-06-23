@@ -901,8 +901,11 @@ func TestUpdateVocabEnqueuesNewAudioWhenTermChanges(t *testing.T) {
 	if job.InputText != "second" {
 		t.Fatalf("audio job input: got %q want second", job.InputText)
 	}
-	if updated.Audio == nil || updated.Audio.Status != "pending" {
-		t.Fatalf("updated audio: %+v", updated.Audio)
+	if updated.Item.Audio == nil || updated.Item.Audio.Status != "pending" {
+		t.Fatalf("updated audio: %+v", updated.Item.Audio)
+	}
+	if !updated.AudioJobEnqueued {
+		t.Fatal("expected update to report audio job enqueued")
 	}
 }
 
@@ -1189,7 +1192,7 @@ func TestUpdateVocabClearsPartOfSpeech(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update vocab: %v", err)
 	}
-	if updated.PartOfSpeech != domain.PartOfSpeechUnspecified {
-		t.Fatalf("part of speech after clear: got %q want %q", updated.PartOfSpeech, domain.PartOfSpeechUnspecified)
+	if updated.Item.PartOfSpeech != domain.PartOfSpeechUnspecified {
+		t.Fatalf("part of speech after clear: got %q want %q", updated.Item.PartOfSpeech, domain.PartOfSpeechUnspecified)
 	}
 }

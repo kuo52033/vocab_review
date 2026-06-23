@@ -45,9 +45,12 @@ The production env file should include required backend settings, for example:
 
 ```sh
 DATABASE_URL=postgres://...
+AUDIO_WORKER_WAKE_TOKEN=generate-a-long-random-token
 ```
 
-Do not commit `.env.production`, and do not hardcode `DATABASE_URL` in workflow or compose files.
+`AUDIO_WORKER_WAKE_TOKEN` must match between the API and audio worker containers. It authorizes the internal audio-worker wake endpoint and should be treated as a secret.
+
+Do not commit `.env.production`, and do not hardcode `DATABASE_URL` or wake tokens in workflow or compose files.
 
 ## GitHub Actions AWS Role
 

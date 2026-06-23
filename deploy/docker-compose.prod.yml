@@ -4,6 +4,7 @@ services:
     env_file: ${APP_ENV_FILE:-.env.production}
     environment:
       ADDR: ":8080"
+      AUDIO_WORKER_WAKE_URL: "http://audio-worker:9090/wake"
     expose:
       - "8080"
     restart: unless-stopped
@@ -11,7 +12,9 @@ services:
   audio-worker:
     image: ${BACKEND_IMAGE}
     env_file: ${APP_ENV_FILE:-.env.production}
-    command: ["/app/audio-worker", "-interval", "1h"]
+    command: ["/app/audio-worker", "-interval", "24h", "-wake-addr", ":9090"]
+    expose:
+      - "9090"
     depends_on:
       - api
     restart: unless-stopped

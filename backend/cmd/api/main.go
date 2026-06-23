@@ -68,12 +68,24 @@ func main() {
 		audioConfig,
 		audioURLSigner,
 	)
-	server := httpapi.NewServer(app, logger)
+	audioWorkerWake, err := newAudioWorkerWakeFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+	server := httpapi.NewServerWithAudioWorkerWake(app, logger, audioWorkerWake)
 
 	log.Printf("listening on %s", addr)
 	if err := http.ListenAndServe(addr, server.Handler()); err != nil {
 		log.Fatalf("serve: %v", err)
 	}
+}
+
+func newAudioWorkerWakeFromEnv() (httpapi.AudioWorkerWake, error) {
+	return httpapi.NewHTTPAudioWorkerWake(
+		os.Getenv("AUDIO_WORKER_WAKE_URL"),
+		os.Getenv("AUDIO_WORKER_WAKE_TOKEN"),
+		&http.Client{Timeout: time.Second},
+	)
 }
 
 func newVocabEnricherFromEnv() service.VocabEnricher {

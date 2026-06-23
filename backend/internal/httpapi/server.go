@@ -8,16 +8,22 @@ import (
 )
 
 type Server struct {
-	app    *service.App
-	logger *slog.Logger
-	mux    *http.ServeMux
+	app             *service.App
+	logger          *slog.Logger
+	mux             *http.ServeMux
+	audioWorkerWake AudioWorkerWake
 }
 
 func NewServer(app *service.App, logger *slog.Logger) *Server {
+	return NewServerWithAudioWorkerWake(app, logger, nil)
+}
+
+func NewServerWithAudioWorkerWake(app *service.App, logger *slog.Logger, audioWorkerWake AudioWorkerWake) *Server {
 	server := &Server{
-		app:    app,
-		logger: logger,
-		mux:    http.NewServeMux(),
+		app:             app,
+		logger:          logger,
+		mux:             http.NewServeMux(),
+		audioWorkerWake: audioWorkerWake,
 	}
 	server.routes()
 	return server

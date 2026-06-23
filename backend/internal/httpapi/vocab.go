@@ -48,6 +48,7 @@ func (s *Server) handleCreateVocab(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.wakeAudioWorker(r.Context(), result.AudioJobEnqueued)
 	status := http.StatusCreated
 	if !result.Created {
 		status = http.StatusOK
@@ -94,12 +95,13 @@ func (s *Server) handleUpdateVocab(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	item, err := s.app.UpdateVocab(r.Context(), userIDFromContext(r.Context()), id, req)
+	result, err := s.app.UpdateVocab(r.Context(), userIDFromContext(r.Context()), id, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"item": item})
+	s.wakeAudioWorker(r.Context(), result.AudioJobEnqueued)
+	writeJSON(w, http.StatusOK, map[string]any{"item": result.Item})
 }
 
 func (s *Server) handleVocabAudioURL(w http.ResponseWriter, r *http.Request) {

@@ -8,6 +8,7 @@ import (
 	"time"
 	"vocabreview/backend/internal/clock"
 	"vocabreview/backend/internal/domain"
+	"vocabreview/backend/internal/repository"
 	"vocabreview/backend/internal/service"
 )
 
@@ -17,13 +18,26 @@ type routeHTTPRepository struct {
 	vocab       domain.VocabItem
 	reviewState domain.ReviewState
 
+	seenCreateVocab     domain.VocabItem
+	seenCreateAudioJob  *domain.VocabAudioJob
 	seenGetVocabID      string
 	seenUpdateVocab     domain.VocabItem
+	seenUpdateAudioJob  *domain.VocabAudioJob
 	seenArchiveUserID   string
 	seenArchiveVocabID  string
 	seenReviewVocabID   string
 	seenRecordState     domain.ReviewState
 	seenRecordReviewLog domain.ReviewLog
+}
+
+func (r *routeHTTPRepository) CreateVocab(_ context.Context, item domain.VocabItem, _ domain.ReviewState, _ *domain.NotificationJob, audioJob *domain.VocabAudioJob) error {
+	r.seenCreateVocab = item
+	r.seenCreateAudioJob = audioJob
+	return nil
+}
+
+func (r *routeHTTPRepository) GetActiveVocabByTerm(context.Context, string, string) (repository.VocabWithState, bool, error) {
+	return repository.VocabWithState{}, false, nil
 }
 
 func (r *routeHTTPRepository) GetVocab(_ context.Context, id string) (domain.VocabItem, bool, error) {
@@ -36,9 +50,14 @@ func (r *routeHTTPRepository) GetVocab(_ context.Context, id string) (domain.Voc
 	return r.vocab, true, nil
 }
 
-func (r *routeHTTPRepository) UpdateVocab(_ context.Context, item domain.VocabItem, _ *domain.VocabAudioJob) error {
+func (r *routeHTTPRepository) UpdateVocab(_ context.Context, item domain.VocabItem, audioJob *domain.VocabAudioJob) error {
 	r.seenUpdateVocab = item
+	r.seenUpdateAudioJob = audioJob
 	return nil
+}
+
+func (r *routeHTTPRepository) GetReadyVocabAudio(context.Context, string, string, string, float64, string, string) (domain.VocabAudio, bool, error) {
+	return domain.VocabAudio{}, false, nil
 }
 
 func (r *routeHTTPRepository) ArchiveVocabForUser(ctx context.Context, userID string, vocabID string, archivedAt time.Time) (domain.VocabItem, error) {
@@ -60,6 +79,69 @@ func (r *routeHTTPRepository) RecordReview(_ context.Context, state domain.Revie
 	r.seenRecordState = state
 	r.seenRecordReviewLog = log
 	return nil
+}
+
+type fakeAudioWorkerWake struct {
+	calls int
+}
+
+func (w *fakeAudioWorkerWake) Wake(context.Context) error {
+	w.calls++
+	return nil
+}
+
+func TestCreateVocabWakesAudioWorkerWhenAudioJobEnqueued(t *testing.T) {
+	repo := &routeHTTPRepository{}
+	app := service.NewAppWithVocabAudioConfig(repo, clock.RealClock{}, nil, service.AuthConfig{Environment: "development"}, nil, testWakeAudioConfig())
+	wake := &fakeAudioWorkerWake{}
+	handler := NewServerWithAudioWorkerWake(app, testLogger(), wake).Handler()
+
+	response := performRequest(handler, authenticatedRequest(
+		http.MethodPost,
+		"/vocab",
+		bytes.NewBufferString(`{"term":"serendipity"}`),
+	))
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status: got %d want %d", response.Code, http.StatusCreated)
+	}
+	if repo.seenCreateAudioJob == nil {
+		t.Fatal("expected audio job to be enqueued")
+	}
+	if wake.calls != 1 {
+		t.Fatalf("wake calls: got %d want 1", wake.calls)
+	}
+}
+
+func TestCreateVocabDoesNotWakeAudioWorkerWithoutAudioJob(t *testing.T) {
+	repo := &routeHTTPRepository{}
+	app := service.NewApp(repo, clock.RealClock{})
+	wake := &fakeAudioWorkerWake{}
+	handler := NewServerWithAudioWorkerWake(app, testLogger(), wake).Handler()
+
+	response := performRequest(handler, authenticatedRequest(
+		http.MethodPost,
+		"/vocab",
+		bytes.NewBufferString(`{"term":"serendipity"}`),
+	))
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status: got %d want %d", response.Code, http.StatusCreated)
+	}
+	if wake.calls != 0 {
+		t.Fatalf("wake calls: got %d want 0", wake.calls)
+	}
+}
+
+func testWakeAudioConfig() service.VocabAudioConfig {
+	return service.VocabAudioConfig{
+		Enabled:      true,
+		Provider:     "openai",
+		Model:        "gpt-4o-mini-tts",
+		Voice:        "alloy",
+		Speed:        1,
+		OutputFormat: "mp3",
+	}
 }
 
 func TestPatchVocabRouteUsesPathID(t *testing.T) {

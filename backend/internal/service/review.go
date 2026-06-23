@@ -120,6 +120,7 @@ type CreateVocabResult struct {
 	State            domain.ReviewState `json:"state"`
 	Created          bool               `json:"created"`
 	SkippedDuplicate bool               `json:"skipped_duplicate"`
+	AudioJobEnqueued bool               `json:"-"`
 }
 
 func (a *App) CreateVocab(ctx context.Context, userID string, input CreateVocabInput) (CreateVocabResult, error) {
@@ -157,7 +158,7 @@ func (a *App) CreateVocab(ctx context.Context, userID string, input CreateVocabI
 		return CreateVocabResult{}, err
 	}
 	card.Item = a.decorateAudio(card.Item)
-	return CreateVocabResult{Item: card.Item, State: card.State, Created: true}, nil
+	return CreateVocabResult{Item: card.Item, State: card.State, Created: true, AudioJobEnqueued: audioJob != nil}, nil
 }
 
 func (a *App) AutocompleteVocab(ctx context.Context, items []enrichment.Item) ([]enrichment.Suggestion, error) {
@@ -167,13 +168,18 @@ func (a *App) AutocompleteVocab(ctx context.Context, items []enrichment.Item) ([
 	return a.enricher.Autocomplete(ctx, items)
 }
 
-func (a *App) UpdateVocab(ctx context.Context, userID, id string, input CreateVocabInput) (domain.VocabItem, error) {
+type UpdateVocabResult struct {
+	Item             domain.VocabItem `json:"item"`
+	AudioJobEnqueued bool             `json:"-"`
+}
+
+func (a *App) UpdateVocab(ctx context.Context, userID, id string, input CreateVocabInput) (UpdateVocabResult, error) {
 	item, ok, err := a.store.GetVocab(ctx, id)
 	if err != nil {
-		return domain.VocabItem{}, err
+		return UpdateVocabResult{}, err
 	}
 	if !ok || item.UserID != userID {
-		return domain.VocabItem{}, errors.New("vocab not found")
+		return UpdateVocabResult{}, errors.New("vocab not found")
 	}
 	previousTerm := audios.NormalizeInput(item.Term)
 	item.Term = updatedString(input.Term, item.Term)
@@ -191,13 +197,13 @@ func (a *App) UpdateVocab(ctx context.Context, userID, id string, input CreateVo
 	if audios.NormalizeInput(item.Term) != previousTerm {
 		audioJob, err = a.prepareAudioJob(ctx, &item, item.Term, item.UpdatedAt)
 		if err != nil {
-			return domain.VocabItem{}, err
+			return UpdateVocabResult{}, err
 		}
 	}
 	if err := a.store.UpdateVocab(ctx, item, audioJob); err != nil {
-		return domain.VocabItem{}, err
+		return UpdateVocabResult{}, err
 	}
-	return a.decorateAudio(item), nil
+	return UpdateVocabResult{Item: a.decorateAudio(item), AudioJobEnqueued: audioJob != nil}, nil
 }
 
 func (a *App) VocabAudioURL(ctx context.Context, userID, vocabID string) (string, error) {
@@ -301,8 +307,9 @@ func (a *App) ListVocab(ctx context.Context, userID string, input ListVocabInput
 }
 
 type DueCard struct {
-	Item  domain.VocabItem   `json:"item"`
-	State domain.ReviewState `json:"state"`
+	Item             domain.VocabItem   `json:"item"`
+	State            domain.ReviewState `json:"state"`
+	AudioJobEnqueued bool               `json:"-"`
 }
 
 type ReviewHistoryEntry struct {
@@ -452,7 +459,7 @@ func (a *App) CreateCapture(ctx context.Context, userID string, input CaptureInp
 	}
 
 	card.Item = a.decorateAudio(card.Item)
-	return DueCard{Item: card.Item, State: card.State}, nil
+	return DueCard{Item: card.Item, State: card.State, AudioJobEnqueued: audioJob != nil}, nil
 }
 
 func (a *App) RegisterDevice(ctx context.Context, userID, platform, token string) (domain.DeviceToken, error) {

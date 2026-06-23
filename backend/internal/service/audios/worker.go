@@ -58,7 +58,7 @@ func (w *Worker) Run(ctx context.Context, interval time.Duration) error {
 	if interval <= 0 {
 		interval = 10 * time.Second
 	}
-	if err := w.RunOnce(ctx); err != nil {
+	if err := w.Drain(ctx); err != nil {
 		return err
 	}
 	ticker := time.NewTicker(interval)
@@ -68,26 +68,43 @@ func (w *Worker) Run(ctx context.Context, interval time.Duration) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := w.RunOnce(ctx); err != nil {
-				w.logger.Error("audio worker batch failed", "error", err)
+			if err := w.Drain(ctx); err != nil {
+				w.logger.Error("audio worker drain failed", "error", err)
 			}
 		}
 	}
 }
 
 func (w *Worker) RunOnce(ctx context.Context) error {
+	_, err := w.RunBatch(ctx)
+	return err
+}
+
+func (w *Worker) Drain(ctx context.Context) error {
+	for {
+		claimed, err := w.RunBatch(ctx)
+		if err != nil {
+			return err
+		}
+		if claimed == 0 {
+			return nil
+		}
+	}
+}
+
+func (w *Worker) RunBatch(ctx context.Context) (int, error) {
 	now := w.clock.Now()
 	jobs, err := w.repo.ClaimPendingVocabAudioJobs(ctx, now, w.batchSize)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	w.logger.Info("audio batch claimed", "jobs", len(jobs), "batch_size", w.batchSize)
 	for _, job := range jobs {
 		if err := w.processJob(ctx, job, now); err != nil {
-			return err
+			return len(jobs), err
 		}
 	}
-	return nil
+	return len(jobs), nil
 }
 
 func (w *Worker) processJob(ctx context.Context, job domain.VocabAudioJob, now time.Time) error {

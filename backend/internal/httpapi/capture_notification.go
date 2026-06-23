@@ -23,6 +23,7 @@ func (s *Server) handleCapture(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.wakeAudioWorker(r.Context(), result.AudioJobEnqueued)
 	writeJSON(w, http.StatusCreated, result)
 }
 
