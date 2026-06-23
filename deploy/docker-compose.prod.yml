@@ -11,7 +11,7 @@ services:
   audio-worker:
     image: ${BACKEND_IMAGE}
     env_file: ${APP_ENV_FILE:-.env.production}
-    command: ["/app/audio-worker"]
+    command: ["/app/audio-worker", "-interval", "1h"]
     depends_on:
       - api
     restart: unless-stopped

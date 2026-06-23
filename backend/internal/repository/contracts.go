@@ -43,10 +43,6 @@ type ListVocabOptions struct {
 	Status domain.ReviewStatus
 }
 
-type HealthChecker interface {
-	HealthCheck(ctx context.Context) error
-}
-
 type AuthRepository interface {
 	PutMagicLink(ctx context.Context, token domain.MagicLinkToken, minInterval time.Duration) (bool, error)
 	GetUserByEmail(ctx context.Context, email string) (domain.User, bool, error)
@@ -95,5 +91,4 @@ type AppRepository interface {
 	DeviceRepository
 	NotificationRepository
 	VocabAudioRepository
-	HealthChecker
 }

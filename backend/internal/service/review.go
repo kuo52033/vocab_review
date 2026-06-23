@@ -475,12 +475,6 @@ func (a *App) ListNotificationJobs(ctx context.Context, userID string) ([]domain
 	return a.store.ListNotificationJobs(ctx, userID)
 }
 
-func (a *App) HealthCheck(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	return a.store.HealthCheck(ctx)
-}
-
 func (a *App) vocabWithStates(items []repository.VocabWithState) []VocabWithState {
 	result := make([]VocabWithState, 0, len(items))
 	for _, item := range items {
