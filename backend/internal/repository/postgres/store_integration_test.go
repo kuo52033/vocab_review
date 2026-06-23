@@ -99,12 +99,12 @@ func TestStoreLifecycle(t *testing.T) {
 		t.Fatalf("create vocab: %v", err)
 	}
 
-	listed, total, err := store.ListVocabByUser(ctx, user.ID, repository.ListVocabOptions{})
+	listed, total, hasNext, err := store.ListVocabByUser(ctx, user.ID, repository.ListVocabOptions{})
 	if err != nil {
 		t.Fatalf("list vocab: %v", err)
 	}
-	if len(listed) != 1 || total != 1 || listed[0].Item.ID != item.ID {
-		t.Fatalf("unexpected vocab list: total=%d items=%+v", total, listed)
+	if len(listed) != 1 || total != 1 || hasNext || listed[0].Item.ID != item.ID {
+		t.Fatalf("unexpected vocab list: total=%d hasNext=%v items=%+v", total, hasNext, listed)
 	}
 
 	due, err := store.ListDueVocab(ctx, user.ID, now.Add(time.Minute))
@@ -140,12 +140,12 @@ func TestStoreLifecycle(t *testing.T) {
 		t.Fatalf("unexpected review state: ok=%v state=%+v", ok, loadedState)
 	}
 
-	history, historyTotal, err := store.ListReviewHistory(ctx, user.ID, repository.Pagination{Limit: 10})
+	history, historyTotal, historyHasNext, err := store.ListReviewHistory(ctx, user.ID, repository.Pagination{Limit: 10})
 	if err != nil {
 		t.Fatalf("list review history: %v", err)
 	}
-	if len(history) != 1 || historyTotal != 1 {
-		t.Fatalf("expected one review history entry, got total=%d items=%d", historyTotal, len(history))
+	if len(history) != 1 || historyTotal != 1 || historyHasNext {
+		t.Fatalf("expected one review history entry, got total=%d hasNext=%v items=%d", historyTotal, historyHasNext, len(history))
 	}
 	if history[0].Log.ID != log.ID || history[0].Item.ID != item.ID || history[0].State.IntervalDays != 1 {
 		t.Fatalf("unexpected review history: %+v", history)

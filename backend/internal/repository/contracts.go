@@ -18,6 +18,13 @@ type VocabWithState struct {
 	State domain.ReviewState
 }
 
+type VocabCreate struct {
+	Item     domain.VocabItem
+	State    domain.ReviewState
+	Job      *domain.NotificationJob
+	AudioJob *domain.VocabAudioJob
+}
+
 type ReviewHistoryEntry struct {
 	Log   domain.ReviewLog
 	Item  domain.VocabItem
@@ -52,16 +59,18 @@ type AuthRepository interface {
 
 type VocabRepository interface {
 	CreateVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, job *domain.NotificationJob, audioJob *domain.VocabAudioJob) error
+	CreateVocabBatch(ctx context.Context, creates []VocabCreate) error
 	CreateCapturedVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, capture domain.CaptureSource, job *domain.NotificationJob, audioJob *domain.VocabAudioJob) error
 	GetVocab(ctx context.Context, id string) (domain.VocabItem, bool, error)
 	GetActiveVocabByTerm(ctx context.Context, userID string, term string) (VocabWithState, bool, error)
+	ListActiveVocabByTerms(ctx context.Context, userID string, terms []string) ([]VocabWithState, error)
 	UpdateVocab(ctx context.Context, item domain.VocabItem, audioJob *domain.VocabAudioJob) error
 	ArchiveVocabForUser(ctx context.Context, userID string, vocabID string, archivedAt time.Time) (domain.VocabItem, error)
-	ListVocabByUser(ctx context.Context, userID string, options ListVocabOptions) ([]VocabWithState, int, error)
+	ListVocabByUser(ctx context.Context, userID string, options ListVocabOptions) ([]VocabWithState, int, bool, error)
 	ListDueVocab(ctx context.Context, userID string, now time.Time) ([]VocabWithState, error)
 	GetReviewState(ctx context.Context, vocabID string) (domain.ReviewState, bool, error)
 	RecordReview(ctx context.Context, state domain.ReviewState, log domain.ReviewLog, job *domain.NotificationJob) error
-	ListReviewHistory(ctx context.Context, userID string, pagination Pagination) ([]ReviewHistoryEntry, int, error)
+	ListReviewHistory(ctx context.Context, userID string, pagination Pagination) ([]ReviewHistoryEntry, int, bool, error)
 	GetReviewStats(ctx context.Context, userID string, now time.Time) (ReviewStats, error)
 }
 

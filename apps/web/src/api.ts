@@ -60,6 +60,12 @@ export interface CreateVocabResponse {
   skipped_duplicate: boolean;
 }
 
+export interface BulkCreateVocabResponse {
+  items: CreateVocabResponse[];
+  created_count: number;
+  skipped_duplicate_count: number;
+}
+
 export interface ReviewStats {
   reviewed_today: number;
   reviewed_7_days: number;
@@ -80,6 +86,13 @@ export interface PageResponse<T> {
   total: number;
   limit: number;
   offset: number;
+  has_next: boolean;
+}
+
+export interface BootstrapResponse {
+  library: PageResponse<VocabWithState>;
+  due: VocabWithState[];
+  stats: ReviewStats;
 }
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8080";
@@ -155,10 +168,21 @@ export async function listVocab(params?: PageParams) {
   return request<PageResponse<VocabWithState>>(withQuery("/vocab", params));
 }
 
+export async function getBootstrap(params?: PageParams) {
+  return request<BootstrapResponse>(withQuery("/app/bootstrap", params));
+}
+
 export async function createVocab(payload: Partial<VocabItem>) {
   return request<CreateVocabResponse>("/vocab", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export async function bulkCreateVocab(items: Array<Partial<VocabItem>>) {
+  return request<BulkCreateVocabResponse>("/vocab/bulk", {
+    method: "POST",
+    body: JSON.stringify({ items })
   });
 }
 

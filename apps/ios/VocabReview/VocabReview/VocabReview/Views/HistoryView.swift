@@ -21,7 +21,7 @@ struct HistoryView: View {
                         historyCards
                         PaginationControl(
                             page: sessionStore.reviewHistoryPage,
-                            totalPages: sessionStore.reviewHistoryPageCount,
+                            hasNext: sessionStore.reviewHistoryHasNext,
                             previous: {
                                 Task { await sessionStore.setReviewHistoryPage(sessionStore.reviewHistoryPage - 1) }
                             },

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -21,6 +22,8 @@ var (
 	ErrVocabAudioNotReady       = errors.New("vocab audio is not ready")
 	ErrVocabAudioURLUnavailable = errors.New("vocab audio url is unavailable")
 )
+
+const maxBulkCreateVocabItems = 100
 
 type VocabEnricher interface {
 	Autocomplete(ctx context.Context, items []enrichment.Item) ([]enrichment.Suggestion, error)
@@ -123,6 +126,17 @@ type CreateVocabResult struct {
 	AudioJobEnqueued bool               `json:"-"`
 }
 
+type BulkCreateVocabInput struct {
+	Items []CreateVocabInput `json:"items"`
+}
+
+type BulkCreateVocabResult struct {
+	Items                 []CreateVocabResult `json:"items"`
+	CreatedCount          int                 `json:"created_count"`
+	SkippedDuplicateCount int                 `json:"skipped_duplicate_count"`
+	AudioJobEnqueued      bool                `json:"-"`
+}
+
 func (a *App) CreateVocab(ctx context.Context, userID string, input CreateVocabInput) (CreateVocabResult, error) {
 	term := strings.TrimSpace(input.Term)
 	if term == "" {
@@ -159,6 +173,99 @@ func (a *App) CreateVocab(ctx context.Context, userID string, input CreateVocabI
 	}
 	card.Item = a.decorateAudio(card.Item)
 	return CreateVocabResult{Item: card.Item, State: card.State, Created: true, AudioJobEnqueued: audioJob != nil}, nil
+}
+
+func (a *App) BulkCreateVocab(ctx context.Context, userID string, input BulkCreateVocabInput) (BulkCreateVocabResult, error) {
+	if len(input.Items) == 0 {
+		return BulkCreateVocabResult{}, errors.New("items are required")
+	}
+	if len(input.Items) > maxBulkCreateVocabItems {
+		return BulkCreateVocabResult{}, fmt.Errorf("items must be %d or fewer", maxBulkCreateVocabItems)
+	}
+
+	terms := make([]string, 0, len(input.Items))
+	for _, item := range input.Items {
+		term := strings.TrimSpace(item.Term)
+		if term == "" {
+			return BulkCreateVocabResult{}, errors.New("term is required")
+		}
+		terms = append(terms, term)
+	}
+
+	existingItems, err := a.store.ListActiveVocabByTerms(ctx, userID, terms)
+	if err != nil {
+		return BulkCreateVocabResult{}, err
+	}
+	seen := make(map[string]CreateVocabResult, len(existingItems)+len(input.Items))
+	for _, existing := range existingItems {
+		existing.Item = a.decorateAudio(existing.Item)
+		seen[normalizeTermKey(existing.Item.Term)] = CreateVocabResult{
+			Item:             existing.Item,
+			State:            existing.State,
+			Created:          false,
+			SkippedDuplicate: true,
+		}
+	}
+
+	now := a.clock.Now()
+	results := make([]CreateVocabResult, 0, len(input.Items))
+	creates := make([]repository.VocabCreate, 0, len(input.Items))
+	for _, item := range input.Items {
+		term := strings.TrimSpace(item.Term)
+		key := normalizeTermKey(term)
+		if existing, ok := seen[key]; ok {
+			results = append(results, existing)
+			continue
+		}
+
+		card, err := intake.NewVocabCard(userID, vocabInput(item), intake.IDs{
+			VocabItemID:       newID("voc"),
+			NotificationJobID: newID("job"),
+		}, now)
+		if err != nil {
+			return BulkCreateVocabResult{}, err
+		}
+		audioJob := a.prepareQueuedAudioJob(&card.Item, term, now)
+		creates = append(creates, repository.VocabCreate{
+			Item:     card.Item,
+			State:    card.State,
+			Job:      card.NotificationJob,
+			AudioJob: audioJob,
+		})
+		card.Item = a.decorateAudio(card.Item)
+		result := CreateVocabResult{Item: card.Item, State: card.State, Created: true, AudioJobEnqueued: audioJob != nil}
+		results = append(results, result)
+		seen[key] = CreateVocabResult{
+			Item:             card.Item,
+			State:            card.State,
+			Created:          false,
+			SkippedDuplicate: true,
+		}
+	}
+
+	if len(creates) > 0 {
+		if err := a.store.CreateVocabBatch(ctx, creates); err != nil {
+			return BulkCreateVocabResult{}, err
+		}
+	}
+
+	var createdCount, skippedCount int
+	var audioJobEnqueued bool
+	for _, result := range results {
+		if result.Created {
+			createdCount++
+		}
+		if result.SkippedDuplicate {
+			skippedCount++
+		}
+		audioJobEnqueued = audioJobEnqueued || result.AudioJobEnqueued
+	}
+	return BulkCreateVocabResult{
+		Items:                 results,
+		CreatedCount:          createdCount,
+		SkippedDuplicateCount: skippedCount,
+		AudioJobEnqueued:      audioJobEnqueued,
+	}, nil
 }
 
 func (a *App) AutocompleteVocab(ctx context.Context, items []enrichment.Item) ([]enrichment.Suggestion, error) {
@@ -270,6 +377,10 @@ func updatedString(next, current string) string {
 	return next
 }
 
+func normalizeTermKey(term string) string {
+	return strings.ToLower(strings.TrimSpace(term))
+}
+
 type VocabWithState struct {
 	Item  domain.VocabItem   `json:"item"`
 	State domain.ReviewState `json:"state"`
@@ -283,14 +394,21 @@ type ListVocabInput struct {
 }
 
 type VocabPage struct {
-	Items  []VocabWithState `json:"items"`
-	Total  int              `json:"total"`
-	Limit  int              `json:"limit"`
-	Offset int              `json:"offset"`
+	Items   []VocabWithState `json:"items"`
+	Total   int              `json:"total"`
+	Limit   int              `json:"limit"`
+	Offset  int              `json:"offset"`
+	HasNext bool             `json:"has_next"`
+}
+
+type AppBootstrap struct {
+	Library VocabPage   `json:"library"`
+	Due     []DueCard   `json:"due"`
+	Stats   ReviewStats `json:"stats"`
 }
 
 func (a *App) ListVocab(ctx context.Context, userID string, input ListVocabInput) (VocabPage, error) {
-	items, total, err := a.store.ListVocabByUser(ctx, userID, repository.ListVocabOptions{
+	items, total, hasNext, err := a.store.ListVocabByUser(ctx, userID, repository.ListVocabOptions{
 		Pagination: repository.Pagination{Limit: input.Limit, Offset: input.Offset},
 		Query:      strings.TrimSpace(input.Query),
 		Status:     input.Status,
@@ -299,11 +417,28 @@ func (a *App) ListVocab(ctx context.Context, userID string, input ListVocabInput
 		return VocabPage{}, err
 	}
 	return VocabPage{
-		Items:  a.vocabWithStates(items),
-		Total:  total,
-		Limit:  input.Limit,
-		Offset: input.Offset,
+		Items:   a.vocabWithStates(items),
+		Total:   total,
+		Limit:   input.Limit,
+		Offset:  input.Offset,
+		HasNext: hasNext,
 	}, nil
+}
+
+func (a *App) Bootstrap(ctx context.Context, userID string, input ListVocabInput) (AppBootstrap, error) {
+	library, err := a.ListVocab(ctx, userID, input)
+	if err != nil {
+		return AppBootstrap{}, err
+	}
+	due, err := a.DueCards(ctx, userID)
+	if err != nil {
+		return AppBootstrap{}, err
+	}
+	stats, err := a.ReviewStats(ctx, userID)
+	if err != nil {
+		return AppBootstrap{}, err
+	}
+	return AppBootstrap{Library: library, Due: due, Stats: stats}, nil
 }
 
 type DueCard struct {
@@ -324,10 +459,11 @@ type PageInput struct {
 }
 
 type ReviewHistoryPage struct {
-	Items  []ReviewHistoryEntry `json:"items"`
-	Total  int                  `json:"total"`
-	Limit  int                  `json:"limit"`
-	Offset int                  `json:"offset"`
+	Items   []ReviewHistoryEntry `json:"items"`
+	Total   int                  `json:"total"`
+	Limit   int                  `json:"limit"`
+	Offset  int                  `json:"offset"`
+	HasNext bool                 `json:"has_next"`
 }
 
 type ReviewStats struct {
@@ -379,15 +515,16 @@ func (a *App) GradeReview(ctx context.Context, userID, vocabID string, grade dom
 }
 
 func (a *App) ReviewHistory(ctx context.Context, userID string, input PageInput) (ReviewHistoryPage, error) {
-	entries, total, err := a.store.ListReviewHistory(ctx, userID, repository.Pagination{Limit: input.Limit, Offset: input.Offset})
+	entries, total, hasNext, err := a.store.ListReviewHistory(ctx, userID, repository.Pagination{Limit: input.Limit, Offset: input.Offset})
 	if err != nil {
 		return ReviewHistoryPage{}, err
 	}
 	return ReviewHistoryPage{
-		Items:  a.reviewHistoryEntries(entries),
-		Total:  total,
-		Limit:  input.Limit,
-		Offset: input.Offset,
+		Items:   a.reviewHistoryEntries(entries),
+		Total:   total,
+		Limit:   input.Limit,
+		Offset:  input.Offset,
+		HasNext: hasNext,
 	}, nil
 }
 
@@ -564,6 +701,43 @@ func (a *App) prepareAudioJob(ctx context.Context, item *domain.VocabItem, term 
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}, nil
+}
+
+func (a *App) prepareQueuedAudioJob(item *domain.VocabItem, term string, now time.Time) *domain.VocabAudioJob {
+	item.AudioID = ""
+	item.Audio = nil
+	if !a.audioConfig.Enabled {
+		return nil
+	}
+	inputText := audios.NormalizeInput(term)
+	if inputText == "" {
+		return nil
+	}
+	inputHash := audios.InputHash(audioGenerationConfig(a.audioConfig), inputText)
+	item.Audio = &domain.VocabAudio{
+		Provider:     a.audioConfig.Provider,
+		Model:        a.audioConfig.Model,
+		Voice:        a.audioConfig.Voice,
+		Speed:        a.audioConfig.Speed,
+		OutputFormat: a.audioConfig.OutputFormat,
+		Status:       "pending",
+	}
+	return &domain.VocabAudioJob{
+		ID:            newID("audjob"),
+		VocabItemID:   item.ID,
+		Provider:      a.audioConfig.Provider,
+		Model:         a.audioConfig.Model,
+		Voice:         a.audioConfig.Voice,
+		Speed:         a.audioConfig.Speed,
+		OutputFormat:  a.audioConfig.OutputFormat,
+		InputText:     inputText,
+		InputHash:     inputHash,
+		Status:        "pending",
+		MaxAttempts:   3,
+		NextAttemptAt: now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
 }
 
 func (a *App) decorateAudio(item domain.VocabItem) domain.VocabItem {

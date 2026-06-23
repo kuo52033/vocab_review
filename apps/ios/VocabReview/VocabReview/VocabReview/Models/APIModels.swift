@@ -24,6 +24,7 @@ struct LibraryResponse: Codable {
     let total: Int?
     let limit: Int?
     let offset: Int?
+    let has_next: Bool?
 }
 
 struct ReviewHistoryResponse: Codable {
@@ -31,9 +32,16 @@ struct ReviewHistoryResponse: Codable {
     let total: Int?
     let limit: Int?
     let offset: Int?
+    let has_next: Bool?
 }
 
 struct ReviewStatsResponse: Codable {
+    let stats: ReviewStats
+}
+
+struct BootstrapResponse: Codable {
+    let library: LibraryResponse
+    let due: [DueCard]
     let stats: ReviewStats
 }
 
@@ -50,6 +58,16 @@ struct CreateVocabResponse: Codable {
     let state: ReviewState
     let created: Bool?
     let skipped_duplicate: Bool?
+}
+
+struct BulkCreateVocabRequest: Codable {
+    let items: [CreateVocabRequest]
+}
+
+struct BulkCreateVocabResponse: Codable {
+    let items: [CreateVocabResponse]
+    let created_count: Int
+    let skipped_duplicate_count: Int
 }
 
 struct UpdateVocabResponse: Codable {

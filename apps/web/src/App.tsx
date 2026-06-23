@@ -3,16 +3,14 @@ import {
   autocompleteVocab,
   AutocompleteItem,
   AutocompleteResult,
+  bulkCreateVocab,
   clearToken,
   createVocab,
   deleteVocab,
+  getBootstrap,
   getVocabAudioURL,
-  getReviewStats,
   gradeReview,
   isUnauthorizedError,
-  listDue,
-  listNotificationJobs,
-  listVocab,
   requestMagicLink,
   ReviewGrade,
   ReviewStats,
@@ -387,26 +385,26 @@ function buildQuizDeck(dueCards: VocabWithState[], candidates: VocabWithState[],
 }
 
 type PaginationProps = {
-  label: string;
-  page: number;
-  totalPages: number;
-  onPageChange: (page: number) => void;
+	label: string;
+	page: number;
+	hasNext: boolean;
+	onPageChange: (page: number) => void;
 };
 
-function Pagination({ label, page, totalPages, onPageChange }: PaginationProps) {
-  if (totalPages <= 1) return null;
+function Pagination({ label, page, hasNext, onPageChange }: PaginationProps) {
+	if (page <= 1 && !hasNext) return null;
 
   return (
     <nav className="pagination" aria-label={`${label} pagination`}>
       <button type="button" className="ghost-button compact-button" onClick={() => onPageChange(page - 1)} disabled={page <= 1}>
         Previous
-      </button>
-      <span>
-        Page {page} of {totalPages}
-      </span>
-      <button type="button" className="ghost-button compact-button" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}>
-        Next
-      </button>
+		</button>
+		<span>
+			Page {page}
+		</span>
+		<button type="button" className="ghost-button compact-button" onClick={() => onPageChange(page + 1)} disabled={!hasNext}>
+			Next
+		</button>
     </nav>
   );
 }
@@ -483,11 +481,11 @@ export function App() {
   const wrongReviewRef = useRef<HTMLDivElement>(null);
   const refreshRequestIDRef = useRef(0);
   const [auth, setAuth] = useState<AuthState>({ email: "", token: localStorage.getItem("session_token") ?? "" });
-  const [vocab, setVocab] = useState<VocabWithState[]>([]);
-  const [due, setDue] = useState<VocabWithState[]>([]);
-  const [vocabTotal, setVocabTotal] = useState(0);
-  const [stats, setStats] = useState<ReviewStats>(emptyStats);
-  const [jobs, setJobs] = useState<Array<{ id: string; vocab_item_id: string; status: string; scheduled_at: string }>>([]);
+	const [vocab, setVocab] = useState<VocabWithState[]>([]);
+	const [due, setDue] = useState<VocabWithState[]>([]);
+	const [vocabTotal, setVocabTotal] = useState(0);
+	const [vocabHasNext, setVocabHasNext] = useState(false);
+	const [stats, setStats] = useState<ReviewStats>(emptyStats);
   const [form, setForm] = useState(emptyForm);
   const [bulkText, setBulkText] = useState(readStoredBulkImportDraft);
   const bulkTextRef = useRef(bulkText);
@@ -573,15 +571,16 @@ export function App() {
   const visibleVocab = [...vocab]
     .sort((left, right) => new Date(right.item.created_at).getTime() - new Date(left.item.created_at).getTime());
 
-  useEffect(() => {
-    setLibraryPage((current) => Math.min(current, pageCount(vocabTotal, libraryPageSize)));
-  }, [vocabTotal]);
+	useEffect(() => {
+		if (vocab.length === 0 && libraryPage > 1 && !vocabHasNext) {
+			setLibraryPage((current) => Math.max(1, current - 1));
+		}
+	}, [libraryPage, vocab.length, vocabHasNext]);
 
   const currentQuizCard = sessionDeck[sessionIndex];
   const sessionActive = Boolean(currentQuizCard);
   const sessionProgress = sessionDeck.length > 0 ? Math.round((sessionIndex / sessionDeck.length) * 100) : 0;
-  const libraryPageCount = pageCount(vocabTotal, libraryPageSize);
-  const paginatedVocab = visibleVocab;
+	const paginatedVocab = visibleVocab;
   const rawImportCards = parseBulkImport(bulkText);
   const parsedImportCards = enrichedCards ?? rawImportCards;
 
@@ -695,22 +694,17 @@ export function App() {
     setVocab([]);
     setEditingID("");
     try {
-      const [vocabResponse, dueResponse, statsResponse, jobsResponse] = await Promise.all([
-        listVocab({
-          limit: libraryPageSize,
-          offset: (page - 1) * libraryPageSize,
-          q: searchQuery
-        }),
-        listDue(),
-        getReviewStats(),
-        listNotificationJobs()
-      ]);
+      const bootstrap = await getBootstrap({
+        limit: libraryPageSize,
+        offset: (page - 1) * libraryPageSize,
+        q: searchQuery
+      });
       if (requestID !== refreshRequestIDRef.current) return;
-      setVocab(vocabResponse.items);
-      setDue(dueResponse.items);
-      setVocabTotal(vocabResponse.total);
-      setStats(statsResponse.stats);
-      setJobs(jobsResponse.items);
+			setVocab(bootstrap.library.items);
+			setDue(bootstrap.due);
+			setVocabTotal(bootstrap.library.total);
+			setVocabHasNext(bootstrap.library.has_next);
+			setStats(bootstrap.stats);
       setError("");
     } catch (err) {
       if (requestID !== refreshRequestIDRef.current) return;
@@ -727,11 +721,11 @@ export function App() {
     refreshRequestIDRef.current += 1;
     clearToken();
     setAuth((current) => ({ ...current, token: "", magicLink: undefined, magicMessage: undefined }));
-    setVocab([]);
-    setDue([]);
-    setVocabTotal(0);
-    setStats(emptyStats);
-    setJobs([]);
+	setVocab([]);
+	setDue([]);
+	setVocabTotal(0);
+	setVocabHasNext(false);
+	setStats(emptyStats);
     setEditingID("");
     setEditDraft(emptyForm);
     setSessionDeck([]);
@@ -869,36 +863,31 @@ export function App() {
     if (parsedImportCards.length === 0) return;
 
     setIsSaving(true);
-    let importedCount = 0;
-    let skippedCount = 0;
     try {
-      for (const card of parsedImportCards) {
-        const response = await createVocab({
+      const response = await bulkCreateVocab(
+        parsedImportCards.map((card) => ({
           term: card.term,
           meaning: card.meaning,
           chinese: card.chinese,
           example_sentence: card.example_sentence,
           part_of_speech: card.part_of_speech,
           notes: ""
-        });
-        if (response.skipped_duplicate) {
-          skippedCount += 1;
-          continue;
+        }))
+      );
+      for (const item of response.items) {
+        if (!item.skipped_duplicate) {
+          applyCreatedCard({ item: item.item, state: item.state });
         }
-        applyCreatedCard({ item: response.item, state: response.state });
-        importedCount += 1;
       }
       handleBulkTextChange("");
       setEnrichedCards(null);
       setEnrichmentError("");
       setLastCreatedTerm("");
-      setLastImportCount(importedCount);
+      setLastImportCount(response.created_count);
       setLastSkippedDuplicateTerm("");
-      setLastSkippedDuplicateCount(skippedCount);
+      setLastSkippedDuplicateCount(response.skipped_duplicate_count);
       setError("");
     } catch (err) {
-      setLastImportCount(importedCount);
-      setLastSkippedDuplicateCount(skippedCount);
       handleRequestError(err);
     } finally {
       setIsSaving(false);
@@ -982,31 +971,27 @@ export function App() {
   async function prepareReviewSession(): Promise<PreparedReviewSession | null> {
     setIsStartingReview(true);
     try {
-      const [freshDueResponse, vocabResponse, statsResponse] = await Promise.all([
-        listDue(),
-        listVocab({ limit: 100, offset: 0 }),
-        getReviewStats()
-      ]);
+      const bootstrap = await getBootstrap({ limit: 100, offset: 0 });
 
-      if (freshDueResponse.items.length === 0) {
-        setDue(freshDueResponse.items);
-        setStats(statsResponse.stats);
+      if (bootstrap.due.length === 0) {
+        setDue(bootstrap.due);
+        setStats(bootstrap.stats);
         setError("");
         return null;
       }
 
-      const deck = buildQuizDeck(freshDueResponse.items, vocabResponse.items, reviewSessionSize);
+      const deck = buildQuizDeck(bootstrap.due, bootstrap.library.items, reviewSessionSize);
       if (deck.length === 0) {
-        setDue(freshDueResponse.items);
-        setStats(statsResponse.stats);
+        setDue(bootstrap.due);
+        setStats(bootstrap.stats);
         setError("Start Review needs at least one due card with a meaning and one other active card with a meaning.");
         return null;
       }
       setError("");
       return {
         deck,
-        dueItems: freshDueResponse.items,
-        stats: statsResponse.stats
+        dueItems: bootstrap.due,
+        stats: bootstrap.stats
       };
     } catch (err) {
       handleRequestError(err);
@@ -1802,7 +1787,7 @@ export function App() {
                 </article>
               ))}
             </div>
-            <Pagination label="Active cards" page={libraryPage} totalPages={libraryPageCount} onPageChange={setLibraryPage} />
+						<Pagination label="Active cards" page={libraryPage} hasNext={vocabHasNext} onPageChange={setLibraryPage} />
           </section>
         ) : null}
 

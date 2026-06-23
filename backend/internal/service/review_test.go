@@ -134,6 +134,15 @@ func (f *fakeRepository) CreateVocab(ctx context.Context, item domain.VocabItem,
 	return nil
 }
 
+func (f *fakeRepository) CreateVocabBatch(ctx context.Context, creates []repository.VocabCreate) error {
+	for _, create := range creates {
+		if err := f.CreateVocab(ctx, create.Item, create.State, create.Job, create.AudioJob); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (f *fakeRepository) CreateCapturedVocab(ctx context.Context, item domain.VocabItem, state domain.ReviewState, capture domain.CaptureSource, job *domain.NotificationJob, audioJob *domain.VocabAudioJob) error {
 	if err := f.CreateVocab(ctx, item, state, job, audioJob); err != nil {
 		return err
@@ -186,7 +195,25 @@ func (f *fakeRepository) GetActiveVocabByTerm(_ context.Context, userID string, 
 	return repository.VocabWithState{}, false, nil
 }
 
-func (f *fakeRepository) ListVocabByUser(_ context.Context, userID string, options repository.ListVocabOptions) ([]repository.VocabWithState, int, error) {
+func (f *fakeRepository) ListActiveVocabByTerms(_ context.Context, userID string, terms []string) ([]repository.VocabWithState, error) {
+	termSet := make(map[string]struct{}, len(terms))
+	for _, term := range terms {
+		termSet[strings.ToLower(strings.TrimSpace(term))] = struct{}{}
+	}
+	items := make([]repository.VocabWithState, 0)
+	for _, item := range f.vocab {
+		if item.UserID != userID || item.ArchivedAt != nil {
+			continue
+		}
+		if _, ok := termSet[strings.ToLower(strings.TrimSpace(item.Term))]; !ok {
+			continue
+		}
+		items = append(items, repository.VocabWithState{Item: item, State: f.reviewStates[item.ID]})
+	}
+	return items, nil
+}
+
+func (f *fakeRepository) ListVocabByUser(_ context.Context, userID string, options repository.ListVocabOptions) ([]repository.VocabWithState, int, bool, error) {
 	items := make([]repository.VocabWithState, 0)
 	for _, item := range f.vocab {
 		if item.UserID != userID || item.ArchivedAt != nil {
@@ -206,15 +233,16 @@ func (f *fakeRepository) ListVocabByUser(_ context.Context, userID string, optio
 	}
 	total := len(items)
 	if options.Offset > len(items) {
-		return []repository.VocabWithState{}, total, nil
+		return []repository.VocabWithState{}, total, false, nil
 	}
 	if options.Offset > 0 {
 		items = items[options.Offset:]
 	}
+	hasNext := options.Limit > 0 && len(items) > options.Limit
 	if options.Limit > 0 && len(items) > options.Limit {
 		items = items[:options.Limit]
 	}
-	return items, total, nil
+	return items, total, hasNext, nil
 }
 
 func (f *fakeRepository) ListDueVocab(_ context.Context, userID string, now time.Time) ([]repository.VocabWithState, error) {
@@ -291,7 +319,7 @@ func (f *fakeRepository) RecordReview(_ context.Context, state domain.ReviewStat
 	return nil
 }
 
-func (f *fakeRepository) ListReviewHistory(_ context.Context, userID string, pagination repository.Pagination) ([]repository.ReviewHistoryEntry, int, error) {
+func (f *fakeRepository) ListReviewHistory(_ context.Context, userID string, pagination repository.Pagination) ([]repository.ReviewHistoryEntry, int, bool, error) {
 	entries := make([]repository.ReviewHistoryEntry, 0)
 	for _, log := range f.reviewLogs {
 		if log.UserID != userID {
@@ -312,15 +340,16 @@ func (f *fakeRepository) ListReviewHistory(_ context.Context, userID string, pag
 	}
 	total := len(entries)
 	if pagination.Offset > len(entries) {
-		return []repository.ReviewHistoryEntry{}, total, nil
+		return []repository.ReviewHistoryEntry{}, total, false, nil
 	}
 	if pagination.Offset > 0 {
 		entries = entries[pagination.Offset:]
 	}
+	hasNext := pagination.Limit > 0 && len(entries) > pagination.Limit
 	if pagination.Limit > 0 && len(entries) > pagination.Limit {
 		entries = entries[:pagination.Limit]
 	}
-	return entries, total, nil
+	return entries, total, hasNext, nil
 }
 
 func (f *fakeRepository) GetReviewStats(_ context.Context, userID string, now time.Time) (repository.ReviewStats, error) {
@@ -851,6 +880,45 @@ func TestCreateVocabEnqueuesAudioWhenConfigured(t *testing.T) {
 	}
 	if result.Item.Audio == nil || result.Item.Audio.Status != "pending" {
 		t.Fatalf("audio response: %+v", result.Item.Audio)
+	}
+}
+
+func TestBulkCreateVocabCreatesAndSkipsDuplicates(t *testing.T) {
+	repo := newFakeRepository()
+	now := time.Date(2026, 4, 26, 0, 0, 0, 0, time.UTC)
+	app := NewAppWithVocabAudioConfig(repo, stubClock{now: now}, nil, AuthConfig{Environment: "development"}, nil, testAudioConfig())
+
+	existing, err := app.CreateVocab(context.Background(), "usr_test", CreateVocabInput{Term: "existing"})
+	if err != nil {
+		t.Fatalf("create existing: %v", err)
+	}
+
+	result, err := app.BulkCreateVocab(context.Background(), "usr_test", BulkCreateVocabInput{Items: []CreateVocabInput{
+		{Term: "alpha", Meaning: "first"},
+		{Term: "existing"},
+		{Term: "Alpha", Meaning: "duplicate in request"},
+		{Term: "beta", Meaning: "second"},
+	}})
+	if err != nil {
+		t.Fatalf("bulk create: %v", err)
+	}
+	if result.CreatedCount != 2 || result.SkippedDuplicateCount != 2 || len(result.Items) != 4 {
+		t.Fatalf("bulk result: %+v", result)
+	}
+	if !result.AudioJobEnqueued {
+		t.Fatal("expected audio job enqueued")
+	}
+	if !result.Items[0].Created || !result.Items[3].Created {
+		t.Fatalf("expected alpha and beta created: %+v", result.Items)
+	}
+	if !result.Items[1].SkippedDuplicate || result.Items[1].Item.ID != existing.Item.ID {
+		t.Fatalf("expected existing duplicate: %+v", result.Items[1])
+	}
+	if !result.Items[2].SkippedDuplicate || result.Items[2].Item.Term != "alpha" {
+		t.Fatalf("expected duplicate to reference first created item: %+v", result.Items[2])
+	}
+	if len(repo.audioJobs) != 3 {
+		t.Fatalf("audio jobs: got %d want 3", len(repo.audioJobs))
 	}
 }
 

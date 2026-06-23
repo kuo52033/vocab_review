@@ -16,12 +16,12 @@ type reviewHTTPRepository struct {
 	seenPagination repository.Pagination
 }
 
-func (r *reviewHTTPRepository) ListReviewHistory(_ context.Context, userID string, pagination repository.Pagination) ([]repository.ReviewHistoryEntry, int, error) {
+func (r *reviewHTTPRepository) ListReviewHistory(_ context.Context, userID string, pagination repository.Pagination) ([]repository.ReviewHistoryEntry, int, bool, error) {
 	if userID != "usr_test" {
-		return nil, 0, nil
+		return nil, 0, false, nil
 	}
 	r.seenPagination = pagination
-	return []repository.ReviewHistoryEntry{}, 42, nil
+	return []repository.ReviewHistoryEntry{}, 42, true, nil
 }
 
 func TestHandleReviewHistoryAcceptsPaginatedGetRequest(t *testing.T) {
@@ -40,7 +40,7 @@ func TestHandleReviewHistoryAcceptsPaginatedGetRequest(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body.Total != 42 || body.Limit != 21 || body.Offset != 0 {
-		t.Fatalf("response page metadata: got total=%d limit=%d offset=%d", body.Total, body.Limit, body.Offset)
+	if body.Total != 42 || body.Limit != 21 || body.Offset != 0 || !body.HasNext {
+		t.Fatalf("response page metadata: got total=%d limit=%d offset=%d hasNext=%v", body.Total, body.Limit, body.Offset, body.HasNext)
 	}
 }

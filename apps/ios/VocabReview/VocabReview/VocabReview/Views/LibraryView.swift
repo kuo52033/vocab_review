@@ -152,7 +152,7 @@ struct LibraryView: View {
 
         PaginationControl(
             page: sessionStore.libraryPage,
-            totalPages: sessionStore.libraryPageCount,
+            hasNext: sessionStore.libraryHasNext,
             previous: {
                 Task { await changePage(to: sessionStore.libraryPage - 1) }
             },

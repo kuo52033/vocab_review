@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -23,6 +24,26 @@ func (s *Store) CreateVocab(ctx context.Context, item domain.VocabItem, state do
 			return err
 		}
 		return upsertVocabAudioJob(ctx, tx, audioJob)
+	})
+}
+
+func (s *Store) CreateVocabBatch(ctx context.Context, creates []repository.VocabCreate) error {
+	return withTx(ctx, s.pool, func(tx pgx.Tx) error {
+		for _, create := range creates {
+			if err := insertVocab(ctx, tx, create.Item); err != nil {
+				return err
+			}
+			if err := insertReviewState(ctx, tx, create.State); err != nil {
+				return err
+			}
+			if err := insertNotificationJob(ctx, tx, create.Job); err != nil {
+				return err
+			}
+			if err := upsertVocabAudioJob(ctx, tx, create.AudioJob); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
@@ -102,6 +123,46 @@ func (s *Store) GetActiveVocabByTerm(ctx context.Context, userID string, term st
 	return items[0], true, nil
 }
 
+func (s *Store) ListActiveVocabByTerms(ctx context.Context, userID string, terms []string) ([]repository.VocabWithState, error) {
+	normalized := make([]string, 0, len(terms))
+	seen := make(map[string]struct{}, len(terms))
+	for _, term := range terms {
+		term = strings.ToLower(strings.TrimSpace(term))
+		if term == "" {
+			continue
+		}
+		if _, ok := seen[term]; ok {
+			continue
+		}
+		seen[term] = struct{}{}
+		normalized = append(normalized, term)
+	}
+	if len(normalized) == 0 {
+		return nil, nil
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			v.id, v.user_id, v.term, v.meaning, v.chinese, v.example_sentence, v.part_of_speech, v.source_text, v.source_url, v.notes,
+			COALESCE(a.id, ''), COALESCE(a.storage_key, ''), COALESCE(a.status, j.status, ''), COALESCE(a.provider, j.provider, ''), COALESCE(a.model, j.model, ''), COALESCE(a.voice, j.voice, ''), COALESCE(a.speed, j.speed, 0), COALESCE(a.output_format, j.output_format, ''),
+			v.created_at, v.updated_at, v.archived_at,
+			r.vocab_item_id, r.user_id, r.status, r.ease_factor, r.interval_days, r.repetition_count, r.last_reviewed_at, r.next_due_at, r.consecutive_again
+		FROM vocab_items v
+		JOIN review_states r ON r.vocab_item_id = v.id
+		LEFT JOIN vocab_audios a ON a.id = v.audio_id
+		LEFT JOIN vocab_audio_jobs j ON j.vocab_item_id = v.id
+		WHERE v.user_id = $1
+		  AND v.archived_at IS NULL
+		  AND lower(btrim(v.term)) = ANY($2::text[])
+		ORDER BY v.created_at DESC
+	`, userID, normalized)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanVocabWithStates(rows)
+}
+
 func (s *Store) UpdateVocab(ctx context.Context, item domain.VocabItem, audioJob *domain.VocabAudioJob) error {
 	return withTx(ctx, s.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `
@@ -153,27 +214,12 @@ func (s *Store) ArchiveVocabForUser(ctx context.Context, userID string, vocabID 
 	return item, nil
 }
 
-func (s *Store) ListVocabByUser(ctx context.Context, userID string, options repository.ListVocabOptions) ([]repository.VocabWithState, int, error) {
+func (s *Store) ListVocabByUser(ctx context.Context, userID string, options repository.ListVocabOptions) ([]repository.VocabWithState, int, bool, error) {
 	query := "%" + options.Query + "%"
 	status := string(options.Status)
-	var total int
-	if err := s.pool.QueryRow(ctx, `
-		SELECT COUNT(*)
-		FROM vocab_items v
-		JOIN review_states r ON r.vocab_item_id = v.id
-		WHERE v.user_id = $1
-		  AND v.archived_at IS NULL
-		  AND ($2 = '' OR r.status = $2)
-		  AND (
-		    $3 = '%%'
-		    OR v.term ILIKE $3
-		    OR v.meaning ILIKE $3
-		    OR v.chinese ILIKE $3
-		    OR v.example_sentence ILIKE $3
-		    OR v.notes ILIKE $3
-		  )
-	`, userID, status, query).Scan(&total); err != nil {
-		return nil, 0, err
+	queryLimit := options.Limit
+	if queryLimit > 0 {
+		queryLimit++
 	}
 
 	rows, err := s.pool.Query(ctx, `
@@ -196,15 +242,26 @@ func (s *Store) ListVocabByUser(ctx context.Context, userID string, options repo
 		    OR v.chinese ILIKE $3
 		    OR v.example_sentence ILIKE $3
 		    OR v.notes ILIKE $3
-		  )
+		)
 		ORDER BY v.created_at DESC
 		LIMIT NULLIF($4, 0)
 		OFFSET $5
-	`, userID, status, query, options.Limit, options.Offset)
+	`, userID, status, query, queryLimit, options.Offset)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
 	defer rows.Close()
 	items, err := scanVocabWithStates(rows)
-	return items, total, err
+	if err != nil {
+		return nil, 0, false, err
+	}
+	hasNext := options.Limit > 0 && len(items) > options.Limit
+	if hasNext {
+		items = items[:options.Limit]
+	}
+	total := options.Offset + len(items)
+	if hasNext {
+		total++
+	}
+	return items, total, hasNext, nil
 }

@@ -76,16 +76,11 @@ func (s *Store) RecordReview(ctx context.Context, state domain.ReviewState, log 
 	})
 }
 
-func (s *Store) ListReviewHistory(ctx context.Context, userID string, pagination repository.Pagination) ([]repository.ReviewHistoryEntry, int, error) {
-	var total int
-	if err := s.pool.QueryRow(ctx, `
-		SELECT COUNT(*)
-		FROM review_logs l
-		WHERE l.user_id = $1
-	`, userID).Scan(&total); err != nil {
-		return nil, 0, err
+func (s *Store) ListReviewHistory(ctx context.Context, userID string, pagination repository.Pagination) ([]repository.ReviewHistoryEntry, int, bool, error) {
+	queryLimit := pagination.Limit
+	if queryLimit > 0 {
+		queryLimit++
 	}
-
 	rows, err := s.pool.Query(ctx, `
 		SELECT
 			l.id, l.user_id, l.vocab_item_id, l.grade, l.reviewed_at,
@@ -102,9 +97,9 @@ func (s *Store) ListReviewHistory(ctx context.Context, userID string, pagination
 		ORDER BY l.reviewed_at DESC
 		LIMIT NULLIF($2, 0)
 		OFFSET $3
-	`, userID, pagination.Limit, pagination.Offset)
+	`, userID, queryLimit, pagination.Offset)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
 	defer rows.Close()
 
@@ -150,12 +145,23 @@ func (s *Store) ListReviewHistory(ctx context.Context, userID string, pagination
 			&entry.State.NextDueAt,
 			&entry.State.ConsecutiveAgain,
 		); err != nil {
-			return nil, 0, err
+			return nil, 0, false, err
 		}
 		entry.Item.Audio = audioFromScan(entry.Item.AudioID, audioStorageKey, audioStatus, audioProvider, audioModel, audioVoice, audioSpeed, audioFormat)
 		result = append(result, entry)
 	}
-	return result, total, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, false, err
+	}
+	hasNext := pagination.Limit > 0 && len(result) > pagination.Limit
+	if hasNext {
+		result = result[:pagination.Limit]
+	}
+	total := pagination.Offset + len(result)
+	if hasNext {
+		total++
+	}
+	return result, total, hasNext, nil
 }
 
 func (s *Store) GetReviewStats(ctx context.Context, userID string, now time.Time) (repository.ReviewStats, error) {

@@ -10,8 +10,10 @@ import (
 )
 
 func (s *Server) registerVocabRoutes() {
+	s.handleAuthenticated("GET /app/bootstrap", s.handleAppBootstrap)
 	s.handleAuthenticated("GET /vocab", s.handleListVocab)
 	s.handleAuthenticated("POST /vocab/autocomplete", s.handleAutocompleteVocab)
+	s.handleAuthenticated("POST /vocab/bulk", s.handleBulkCreateVocab)
 	s.handleAuthenticated("POST /vocab", s.handleCreateVocab)
 	s.handleAuthenticated("GET /vocab/{id}/audio-url", s.handleVocabAudioURL)
 	s.handleAuthenticated("PATCH /vocab/{id}", s.handleUpdateVocab)
@@ -25,6 +27,25 @@ func (s *Server) handleListVocab(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := s.app.ListVocab(r.Context(), userIDFromContext(r.Context()), service.ListVocabInput{
+		Limit:  page.Limit,
+		Offset: page.Offset,
+		Query:  r.URL.Query().Get("q"),
+		Status: domain.ReviewStatus(r.URL.Query().Get("status")),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleAppBootstrap(w http.ResponseWriter, r *http.Request) {
+	page, err := parsePageQuery(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := s.app.Bootstrap(r.Context(), userIDFromContext(r.Context()), service.ListVocabInput{
 		Limit:  page.Limit,
 		Offset: page.Offset,
 		Query:  r.URL.Query().Get("q"),
@@ -51,6 +72,25 @@ func (s *Server) handleCreateVocab(w http.ResponseWriter, r *http.Request) {
 	s.wakeAudioWorker(r.Context(), result.AudioJobEnqueued)
 	status := http.StatusCreated
 	if !result.Created {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, result)
+}
+
+func (s *Server) handleBulkCreateVocab(w http.ResponseWriter, r *http.Request) {
+	var req service.BulkCreateVocabInput
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := s.app.BulkCreateVocab(r.Context(), userIDFromContext(r.Context()), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.wakeAudioWorker(r.Context(), result.AudioJobEnqueued)
+	status := http.StatusCreated
+	if result.CreatedCount == 0 {
 		status = http.StatusOK
 	}
 	writeJSON(w, status, result)

@@ -2,12 +2,12 @@ import SwiftUI
 
 struct PaginationControl: View {
     let page: Int
-    let totalPages: Int
+    let hasNext: Bool
     let previous: () -> Void
     let next: () -> Void
 
     var body: some View {
-        if totalPages > 1 {
+        if page > 1 || hasNext {
             HStack {
                 Button(action: previous) {
                     Label("Previous", systemImage: "chevron.left")
@@ -17,7 +17,7 @@ struct PaginationControl: View {
 
                 Spacer()
 
-                Text("Page \(page) of \(totalPages)")
+                Text("Page \(page)")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(AppTheme.sageDark)
 
@@ -28,7 +28,7 @@ struct PaginationControl: View {
                         .labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(PaginationButtonStyle())
-                .disabled(page >= totalPages)
+                .disabled(!hasNext)
             }
             .padding(.vertical, 6)
         }

@@ -13,6 +13,8 @@ final class SessionStore: ObservableObject {
     @Published var reviewHistoryTotal: Int = 0
     @Published var libraryPage: Int = 1
     @Published var reviewHistoryPage: Int = 1
+    @Published var libraryHasNext: Bool = false
+    @Published var reviewHistoryHasNext: Bool = false
     @Published var reviewStats = ReviewStats(reviewed_today: 0, reviewed_7_days: 0, active_cards: 0, due_now: 0, archived_cards: 0)
     @Published var errorMessage: String = ""
     @Published var infoMessage: String = ""
@@ -114,14 +116,6 @@ final class SessionStore: ObservableObject {
         isLoadingDueCards = false
     }
 
-    var libraryPageCount: Int {
-        pageCount(total: libraryTotal, pageSize: libraryPageSize)
-    }
-
-    var reviewHistoryPageCount: Int {
-        pageCount(total: reviewHistoryTotal, pageSize: reviewHistoryPageSize)
-    }
-
     func loadLibraryCards(query: String = "", status: String = "") async {
         guard isAuthenticated else { return }
 
@@ -147,7 +141,10 @@ final class SessionStore: ObservableObject {
                 lhs.item.createdAtDate > rhs.item.createdAtDate
             }
             libraryTotal = response.total ?? response.items.count
-            libraryPage = min(libraryPage, libraryPageCount)
+            libraryHasNext = response.has_next ?? false
+            if libraryCards.isEmpty && libraryPage > 1 && !libraryHasNext {
+                libraryPage -= 1
+            }
         } catch {
             guard loadID == libraryLoadID else { return }
             handleRequestError(error)
@@ -167,7 +164,10 @@ final class SessionStore: ObservableObject {
             ]))
             reviewHistory = response.items
             reviewHistoryTotal = response.total ?? response.items.count
-            reviewHistoryPage = min(reviewHistoryPage, reviewHistoryPageCount)
+            reviewHistoryHasNext = response.has_next ?? false
+            if reviewHistory.isEmpty && reviewHistoryPage > 1 && !reviewHistoryHasNext {
+                reviewHistoryPage -= 1
+            }
         } catch {
             handleRequestError(error)
         }
@@ -187,9 +187,40 @@ final class SessionStore: ObservableObject {
     }
 
     func refreshAuthenticatedData() async {
-        await loadDueCards()
-        await loadLibraryCards()
-        await loadReviewStats()
+        guard isAuthenticated else { return }
+
+        libraryLoadID += 1
+        let loadID = libraryLoadID
+        isLoadingDueCards = true
+        isLoadingLibraryCards = true
+        errorMessage = ""
+        defer {
+            isLoadingDueCards = false
+            if loadID == libraryLoadID {
+                isLoadingLibraryCards = false
+            }
+        }
+
+        do {
+            let response: BootstrapResponse = try await sendRequest(path: pathWithQuery("/app/bootstrap", [
+                URLQueryItem(name: "limit", value: String(libraryPageSize)),
+                URLQueryItem(name: "offset", value: String((libraryPage - 1) * libraryPageSize))
+            ]))
+            guard loadID == libraryLoadID else { return }
+            dueCards = response.due
+            libraryCards = response.library.items.sorted { lhs, rhs in
+                lhs.item.createdAtDate > rhs.item.createdAtDate
+            }
+            libraryTotal = response.library.total ?? response.library.items.count
+            libraryHasNext = response.library.has_next ?? false
+            if libraryCards.isEmpty && libraryPage > 1 && !libraryHasNext {
+                libraryPage -= 1
+            }
+            reviewStats = response.stats
+        } catch {
+            guard loadID == libraryLoadID else { return }
+            handleRequestError(error)
+        }
     }
 
     func grade(cardID: String, grade: String) async {
@@ -337,15 +368,13 @@ final class SessionStore: ObservableObject {
         isCreatingVocab = true
         errorMessage = ""
         infoMessage = ""
-        var createdResponses: [CreateVocabResponse] = []
-        var skippedDuplicateCount = 0
 
-        for draft in trimmedDrafts {
-            do {
-                let response: CreateVocabResponse = try await sendRequest(
-                    path: "/vocab",
-                    method: "POST",
-                    body: CreateVocabRequest(
+        do {
+            let response: BulkCreateVocabResponse = try await sendRequest(
+                path: "/vocab/bulk",
+                method: "POST",
+                body: BulkCreateVocabRequest(items: trimmedDrafts.map { draft in
+                    CreateVocabRequest(
                         term: draft.term,
                         meaning: draft.meaning,
                         chinese: draft.chinese,
@@ -355,28 +384,25 @@ final class SessionStore: ObservableObject {
                         source_url: "",
                         notes: draft.notes
                     )
-                )
-                if response.skipped_duplicate == true {
-                    skippedDuplicateCount += 1
-                } else {
-                    createdResponses.append(response)
-                }
-            } catch {
-                handleRequestError(error)
-                break
+                })
+            )
+            let createdResponses = response.items.filter { $0.skipped_duplicate != true }
+            applyCreatedVocabCards(createdResponses)
+            let createdCount = response.created_count
+            let skippedDuplicateCount = response.skipped_duplicate_count
+            if createdCount > 0 {
+                let skipped = skippedDuplicateCount > 0 ? " Skipped \(skippedDuplicateCount) duplicate\(skippedDuplicateCount == 1 ? "" : "s")." : ""
+                infoMessage = "Imported \(createdCount) \(createdCount == 1 ? "card" : "cards").\(skipped)"
+            } else if skippedDuplicateCount > 0 {
+                infoMessage = "Skipped \(skippedDuplicateCount) duplicate\(skippedDuplicateCount == 1 ? "" : "s")."
             }
+            isCreatingVocab = false
+            return createdCount
+        } catch {
+            handleRequestError(error)
+            isCreatingVocab = false
+            return 0
         }
-
-        applyCreatedVocabCards(createdResponses)
-        let createdCount = createdResponses.count
-        if createdCount > 0 {
-            let skipped = skippedDuplicateCount > 0 ? " Skipped \(skippedDuplicateCount) duplicate\(skippedDuplicateCount == 1 ? "" : "s")." : ""
-            infoMessage = "Imported \(createdCount) \(createdCount == 1 ? "card" : "cards").\(skipped)"
-        } else if skippedDuplicateCount > 0 {
-            infoMessage = "Skipped \(skippedDuplicateCount) duplicate\(skippedDuplicateCount == 1 ? "" : "s")."
-        }
-        isCreatingVocab = false
-        return createdCount
     }
 
     func updateVocab(
@@ -590,6 +616,8 @@ final class SessionStore: ObservableObject {
         reviewHistoryTotal = 0
         libraryPage = 1
         reviewHistoryPage = 1
+        libraryHasNext = false
+        reviewHistoryHasNext = false
         reviewStats = ReviewStats(reviewed_today: 0, reviewed_7_days: 0, active_cards: 0, due_now: 0, archived_cards: 0)
         requestedMagicLink = nil
         errorMessage = ""
@@ -619,12 +647,12 @@ final class SessionStore: ObservableObject {
     }
 
     func setLibraryPage(_ page: Int, query: String = "", status: String = "") async {
-        libraryPage = min(max(page, 1), libraryPageCount)
+        libraryPage = max(page, 1)
         await loadLibraryCards(query: query, status: status)
     }
 
     func setReviewHistoryPage(_ page: Int) async {
-        reviewHistoryPage = min(max(page, 1), reviewHistoryPageCount)
+        reviewHistoryPage = max(page, 1)
         await loadReviewHistory()
     }
 
@@ -710,10 +738,6 @@ final class SessionStore: ObservableObject {
             return !value.isEmpty
         }
         return components.string ?? path
-    }
-
-    private func pageCount(total: Int, pageSize: Int) -> Int {
-        max(1, Int(ceil(Double(total) / Double(pageSize))))
     }
 
     private func handleRequestError(_ error: Error) {
