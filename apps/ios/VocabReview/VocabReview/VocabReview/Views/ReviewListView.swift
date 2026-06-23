@@ -735,17 +735,18 @@ struct ReviewListView: View {
         isStartingReview = true
         defer { isStartingReview = false }
 
-        await sessionStore.loadDueCards()
-        await sessionStore.loadReviewStats()
-        guard !sessionStore.dueCards.isEmpty else {
+        guard let bootstrap = await sessionStore.loadReviewBootstrap(limit: 100) else {
+            return
+        }
+
+        guard !bootstrap.due.isEmpty else {
             sessionStore.clearError()
             return
         }
 
-        let candidates = await sessionStore.loadReviewOptionCards()
         let deck = buildQuizDeck(
-            dueCards: sessionStore.dueCards,
-            candidates: candidates,
+            dueCards: bootstrap.due,
+            candidates: bootstrap.candidates,
             limit: sessionLimit
         )
 

@@ -13,6 +13,7 @@ import {
   isUnauthorizedError,
   requestMagicLink,
   ReviewGrade,
+  ReviewState,
   ReviewStats,
   setToken,
   updateVocab,
@@ -829,6 +830,19 @@ export function App() {
     }));
   }
 
+  function applyGradedReview(id: string, state: ReviewState) {
+    setDue((current) => current.filter((card) => card.item.id !== id));
+    setVocab((current) =>
+      current.map((card) => (card.item.id === id ? { ...card, state } : card))
+    );
+    setStats((current) => ({
+      ...current,
+      reviewed_today: current.reviewed_today + 1,
+      reviewed_7_days: current.reviewed_7_days + 1,
+      due_now: Math.max(0, current.due_now - 1)
+    }));
+  }
+
   async function handleCreateVocab(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsSaving(true);
@@ -959,8 +973,8 @@ export function App() {
   async function handleGrade(id: string, grade: "again" | "hard" | "good" | "easy") {
     setIsGrading(true);
     try {
-      await gradeReview(id, grade);
-      await refresh();
+      const response = await gradeReview(id, grade);
+      applyGradedReview(id, response.state);
     } catch (err) {
       handleRequestError(err);
     } finally {
@@ -1087,7 +1101,7 @@ export function App() {
           }
         ]);
       }
-      await refresh();
+      applyGradedReview(currentQuizCard.card.item.id, response.state);
       setPendingNextDue(response.state.next_due_at);
       setError("");
     } catch (err) {

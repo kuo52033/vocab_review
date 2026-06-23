@@ -223,31 +223,35 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    func loadReviewBootstrap(limit: Int) async -> (due: [DueCard], candidates: [DueCard])? {
+        guard isAuthenticated else { return nil }
+
+        isLoadingDueCards = true
+        errorMessage = ""
+        defer {
+            isLoadingDueCards = false
+        }
+
+        do {
+            let response: BootstrapResponse = try await sendRequest(path: pathWithQuery("/app/bootstrap", [
+                URLQueryItem(name: "limit", value: String(limit)),
+                URLQueryItem(name: "offset", value: "0")
+            ]))
+            dueCards = response.due
+            reviewStats = response.stats
+            return (response.due, response.library.items)
+        } catch {
+            handleRequestError(error)
+            return nil
+        }
+    }
+
     func grade(cardID: String, grade: String) async {
         guard isAuthenticated else { return }
 
         isGrading = true
         errorMessage = ""
-
-        do {
-            let _: ReviewStateResponse = try await sendRequest(
-                path: "/reviews/\(cardID)/grade",
-                method: "POST",
-                body: GradeRequest(grade: grade)
-            )
-            await refreshAuthenticatedData()
-        } catch {
-            handleRequestError(error)
-        }
-
-        isGrading = false
-    }
-
-    func gradeAndReturnNextDue(cardID: String, grade: String) async -> String? {
-        guard isAuthenticated else { return nil }
-
-        isGrading = true
-        errorMessage = ""
+        defer { isGrading = false }
 
         do {
             let response: ReviewStateResponse = try await sendRequest(
@@ -255,31 +259,45 @@ final class SessionStore: ObservableObject {
                 method: "POST",
                 body: GradeRequest(grade: grade)
             )
-            await loadDueCards()
-            await loadLibraryCards()
-            await loadReviewStats()
-            isGrading = false
+            applyGradedReview(cardID: cardID, state: response.state)
+        } catch {
+            handleRequestError(error)
+        }
+    }
+
+    func gradeAndReturnNextDue(cardID: String, grade: String) async -> String? {
+        guard isAuthenticated else { return nil }
+
+        isGrading = true
+        errorMessage = ""
+        defer { isGrading = false }
+
+        do {
+            let response: ReviewStateResponse = try await sendRequest(
+                path: "/reviews/\(cardID)/grade",
+                method: "POST",
+                body: GradeRequest(grade: grade)
+            )
+            applyGradedReview(cardID: cardID, state: response.state)
             return response.state.next_due_at
         } catch {
             handleRequestError(error)
-            isGrading = false
             return nil
         }
     }
 
-    func loadReviewOptionCards() async -> [DueCard] {
-        guard isAuthenticated else { return [] }
-
-        do {
-            let response: LibraryResponse = try await sendRequest(path: pathWithQuery("/vocab", [
-                URLQueryItem(name: "limit", value: "100"),
-                URLQueryItem(name: "offset", value: "0")
-            ]))
-            return response.items
-        } catch {
-            handleRequestError(error)
-            return []
+    private func applyGradedReview(cardID: String, state: ReviewState) {
+        dueCards.removeAll { $0.item.id == cardID }
+        libraryCards = libraryCards.map { card in
+            card.item.id == cardID ? DueCard(item: card.item, state: state) : card
         }
+        reviewStats = ReviewStats(
+            reviewed_today: reviewStats.reviewed_today + 1,
+            reviewed_7_days: reviewStats.reviewed_7_days + 1,
+            active_cards: reviewStats.active_cards,
+            due_now: max(0, reviewStats.due_now - 1),
+            archived_cards: reviewStats.archived_cards
+        )
     }
 
     func createVocab(
