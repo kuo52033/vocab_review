@@ -238,10 +238,6 @@ func (s *Store) ListVocabByUser(ctx context.Context, userID string, options repo
 		  AND (
 		    $3 = '%%'
 		    OR v.term ILIKE $3
-		    OR v.meaning ILIKE $3
-		    OR v.chinese ILIKE $3
-		    OR v.example_sentence ILIKE $3
-		    OR v.notes ILIKE $3
 		)
 		ORDER BY v.created_at DESC
 		LIMIT NULLIF($4, 0)

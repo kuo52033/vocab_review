@@ -1785,7 +1785,7 @@ export function App() {
               <input
                 className="search-input"
                 value={query}
-                placeholder="Search cards..."
+                placeholder="Search terms..."
                 onChange={(event) => {
                   setQuery(event.target.value);
                   setLibraryPage(1);

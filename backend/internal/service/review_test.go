@@ -224,8 +224,7 @@ func (f *fakeRepository) ListVocabByUser(_ context.Context, userID string, optio
 			continue
 		}
 		if options.Query != "" {
-			haystack := strings.ToLower(item.Term + " " + item.Meaning + " " + item.ExampleSentence + " " + item.Notes)
-			if !strings.Contains(haystack, strings.ToLower(options.Query)) {
+			if !strings.Contains(strings.ToLower(item.Term), strings.ToLower(options.Query)) {
 				continue
 			}
 		}

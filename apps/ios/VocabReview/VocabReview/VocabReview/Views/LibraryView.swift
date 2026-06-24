@@ -76,7 +76,7 @@ struct LibraryView: View {
             TextField(
                 "",
                 text: $searchText,
-                prompt: Text("Search term or meaning")
+                prompt: Text("Search terms")
                     .foregroundStyle(AppTheme.muted.opacity(0.82))
             )
                 .font(.body.weight(.medium))
