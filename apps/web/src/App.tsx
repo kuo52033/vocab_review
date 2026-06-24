@@ -481,7 +481,11 @@ function AudioPlayButton({ item, isPlaying, onPlay }: AudioPlayButtonProps) {
       type="button"
       className={`audio-play-button${isPlaying ? " is-playing" : ""}`}
       aria-label={`${isPlaying ? "Pause" : "Play"} pronunciation for ${item.term}`}
-      onClick={() => onPlay(item)}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        onPlay(item);
+      }}
     >
       {isPlaying ? "Ⅱ" : "▶"}
     </button>
